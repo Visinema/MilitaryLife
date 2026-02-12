@@ -1,0 +1,311 @@
+# Military Career Life Simulator
+
+Production-ready, ultra-lightweight real-time military career simulator.
+
+## 1. Product Overview
+
+- **Frontend**: Next.js 14 App Router + Tailwind + Zustand
+- **Backend**: Fastify REST API + PostgreSQL (Railway)
+- **Hosting**:
+  - Frontend: Vercel
+  - Backend + PostgreSQL: Railway
+- **Gameplay clock**: 1 in-game day = 10 real seconds
+- **Authoritative timing**: server-managed only (no client counters)
+
+Core formula:
+
+```ts
+gameDay = Math.floor((nowMs - serverReferenceTimeMs) / 10000);
+```
+
+Time pauses when decisions/subpages/modals are open and resumes with reference-time correction to prevent drift.
+
+## 2. Architecture Summary
+
+```text
+Browser (Next.js)
+  -> /api/v1/* (same-origin rewrite on Vercel)
+  -> Railway Fastify API
+  -> Railway PostgreSQL
+```
+
+- Frontend computes live day using server clock offset and snapshot reference time.
+- Backend applies all progression in DB transactions (`SELECT ... FOR UPDATE`).
+- Game state persists in `game_states`; decisions persist in `decision_logs`.
+
+## 3. Repository Structure
+
+```text
+apps/web        # Next.js frontend
+apps/api        # Fastify backend
+packages/shared # Shared types/constants
+```
+
+Key files:
+
+- `apps/api/src/modules/game/service.ts`
+- `apps/api/src/modules/game/engine.ts`
+- `apps/api/src/db/migrations/001_init.sql`
+- `apps/api/src/db/migrations/002_seed_events.sql`
+- `apps/web/components/dashboard-shell.tsx`
+- `apps/web/components/paused-route-guard.tsx`
+
+## 4. Features Implemented (MVP)
+
+- Email/password auth with HttpOnly cookie session
+- Profile creation:
+  - name
+  - starting age (default 17)
+  - country: US / Indonesia
+  - branch mapped by country
+- Country/branch-specific systems:
+  - ranks
+  - salary scaling
+  - promotion logic (US vs ID behavior split)
+  - deployment profiles
+  - event pools
+- Dashboard:
+  - in-game date/day
+  - age
+  - rank
+  - branch
+  - money
+  - morale
+  - health
+- Decision popup system with transactional consequences
+- Decision logs with cursor pagination
+- Subpage pause guard (`SUBPAGE`) and decision pause (`DECISION`)
+- Auto-resume safety timeout: 30 minutes
+
+## 5. REST API (Base: `/api/v1`)
+
+Auth:
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+
+Profile:
+
+- `POST /profile/create`
+
+Game:
+
+- `GET /game/snapshot`
+- `POST /game/pause`
+- `POST /game/resume`
+- `POST /game/actions/training`
+- `POST /game/actions/deployment`
+- `POST /game/actions/career-review`
+- `POST /game/decisions/:eventId/choose`
+- `GET /game/decision-logs?cursor=&limit=`
+- `GET /game/config`
+
+Events:
+
+- `GET /events/pool`
+
+## 6. Database
+
+Schema and indexes are in:
+
+- `apps/api/src/db/migrations/001_init.sql`
+
+Seed events are in:
+
+- `apps/api/src/db/migrations/002_seed_events.sql`
+
+Includes:
+
+- `users`
+- `profiles`
+- `sessions`
+- `game_states`
+- `events`
+- `decision_logs`
+- `JSONB` for event options and decision payload/log consequence storage
+- read-path indexes + GIN for consequences
+
+## 7. Local Setup
+
+## Prerequisites
+
+- Node.js 20+
+- PostgreSQL 15+
+- pnpm (recommended via Corepack)
+
+Enable pnpm:
+
+```bash
+corepack enable
+corepack prepare pnpm@9.12.2 --activate
+```
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Create env file:
+
+```bash
+cp .env.example .env
+```
+
+Configure `DATABASE_URL` and secrets in `.env`.
+
+Run migrations:
+
+```bash
+pnpm --filter @mls/api migrate
+```
+
+Run backend:
+
+```bash
+pnpm dev:api
+```
+
+Run frontend:
+
+```bash
+pnpm dev:web
+```
+
+Web: `http://localhost:3000`
+API health: `http://localhost:4000/api/v1/health`
+
+## 8. Environment Variables
+
+Use `.env.example` as baseline.
+
+Backend:
+
+- `API_PORT` (default `4000`)
+- `API_HOST` (default `0.0.0.0`)
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `COOKIE_SECRET`
+- `SESSION_DAYS` (default `30`)
+- `PAUSE_TIMEOUT_MINUTES` (default `30`)
+- `CORS_ORIGIN`
+
+Frontend:
+
+- `NEXT_PUBLIC_API_BASE` (default `/api/v1`)
+- `BACKEND_ORIGIN` (used by Next.js rewrite, e.g. Railway API URL)
+
+## 9. Deployment (Strict Free-Tier Path)
+
+## A. Railway (Backend + PostgreSQL)
+
+1. Create a Railway project.
+2. Add PostgreSQL service.
+3. Add API service from this repo (`apps/api`).
+4. Set region to **Singapore**.
+5. Set environment variables (from section 8).
+6. Deploy API service.
+7. Run migration command in Railway service shell:
+
+```bash
+pnpm --filter @mls/api migrate
+```
+
+8. Confirm health endpoint.
+
+## B. Vercel (Frontend)
+
+1. Create Vercel project from this repo.
+2. Set **Root Directory** to `apps/web`.
+3. Add env vars:
+   - `BACKEND_ORIGIN=https://<railway-api-domain>`
+   - `NEXT_PUBLIC_API_BASE=/api/v1`
+4. Deploy.
+
+Next.js rewrite proxies `/api/*` to Railway so cookie auth remains first-party from browser perspective.
+
+## 10. Free-Tier Operations Policy (`$0`)
+
+- No external paid services.
+- Rely on platform logs only (Vercel + Railway).
+- Keep polling low (10s running / 30s paused).
+- Keep DB pool small (`max=5`) and payloads minimal.
+- Keep static content lean and avoid heavy client bundles.
+
+Official pricing pages (verify current policy before go-live):
+
+- Vercel: https://vercel.com/pricing
+- Railway: https://railway.com/pricing
+
+## 11. Performance Strategy
+
+- Server components by default; client components only where interactive
+- Lazy-loaded decision modal
+- Minimal global state (Zustand slices)
+- No WebSocket overhead
+- Transaction-only write paths
+- Index-driven read patterns
+- Brotli/gzip compression in Fastify
+
+## 12. Time/Consistency Guarantees
+
+- `gameDay` computed from server reference time only
+- Pause freezes progression (`paused_at_ms`)
+- Resume adjusts reference:
+
+```text
+server_reference_time_ms += (resume_now_ms - paused_at_ms)
+```
+
+- Auto-resume when pause exceeds timeout (30 minutes)
+- No client-side drift accumulators
+
+## 13. Testing & Acceptance Checklist
+
+1. Register/login with cookie session.
+2. Create profile and fetch snapshot.
+3. Verify day progression every 10 seconds.
+4. Enter subpage (`/dashboard/training`) and verify paused day.
+5. Leave subpage and verify progression resumes.
+6. Trigger decision event and verify modal + paused state.
+7. Submit option and verify transactional updates + log insert.
+8. Verify logs pagination.
+9. Verify second concurrent active session gets conflict.
+10. Restart client and confirm no time drift.
+
+## 14. Runbook
+
+- Health check: `GET /api/v1/health`
+- Migration: `pnpm --filter @mls/api migrate`
+- Logs: Vercel function logs + Railway service logs
+- Recovery:
+  - restart API service on Railway
+  - verify DB connectivity
+  - re-run migration command (idempotent)
+
+## 15. Known Constraints (Free Tier)
+
+- Idle sleep/cold starts may increase first request latency.
+- Free quotas may throttle availability under load.
+- Global p95 performance depends on region and quota state.
+
+Mitigation (still free-tier compatible):
+
+- Keep payloads tiny
+- Keep polling conservative
+- Prefer static rendering for non-interactive pages
+- Avoid expensive DB queries and N+1 patterns
+
+## 16. Security Notes
+
+- HttpOnly cookie-based session token
+- Session token stored hashed in DB
+- Input validation with Zod
+- Route-level auth checks
+- Rate limiting enabled on API
+
+---
+
+This repository is intentionally lean for global MVP launch on strict zero-cost infrastructure while preserving clean architecture and transactional integrity.

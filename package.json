@@ -1,0 +1,13 @@
+{
+  "name": "military-career-life-simulator",
+  "private": true,
+  "packageManager": "pnpm@9.12.2",
+  "scripts": {
+    "dev:web": "pnpm --filter @mls/web dev",
+    "dev:api": "pnpm --filter @mls/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "start:api": "pnpm --filter @mls/api start"
+  }
+}

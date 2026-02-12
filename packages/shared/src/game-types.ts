@@ -1,0 +1,44 @@
+import type { BranchCode, CountryCode, PauseReason } from './constants.js';
+
+export interface PendingDecision {
+  eventId: number;
+  title: string;
+  description: string;
+  options: Array<{ id: string; label: string }>;
+}
+
+export interface GameSnapshot {
+  serverNowMs: number;
+  serverReferenceTimeMs: number;
+  gameDay: number;
+  inGameDate: string;
+  age: number;
+  country: CountryCode;
+  branch: BranchCode;
+  rankCode: string;
+  moneyCents: number;
+  morale: number;
+  health: number;
+  paused: boolean;
+  pauseReason: PauseReason | null;
+  pauseToken: string | null;
+  pauseExpiresAtMs: number | null;
+  pendingDecision: PendingDecision | null;
+}
+
+export interface DecisionResult {
+  applied: {
+    moneyDelta: number;
+    moraleDelta: number;
+    healthDelta: number;
+    promotionPointDelta: number;
+  };
+  promoted: boolean;
+  newRankCode: string;
+}
+
+export interface ActionResult {
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW';
+  snapshot: GameSnapshot;
+  details: Record<string, unknown>;
+}
