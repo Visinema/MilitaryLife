@@ -1,4 +1,5 @@
-import type { AuthMeResponse, GameSnapshot, ActionResult, DecisionResult } from '@mls/shared';
+import type { AuthMeResponse } from '@mls/shared/api-types';
+import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
