@@ -193,6 +193,7 @@ Backend:
 - `PAUSE_TIMEOUT_MINUTES` (default `30`)
 - `CORS_ORIGIN`
 - `AUTO_MIGRATE_ON_BOOT` (default `true`)
+- `AUTO_MIGRATE_STRICT` (default `false`, set `true` to fail startup if migration fails)
 
 Frontend:
 

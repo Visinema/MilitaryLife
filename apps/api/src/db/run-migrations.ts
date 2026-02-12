@@ -1,10 +1,35 @@
-﻿import { readdir, readFile } from 'node:fs/promises';
+﻿import { access, readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+async function resolveMigrationsDir(): Promise<string> {
+  const candidates = [
+    join(__dirname, 'migrations'),
+    join(__dirname, '../migrations'),
+    join(__dirname, '../../src/db/migrations'),
+    join(process.cwd(), 'apps/api/src/db/migrations'),
+    join(process.cwd(), 'apps/api/dist/db/migrations'),
+    join(process.cwd(), 'src/db/migrations')
+  ];
+
+  for (const dir of candidates) {
+    try {
+      await access(dir);
+      const files = await readdir(dir);
+      if (files.some((name) => name.endsWith('.sql'))) {
+        return dir;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  throw new Error(`Migration directory not found. Tried: ${candidates.join(', ')}`);
+}
 
 export async function runMigrations(connectionString: string): Promise<void> {
   const pool = new Pool({
@@ -21,7 +46,7 @@ export async function runMigrations(connectionString: string): Promise<void> {
       )
     `);
 
-    const migrationsDir = join(__dirname, 'migrations');
+    const migrationsDir = await resolveMigrationsDir();
     const files = (await readdir(migrationsDir))
       .filter((name) => name.endsWith('.sql'))
       .sort((a, b) => a.localeCompare(b));

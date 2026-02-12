@@ -3,7 +3,15 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/run-migrations.js';
 
 if (env.AUTO_MIGRATE_ON_BOOT) {
-  await runMigrations(env.DATABASE_URL);
+  try {
+    await runMigrations(env.DATABASE_URL);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Auto migration failed on boot.', error);
+    if (env.AUTO_MIGRATE_STRICT) {
+      process.exit(1);
+    }
+  }
 }
 
 const app = await buildApp();
