@@ -68,7 +68,8 @@ export async function buildApp() {
   await app.register(cookiePlugin);
   await app.register(compressPlugin);
   await app.register(rateLimitPlugin);
-  await app.register(dbPlugin);
+  // Register DB plugin directly on root instance so app.db is available during startup probes.
+  await dbPlugin(app);
 
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(profileRoutes, { prefix: '/api/v1/profile' });
