@@ -1,5 +1,4 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS citext;
 
 DO $$
 BEGIN
@@ -18,7 +17,7 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email CITEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -94,6 +93,7 @@ CREATE TABLE IF NOT EXISTS decision_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_country_branch ON profiles(country, branch);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users ((lower(email)));
 CREATE INDEX IF NOT EXISTS idx_sessions_user_expires ON sessions(user_id, expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_country_branch_active ON events(country, branch, is_active);
 CREATE INDEX IF NOT EXISTS idx_events_rank_window ON events(branch, rank_min, rank_max);

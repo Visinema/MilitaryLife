@@ -197,7 +197,7 @@ Backend:
 - `CORS_ORIGIN` (comma-separated allowlist, e.g. `https://militarylife.vercel.app,http://localhost:3000`)
 - `AUTO_MIGRATE_ON_BOOT` (default `true`)
 - `AUTO_MIGRATE_STRICT` (default `true`, fail startup if migration fails)
-- `DB_HEALTHCHECK_TIMEOUT_MS` (default `1500`)
+- `DB_HEALTHCHECK_TIMEOUT_MS` (default `5000`)
 - `DB_HEALTHCHECK_INTERVAL_MS` (default `5000`)
 
 Frontend:

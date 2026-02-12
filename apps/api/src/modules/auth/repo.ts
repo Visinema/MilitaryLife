@@ -26,7 +26,7 @@ async function queryOne<T extends QueryResultRow>(
 export async function findUserByEmail(executor: Pool | PoolClient, email: string): Promise<DbUser | null> {
   return queryOne<DbUser>(
     executor,
-    `SELECT id, email::text AS email, password_hash FROM users WHERE email = $1`,
+    `SELECT id, email::text AS email, password_hash FROM users WHERE lower(email) = lower($1)`,
     [email]
   );
 }
