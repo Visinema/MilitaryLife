@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { ensureCoreSchemaReady } from './db/ensure-schema.js';
 import { runMigrations } from './db/run-migrations.js';
 import { probeDatabase } from './utils/db.js';
 
@@ -19,6 +20,7 @@ const app = await buildApp();
 
 try {
   await probeDatabase(app.db, app.env.DB_HEALTHCHECK_TIMEOUT_MS);
+  await ensureCoreSchemaReady(app.db, env.DATABASE_URL, app.log);
 
   await app.listen({
     host: app.env.API_HOST,

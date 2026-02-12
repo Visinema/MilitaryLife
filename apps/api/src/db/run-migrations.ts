@@ -39,6 +39,8 @@ export async function runMigrations(connectionString: string): Promise<void> {
 
   const client = await pool.connect();
   try {
+    await client.query('SELECT pg_advisory_lock(941407290101)');
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         filename TEXT PRIMARY KEY,
@@ -68,11 +70,18 @@ export async function runMigrations(connectionString: string): Promise<void> {
       }
 
       const sql = await readFile(join(migrationsDir, filename), 'utf8');
-      // eslint-disable-next-line no-console
-      console.info(`[migrations] applying ${filename}`);
-      await client.query(sql);
-      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [filename]);
-      applied.push(filename);
+      await client.query('BEGIN');
+      try {
+        // eslint-disable-next-line no-console
+        console.info(`[migrations] applying ${filename}`);
+        await client.query(sql);
+        await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [filename]);
+        await client.query('COMMIT');
+        applied.push(filename);
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw new Error(`Migration failed for ${filename}: ${(error as Error).message}`);
+      }
     }
 
     // eslint-disable-next-line no-console
@@ -80,6 +89,11 @@ export async function runMigrations(connectionString: string): Promise<void> {
       `[migrations] done. applied=${applied.length} skipped=${skipped.length} total=${files.length}`
     );
   } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(941407290101)');
+    } catch {
+      // Ignore unlock errors on shutdown.
+    }
     client.release();
     await pool.end();
   }
