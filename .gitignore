@@ -4,6 +4,7 @@ node_modules/
 out/
 coverage/
 dist/
+*.tsbuildinfo
 .env
 .env.local
 *.log

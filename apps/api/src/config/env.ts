@@ -5,7 +5,8 @@ config();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  API_PORT: z.coerce.number().int().positive().default(4000),
+  PORT: z.coerce.number().int().positive().optional(),
+  API_PORT: z.coerce.number().int().positive().optional(),
   API_HOST: z.string().default('0.0.0.0'),
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(16),
@@ -15,7 +16,7 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3000')
 });
 
-export type EnvConfig = z.infer<typeof envSchema>;
+export type EnvConfig = Omit<z.infer<typeof envSchema>, 'API_PORT'> & { API_PORT: number };
 
 const parsed = envSchema.safeParse(process.env);
 
@@ -25,4 +26,9 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env: EnvConfig = parsed.data;
+const resolvedPort = parsed.data.PORT ?? parsed.data.API_PORT ?? 4000;
+
+export const env: EnvConfig = {
+  ...parsed.data,
+  API_PORT: resolvedPort
+};

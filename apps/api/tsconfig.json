@@ -4,6 +4,11 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@mls/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@mls/shared/*": ["../../packages/shared/dist/*.d.ts"]
+    },
     "rootDir": "src",
     "outDir": "dist",
     "types": ["node"],

@@ -145,7 +145,7 @@ corepack prepare pnpm@9.12.2 --activate
 Install dependencies:
 
 ```bash
-pnpm install
+corepack pnpm install
 ```
 
 Create env file:
@@ -159,19 +159,19 @@ Configure `DATABASE_URL` and secrets in `.env`.
 Run migrations:
 
 ```bash
-pnpm --filter @mls/api migrate
+corepack pnpm --filter @mls/api migrate
 ```
 
 Run backend:
 
 ```bash
-pnpm dev:api
+corepack pnpm dev:api
 ```
 
 Run frontend:
 
 ```bash
-pnpm dev:web
+corepack pnpm dev:web
 ```
 
 Web: `http://localhost:3000`
@@ -183,6 +183,7 @@ Use `.env.example` as baseline.
 
 Backend:
 
+- `PORT` (Railway runtime port, automatically provided)
 - `API_PORT` (default `4000`)
 - `API_HOST` (default `0.0.0.0`)
 - `DATABASE_URL`
@@ -199,18 +200,20 @@ Frontend:
 
 ## 9. Deployment (Strict Free-Tier Path)
 
+Railway deploy behavior is pinned via `railway.toml` (`build:api` + root `start` command) to avoid monorepo auto-detection failures.
+
 ## A. Railway (Backend + PostgreSQL)
 
 1. Create a Railway project.
 2. Add PostgreSQL service.
-3. Add API service from this repo (`apps/api`).
+3. Add API service from this repo root (`/`) so `railway.toml` is used.
 4. Set region to **Singapore**.
 5. Set environment variables (from section 8).
 6. Deploy API service.
 7. Run migration command in Railway service shell:
 
 ```bash
-pnpm --filter @mls/api migrate
+corepack pnpm --filter @mls/api migrate
 ```
 
 8. Confirm health endpoint.
@@ -278,7 +281,7 @@ server_reference_time_ms += (resume_now_ms - paused_at_ms)
 ## 14. Runbook
 
 - Health check: `GET /api/v1/health`
-- Migration: `pnpm --filter @mls/api migrate`
+- Migration: `corepack pnpm --filter @mls/api migrate`
 - Logs: Vercel function logs + Railway service logs
 - Recovery:
   - restart API service on Railway

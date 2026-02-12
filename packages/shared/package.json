@@ -3,17 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": "./src/index.ts",
-    "./constants": "./src/constants.ts",
-    "./api-types": "./src/api-types.ts",
-    "./game-types": "./src/game-types.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "default": "./dist/constants.js"
+    },
+    "./api-types": {
+      "types": "./dist/api-types.d.ts",
+      "default": "./dist/api-types.js"
+    },
+    "./game-types": {
+      "types": "./dist/game-types.d.ts",
+      "default": "./dist/game-types.js"
+    }
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
     "lint": "echo 'shared: no lint configured'"
   },
   "devDependencies": {

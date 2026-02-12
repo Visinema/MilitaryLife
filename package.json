@@ -3,11 +3,13 @@
   "private": true,
   "packageManager": "pnpm@9.12.2",
   "scripts": {
-    "dev:web": "pnpm --filter @mls/web dev",
-    "dev:api": "pnpm --filter @mls/api dev",
-    "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "start:api": "pnpm --filter @mls/api start"
+    "dev:web": "corepack pnpm --filter @mls/web dev",
+    "dev:api": "corepack pnpm --filter @mls/api dev",
+    "build": "corepack pnpm -r build",
+    "build:api": "corepack pnpm --filter @mls/shared build && corepack pnpm --filter @mls/api build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "lint": "corepack pnpm -r lint",
+    "start:api": "corepack pnpm --filter @mls/api start",
+    "start": "node apps/api/dist/server.js"
   }
 }

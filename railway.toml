@@ -1,0 +1,10 @@
+﻿[build]
+builder = "NIXPACKS"
+buildCommand = "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm run build:api"
+
+[deploy]
+startCommand = "corepack pnpm run start"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

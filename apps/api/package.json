@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "prebuild": "corepack pnpm --filter @mls/shared build",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
+    "pretypecheck": "corepack pnpm --filter @mls/shared build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'api: no lint configured'"
   },
