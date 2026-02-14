@@ -17,6 +17,7 @@ class ApiError extends Error {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api/v1';
 
 let snapshotBackoffUntilMs = 0;
+let snapshotInFlight: Promise<{ snapshot: GameSnapshot }> | null = null;
 
 async function request<T>(path: string, method: HttpMethod, body?: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -40,6 +41,29 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown): Pro
   }
 
   return payload as T;
+}
+
+function requestSnapshot(): Promise<{ snapshot: GameSnapshot }> {
+  if (snapshotInFlight) {
+    return snapshotInFlight;
+  }
+
+  snapshotInFlight = request<{ snapshot: GameSnapshot }>('/game/snapshot', 'GET')
+    .then((payload) => {
+      snapshotBackoffUntilMs = 0;
+      return payload;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof ApiError && error.status >= 500) {
+        snapshotBackoffUntilMs = Date.now() + 15_000;
+      }
+      throw error;
+    })
+    .finally(() => {
+      snapshotInFlight = null;
+    });
+
+  return snapshotInFlight;
 }
 
 export const api = {
@@ -69,17 +93,7 @@ export const api = {
       throw new ApiError(503, 'Snapshot sementara cooldown karena backend belum siap');
     }
 
-    return request<{ snapshot: GameSnapshot }>('/game/snapshot', 'GET')
-      .then((payload) => {
-        snapshotBackoffUntilMs = 0;
-        return payload;
-      })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status >= 500) {
-          snapshotBackoffUntilMs = Date.now() + 15_000;
-        }
-        throw error;
-      });
+    return requestSnapshot();
   },
   pause(reason: 'DECISION' | 'MODAL' | 'SUBPAGE') {
     return request<{ pauseToken: string; pauseExpiresAtMs: number | null; snapshot: GameSnapshot }>('/game/pause', 'POST', {

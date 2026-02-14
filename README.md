@@ -233,6 +233,21 @@ corepack pnpm --filter @mls/api migrate
 
 If startup logs show `ECONNREFUSED ::1:5432`, your API is using local DB config in Railway. Link PostgreSQL service and set a non-local `DATABASE_URL` (or rely on `DATABASE_PRIVATE_URL`).
 
+
+### Troubleshooting `404 /api/v1/*` on Vercel
+
+If browser console shows `GET /api/v1/game/snapshot 404` or `POST /api/v1/profile/create 404`:
+
+1. Verify `BACKEND_ORIGIN` in Vercel points to Railway API domain (for example `https://<service>.up.railway.app`).
+2. Open `https://<vercel-domain>/api/v1/health` directly:
+   - `200/503` means proxy is working and issue is on API/runtime side.
+   - `404` means Vercel proxy is not configured/deployed correctly.
+3. On Railway, ensure API service has DB env vars from linked PostgreSQL and migrations have run:
+
+```bash
+corepack pnpm --filter @mls/api migrate
+```
+
 ## B. Vercel (Frontend)
 
 1. Create Vercel project from this repo.

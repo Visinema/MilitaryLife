@@ -52,7 +52,17 @@ function buildDatabaseUrlFromPgParts(raw: RawEnv): string | undefined {
 }
 
 function resolveDatabaseUrl(raw: RawEnv): string | undefined {
-  const candidates = [
+  const railwayPreferredCandidates = [
+    cleanValue(raw.DATABASE_PRIVATE_URL),
+    cleanValue(raw.DATABASE_URL),
+    cleanValue(raw.DATABASE_PUBLIC_URL),
+    cleanValue(raw.POSTGRESQL_URL),
+    cleanValue(raw.POSTGRES_URL),
+    cleanValue(raw.PG_URL),
+    buildDatabaseUrlFromPgParts(raw)
+  ].filter((value): value is string => Boolean(value));
+
+  const defaultCandidates = [
     cleanValue(raw.DATABASE_URL),
     cleanValue(raw.DATABASE_PRIVATE_URL),
     cleanValue(raw.DATABASE_PUBLIC_URL),
@@ -61,6 +71,8 @@ function resolveDatabaseUrl(raw: RawEnv): string | undefined {
     cleanValue(raw.PG_URL),
     buildDatabaseUrlFromPgParts(raw)
   ].filter((value): value is string => Boolean(value));
+
+  const candidates = isRailwayRuntime(raw) ? railwayPreferredCandidates : defaultCandidates;
 
   if (candidates.length === 0) {
     return undefined;
