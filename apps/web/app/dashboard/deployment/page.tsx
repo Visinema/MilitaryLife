@@ -184,7 +184,18 @@ export default function DeploymentPage() {
       const preferredAggressive = selectedStrategy === 'wedge' && canInfluence;
       const missionType: 'PATROL' | 'SUPPORT' = preferredAggressive ? 'PATROL' : 'SUPPORT';
       const response = await api.deployment(missionType, missionPack.durationDays);
-      const details = response.details as { blocked?: boolean; reason?: string; succeeded?: boolean; advancedDays?: number };
+      const details = response.details as {
+        blocked?: boolean;
+        reason?: string;
+        succeeded?: boolean;
+        advancedDays?: number;
+        terrain?: string;
+        objective?: string;
+        enemyStrength?: number;
+        difficultyRating?: number;
+        equipmentQuality?: string;
+        promotionRecommendation?: string;
+      };
 
       if (missionPauseToken) {
         await api.resume(missionPauseToken).catch(() => {
@@ -203,7 +214,9 @@ export default function DeploymentPage() {
       const result = details.succeeded ? 'Operasi sukses dan target aman.' : 'Operasi selesai dengan kehilangan momentum.';
       setMessage(
         `${missionPack.title} selesai. Dipimpin: ${canInfluence ? 'Anda memimpin squad' : 'Commander NPC'}. ` +
-          `${result} Waktu lompat +${details.advancedDays ?? missionPack.durationDays} hari.`
+          `${result} Waktu lompat +${details.advancedDays ?? missionPack.durationDays} hari. ` +
+          `Terrain: ${details.terrain ?? '-'} · Objective: ${details.objective ?? '-'} · Enemy: ${details.enemyStrength ?? '-'} · ` +
+          `Difficulty: ${details.difficultyRating ?? '-'} · Gear: ${details.equipmentQuality ?? '-'} · Promotion rec: ${details.promotionRecommendation ?? 'HOLD'}.`
       );
       setMissionPauseToken(null);
     } catch (err) {

@@ -27,7 +27,19 @@ export default function PeoplePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [interactionMap, setInteractionMap] = useState<Record<string, string[]>>({});
-  const [npcActivity, setNpcActivity] = useState<Record<string, { result: string; readiness: number; morale: number }>>({});
+  const [npcActivity, setNpcActivity] = useState<
+    Record<
+      string,
+      {
+        result: string;
+        readiness: number;
+        morale: number;
+        rankInfluence: number;
+        promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED';
+        notificationLetter: string | null;
+      }
+    >
+  >({});
 
   useEffect(() => {
     if (storeSnapshot) {
@@ -90,8 +102,15 @@ export default function PeoplePage() {
         .npcActivity()
         .then((response) => {
           setNpcActivity(
-            response.items.reduce<Record<string, { result: string; readiness: number; morale: number }>>((acc, item) => {
-              acc[item.npcId] = { result: item.result, readiness: item.readiness, morale: item.morale };
+            response.items.reduce<Record<string, { result: string; readiness: number; morale: number; rankInfluence: number; promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED'; notificationLetter: string | null }>>((acc, item) => {
+              acc[item.npcId] = {
+                result: item.result,
+                readiness: item.readiness,
+                morale: item.morale,
+                rankInfluence: item.rankInfluence,
+                promotionRecommendation: item.promotionRecommendation,
+                notificationLetter: item.notificationLetter
+              };
               return acc;
             }, {})
           );
@@ -170,7 +189,9 @@ export default function PeoplePage() {
                     `Relation score: ${selectedNpc.relationScore}`,
                     `Status: ${selectedNpc.status}`,
                     `Progress score: ${selectedNpc.progressionScore}`,
-                    `Server activity: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.result ?? 'syncing...'}`
+                    `Server activity: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.result ?? 'syncing...'}`,
+                    `Promotion rec: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.promotionRecommendation ?? 'HOLD'}`,
+                    `Rank influence: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.rankInfluence ?? 1}`
                   ]}
                 />
                 <PersonalStatsPanel
@@ -180,6 +201,11 @@ export default function PeoplePage() {
                   baseHealth={selectedNpc.status === 'INJURED' ? 58 : 82}
                   baseReadiness={npcActivity[`npc-${selectedNpc.slot + 1}`]?.readiness ?? selectedNpc.commandPower}
                 />
+                {npcActivity[`npc-${selectedNpc.slot + 1}`]?.notificationLetter ? (
+                  <p className="rounded border border-border bg-bg/60 p-2 text-xs text-muted">
+                    {npcActivity[`npc-${selectedNpc.slot + 1}`]?.notificationLetter}
+                  </p>
+                ) : null}
               </>
             ) : null}
 

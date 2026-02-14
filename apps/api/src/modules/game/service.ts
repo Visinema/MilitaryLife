@@ -9,6 +9,8 @@ import {
   applyTrainingAction,
   autoResumeIfExpired,
   buildSnapshot,
+  evaluatePromotionAlgorithm,
+  generateMission,
   maybeQueueDecisionEvent,
   pauseState,
   resumeState,
@@ -243,7 +245,8 @@ export async function runDeployment(
       return { payload };
     }
 
-    const action = applyDeploymentAction(state, missionType);
+    const mission = generateMission(state);
+    const action = applyDeploymentAction(state, missionType, mission);
     const advancedDays = advanceGameDays(state, missionDurationDays);
     state.last_mission_day = state.current_day;
     const promoted = tryPromotion(state);
@@ -258,7 +261,13 @@ export async function runDeployment(
         rankCode: snapshot.rankCode,
         missionDurationDays,
         advancedDays,
-        nextMissionInDays: missionCooldownDays
+        nextMissionInDays: missionCooldownDays,
+        terrain: mission.terrain,
+        objective: mission.objective,
+        enemyStrength: mission.enemyStrength,
+        difficultyRating: mission.difficultyRating,
+        equipmentQuality: mission.equipmentQuality,
+        promotionRecommendation: promoted ? 'PROMOTION_CONFIRMED' : evaluatePromotionAlgorithm(state).recommendation
       }
     };
 
@@ -273,6 +282,7 @@ export async function runCareerReview(request: FastifyRequest, reply: FastifyRep
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
     }
 
+    const promotionEvaluation = evaluatePromotionAlgorithm(state);
     const promoted = tryPromotion(state);
     if (!promoted) {
       state.morale = Math.max(0, state.morale - 1);
@@ -284,7 +294,14 @@ export async function runCareerReview(request: FastifyRequest, reply: FastifyRep
       snapshot,
       details: {
         promoted,
-        rankCode: snapshot.rankCode
+        rankCode: snapshot.rankCode,
+        promotionRecommendation: promotionEvaluation.recommendation,
+        serviceYears: promotionEvaluation.serviceYears,
+        minimumServiceYears: promotionEvaluation.minimumServiceYears,
+        meritPoints: promotionEvaluation.meritPoints,
+        minimumMeritPoints: promotionEvaluation.minimumMeritPoints,
+        vacancyAvailabilityPercent: promotionEvaluation.vacancyAvailabilityPercent,
+        rejectionLetter: promoted ? null : promotionEvaluation.rejectionLetter
       }
     };
 
@@ -440,7 +457,13 @@ export async function getNpcBackgroundActivity(request: FastifyRequest, reply: F
         operation: op,
         result: `${op} completed (${impact})`,
         readiness: Math.max(25, Math.min(100, snapshot.health + ((cycleSeed % 19) - 9))),
-        morale: Math.max(20, Math.min(100, snapshot.morale + ((cycleSeed % 15) - 7)))
+        morale: Math.max(20, Math.min(100, snapshot.morale + ((cycleSeed % 15) - 7))),
+        rankInfluence: Math.max(1, snapshot.rankCode.length + (i % 4)),
+        promotionRecommendation: (['STRONG_RECOMMEND', 'RECOMMEND', 'HOLD', 'NOT_RECOMMENDED'] as const)[cycleSeed % 4],
+        notificationLetter:
+          cycleSeed % 4 === 3
+            ? `Administrative Letter: NPC-${i + 1} promotion request postponed due to vacancy constraints.`
+            : null
       };
     });
 

@@ -14,6 +14,138 @@ function randBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (high - low + 1)) + low;
 }
 
+type EquipmentQuality = 'POOR' | 'STANDARD' | 'ADVANCED' | 'ELITE';
+type PromotionRecommendation = 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED';
+
+export interface PromotionAlgorithmResult {
+  approved: boolean;
+  serviceYears: number;
+  minimumServiceYears: number;
+  meritPoints: number;
+  minimumMeritPoints: number;
+  vacancyAvailabilityPercent: number;
+  vacancyPassed: boolean;
+  recommendation: PromotionRecommendation;
+  rejectionLetter: string | null;
+}
+
+export interface GeneratedMission {
+  terrain: 'JUNGLE' | 'URBAN' | 'DESERT';
+  objective: 'ESCORT' | 'DEFEND' | 'RECON';
+  enemyStrength: number;
+  difficultyRating: number;
+  equipmentQuality: EquipmentQuality;
+  rewardMultiplier: number;
+}
+
+function getEquipmentQuality(state: DbGameStateRow): EquipmentQuality {
+  const score = state.rank_index * 24 + Math.floor(state.money_cents / 120_000) + state.health;
+  if (score >= 190) return 'ELITE';
+  if (score >= 145) return 'ADVANCED';
+  if (score >= 95) return 'STANDARD';
+  return 'POOR';
+}
+
+function equipmentModifier(quality: EquipmentQuality): number {
+  if (quality === 'ELITE') return 1.35;
+  if (quality === 'ADVANCED') return 1.15;
+  if (quality === 'STANDARD') return 1;
+  return 0.85;
+}
+
+function rankInfluence(state: DbGameStateRow): number {
+  return 1 + state.rank_index * 0.08;
+}
+
+export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgorithmResult {
+  if (state.rank_index >= 6) {
+    return {
+      approved: false,
+      serviceYears: Number((state.current_day / 365).toFixed(2)),
+      minimumServiceYears: 999,
+      meritPoints: state.promotion_points,
+      minimumMeritPoints: 999,
+      vacancyAvailabilityPercent: 0,
+      vacancyPassed: false,
+      recommendation: 'HOLD',
+      rejectionLetter: 'Promotion Board Notice: You have reached the top available rank bracket for this branch.'
+    };
+  }
+
+  const country = COUNTRY_CONFIG[state.country];
+  const minimumServiceYears = Number(((country.promotionMinDays[state.rank_index] ?? 9999) / 365).toFixed(2));
+  const minimumMeritPoints = country.promotionMinPoints[state.rank_index] ?? 9999;
+  const serviceYears = Number((state.current_day / 365).toFixed(2));
+  const meritPoints = state.promotion_points;
+
+  const serviceOk = serviceYears >= minimumServiceYears;
+  const meritOk = meritPoints >= minimumMeritPoints;
+
+  const vacancyChance = clamp(
+    0.28 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015,
+    0.12,
+    0.92
+  );
+  const vacancyAvailabilityPercent = Math.round(vacancyChance * 100);
+  const vacancyPassed = roll(vacancyChance);
+
+  const approved = serviceOk && meritOk && vacancyPassed;
+
+  const serviceRatio = serviceYears / Math.max(minimumServiceYears, 0.1);
+  const meritRatio = meritPoints / Math.max(minimumMeritPoints, 1);
+  const score = serviceRatio * 0.45 + meritRatio * 0.45 + vacancyChance * 0.1;
+  const recommendation: PromotionRecommendation =
+    score >= 1.25 ? 'STRONG_RECOMMEND' : score >= 1.02 ? 'RECOMMEND' : score >= 0.82 ? 'HOLD' : 'NOT_RECOMMENDED';
+
+  const rejectionReasons: string[] = [];
+  if (!serviceOk) rejectionReasons.push(`service years (${serviceYears}/${minimumServiceYears})`);
+  if (!meritOk) rejectionReasons.push(`merit points (${meritPoints}/${minimumMeritPoints})`);
+  if (!vacancyPassed) rejectionReasons.push(`vacancy availability (${vacancyAvailabilityPercent}%)`);
+
+  const rejectionLetter = approved
+    ? null
+    : `Promotion Board Notice: Promotion request cannot be approved this cycle due to ${
+        rejectionReasons.join(', ') || 'administrative restrictions'
+      }. Please continue service and re-apply in a future board session.`;
+
+  return {
+    approved,
+    serviceYears,
+    minimumServiceYears,
+    meritPoints,
+    minimumMeritPoints,
+    vacancyAvailabilityPercent,
+    vacancyPassed,
+    recommendation,
+    rejectionLetter
+  };
+}
+
+export function generateMission(state: DbGameStateRow): GeneratedMission {
+  const terrains: GeneratedMission['terrain'][] = ['JUNGLE', 'URBAN', 'DESERT'];
+  const objectives: GeneratedMission['objective'][] = ['ESCORT', 'DEFEND', 'RECON'];
+  const terrain = terrains[randBetween(0, terrains.length - 1)] ?? 'URBAN';
+  const objective = objectives[randBetween(0, objectives.length - 1)] ?? 'DEFEND';
+
+  const equipmentQuality = getEquipmentQuality(state);
+  const rankPower = rankInfluence(state);
+  const equipmentPower = equipmentModifier(equipmentQuality);
+
+  const enemyStrengthBase = randBetween(1, 10);
+  const enemyStrength = clamp(Math.round(enemyStrengthBase + state.rank_index * 0.6), 1, 10);
+  const difficultyRating = clamp(Math.round(enemyStrength * (1.15 + state.rank_index * 0.05) / equipmentPower), 1, 12);
+  const rewardMultiplier = Number(clamp(0.85 + difficultyRating * 0.07 + rankPower * 0.08 + equipmentPower * 0.06, 0.9, 2.8).toFixed(2));
+
+  return {
+    terrain,
+    objective,
+    enemyStrength,
+    difficultyRating,
+    equipmentQuality,
+    rewardMultiplier
+  };
+}
+
 export function autoResumeIfExpired(state: DbGameStateRow, nowMs: number): boolean {
   if (!state.paused_at_ms || !state.pause_expires_at_ms) {
     return false;
@@ -112,29 +244,13 @@ function canPromote(state: DbGameStateRow): boolean {
 }
 
 export function tryPromotion(state: DbGameStateRow): boolean {
-  if (!canPromote(state)) {
+  const evaluation = evaluatePromotionAlgorithm(state);
+  if (!evaluation.approved) {
     return false;
   }
 
   const country = COUNTRY_CONFIG[state.country];
   const reqPoints = country.promotionMinPoints[state.rank_index] ?? 0;
-
-  let promote = false;
-
-  if (state.country === 'US') {
-    const chance = clamp(
-      0.25 + (state.promotion_points - reqPoints) * 0.01 + state.morale * 0.001 + state.health * 0.001,
-      0.25,
-      0.9
-    );
-    promote = roll(chance);
-  } else {
-    promote = state.promotion_points >= reqPoints + 8 || roll(0.2);
-  }
-
-  if (!promote) {
-    return false;
-  }
 
   state.rank_index += 1;
   state.days_in_rank = 0;
@@ -334,19 +450,24 @@ export function applyTrainingAction(
 
 export function applyDeploymentAction(
   state: DbGameStateRow,
-  missionType: 'PATROL' | 'SUPPORT'
+  missionType: 'PATROL' | 'SUPPORT',
+  mission: GeneratedMission
 ): Pick<ActionResult, 'details'> {
   const branchConfig = BRANCH_CONFIG[state.branch];
   const profile = missionType === 'PATROL' ? branchConfig.deployment.patrol : branchConfig.deployment.support;
 
-  const injured = roll(profile.injuryChance);
-  const succeeded = roll(profile.successChance);
+  const successChance = clamp(profile.successChance + mission.rewardMultiplier * 0.03 - mission.difficultyRating * 0.02, 0.08, 0.95);
+  const injuryChance = clamp(profile.injuryChance + mission.difficultyRating * 0.015 - mission.rewardMultiplier * 0.01, 0.01, 0.7);
 
-  const reward = succeeded ? randBetween(profile.rewardCents[0], profile.rewardCents[1]) : randBetween(200, 700);
-  const healthLoss = injured ? randBetween(profile.healthLoss[0], profile.healthLoss[1]) : randBetween(0, 2);
-  const moraleLoss = injured ? randBetween(profile.moraleLoss[0], profile.moraleLoss[1]) : randBetween(0, 2);
+  const injured = roll(injuryChance);
+  const succeeded = roll(successChance);
+
+  const baseReward = succeeded ? randBetween(profile.rewardCents[0], profile.rewardCents[1]) : randBetween(200, 700);
+  const reward = Math.round(baseReward * mission.rewardMultiplier);
+  const healthLoss = injured ? randBetween(profile.healthLoss[0], profile.healthLoss[1]) + Math.floor(mission.difficultyRating / 4) : randBetween(0, 2);
+  const moraleLoss = injured ? randBetween(profile.moraleLoss[0], profile.moraleLoss[1]) + Math.floor(mission.difficultyRating / 5) : randBetween(0, 2);
   const points = succeeded
-    ? randBetween(profile.promotionPoints[0], profile.promotionPoints[1])
+    ? randBetween(profile.promotionPoints[0], profile.promotionPoints[1]) + Math.floor(mission.difficultyRating / 2)
     : randBetween(0, Math.max(profile.promotionPoints[1] - 2, 1));
 
   state.money_cents += reward;
@@ -364,7 +485,13 @@ export function applyDeploymentAction(
       rewardCents: reward,
       healthLoss,
       moraleLoss,
-      promotionPoints: points
+      promotionPoints: points,
+      terrain: mission.terrain,
+      objective: mission.objective,
+      enemyStrength: mission.enemyStrength,
+      difficultyRating: mission.difficultyRating,
+      equipmentQuality: mission.equipmentQuality,
+      rewardMultiplier: mission.rewardMultiplier
     }
   };
 }

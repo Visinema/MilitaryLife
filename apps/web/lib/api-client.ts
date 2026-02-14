@@ -152,6 +152,9 @@ export const api = {
         result: string;
         readiness: number;
         morale: number;
+        rankInfluence: number;
+        promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED';
+        notificationLetter: string | null;
       }>;
     }>('/game/npc-activity', 'GET');
   }

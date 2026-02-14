@@ -11,6 +11,7 @@ export default function CareerPage() {
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [letter, setLetter] = useState<string | null>(null);
 
   useEffect(() => {
     if (snapshot) return;
@@ -20,10 +21,18 @@ export default function CareerPage() {
   const runReview = async () => {
     setBusy(true);
     setMessage(null);
+    setLetter(null);
     try {
       const response = await api.careerReview();
       setSnapshot(response.snapshot);
-      setMessage(response.details.promoted ? 'Promotion approved.' : 'No promotion this review cycle.');
+      const recommendation = String(response.details.promotionRecommendation ?? 'HOLD');
+      const vacancy = Number(response.details.vacancyAvailabilityPercent ?? 0);
+      setMessage(
+        response.details.promoted
+          ? `Promotion approved. Recommendation: ${recommendation}.`
+          : `No promotion this review cycle. Recommendation: ${recommendation} · Vacancy ${vacancy}%`
+      );
+      setLetter((response.details.rejectionLetter as string | null) ?? null);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Career review failed');
     } finally {
@@ -51,6 +60,7 @@ export default function CareerPage() {
           {busy ? 'Evaluating...' : 'Run Career Review'}
         </button>
         {message ? <p className="mt-3 text-sm text-muted">{message}</p> : null}
+        {letter ? <p className="mt-2 rounded border border-border bg-bg/60 p-3 text-xs text-muted">{letter}</p> : null}
       </div>
     </div>
   );
