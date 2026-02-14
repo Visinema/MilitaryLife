@@ -11,6 +11,7 @@ import {
 import {
   chooseDecision,
   getCurrentSnapshotForSubPage,
+  getNpcBackgroundActivity,
   getDecisionLogs,
   getGameConfig,
   getSnapshot,
@@ -101,5 +102,9 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/subpage-snapshot', async (request, reply) => {
     await getCurrentSnapshotForSubPage(request, reply);
+  });
+
+  app.get('/npc-activity', async (request, reply) => {
+    await getNpcBackgroundActivity(request, reply);
   });
 }

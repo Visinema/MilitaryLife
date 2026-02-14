@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { buildWorldV2 } from '@/lib/world-v2';
 import { AvatarFrame } from './avatar-frame';
+import { PersonalStatsPanel } from './personal-stats-panel';
 
 interface V2CommandCenterProps {
   snapshot: GameSnapshot;
@@ -48,6 +49,15 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`
               ]}
             />
+            <div className="mt-3">
+              <PersonalStatsPanel
+                title="Active Player"
+                seed={snapshot.gameDay + snapshot.age}
+                baseMorale={snapshot.morale}
+                baseHealth={snapshot.health}
+                baseReadiness={Math.round(world.player.commandAuthority)}
+              />
+            </div>
           </div>
 
           <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border border-border/70 bg-bg/70 p-4`}>

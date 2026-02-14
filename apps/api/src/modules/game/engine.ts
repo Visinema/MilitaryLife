@@ -184,10 +184,21 @@ export async function maybeQueueDecisionEvent(
   }
 
   state.pending_event_id = picked.id;
+  const chancePercent = Math.round(chance * 100);
   state.pending_event_payload = {
     title: picked.title,
     description: picked.description,
-    options: picked.options.map((option) => ({ id: option.id, label: option.label }))
+    chancePercent,
+    conditionLabel: `Rank ${snapshotRankCode(state)} · Day ${state.current_day} · Readiness ${state.health}/${state.morale}`,
+    options: picked.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      impactScope:
+        (option.effects?.promotionPoints ?? 0) + (option.effects?.morale ?? 0) >= 4 || Math.abs(option.effects?.money ?? 0) >= 1200
+          ? 'ORGANIZATION'
+          : 'SELF',
+      effectPreview: `Δ$${Math.round((option.effects?.money ?? 0) / 100)} · M ${option.effects?.morale ?? 0} · H ${option.effects?.health ?? 0} · P ${option.effects?.promotionPoints ?? 0}`
+    }))
   };
 
   pauseState(state, 'DECISION', nowMs, pauseTimeoutMinutes);
@@ -223,6 +234,8 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
             eventId: state.pending_event_id,
             title: state.pending_event_payload.title,
             description: state.pending_event_payload.description,
+            chancePercent: state.pending_event_payload.chancePercent,
+            conditionLabel: state.pending_event_payload.conditionLabel,
             options: state.pending_event_payload.options
           }
         : null

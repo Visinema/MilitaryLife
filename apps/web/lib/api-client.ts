@@ -141,6 +141,12 @@ export const api = {
   },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET');
+  },
+  npcActivity() {
+    return request<{
+      generatedAt: number;
+      items: Array<{ npcId: string; lastTickDay: number; operation: string; result: string }>;
+    }>('/game/npc-activity', 'GET');
   }
 };
 

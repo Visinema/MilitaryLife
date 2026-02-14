@@ -25,7 +25,14 @@ export interface DbGameStateRow {
   pending_event_payload: {
     title: string;
     description: string;
-    options: Array<{ id: string; label: string }>;
+    chancePercent: number;
+    conditionLabel: string;
+    options: Array<{
+      id: string;
+      label: string;
+      impactScope: 'SELF' | 'ORGANIZATION';
+      effectPreview: string;
+    }>;
   } | null;
   version: number;
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PausedRouteGuard } from '@/components/paused-route-guard';
+import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
@@ -44,6 +45,18 @@ export default function ProfilePage() {
 
         <p className="mt-4 text-xs uppercase tracking-[0.12em] text-muted">Current Rank</p>
         <p className="mt-1 text-base text-text">{snapshot?.rankCode ?? '-'}</p>
+
+        {snapshot ? (
+          <div className="mt-4">
+            <PersonalStatsPanel
+              title="Active Commander"
+              seed={snapshot.gameDay + snapshot.age}
+              baseMorale={snapshot.morale}
+              baseHealth={snapshot.health}
+              baseReadiness={Math.min(100, 45 + Math.floor(snapshot.gameDay / 4))}
+            />
+          </div>
+        ) : null}
 
         <button
           onClick={logout}

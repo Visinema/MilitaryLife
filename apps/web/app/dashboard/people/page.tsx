@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { AvatarFrame, npcUniformTone } from '@/components/avatar-frame';
+import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 import { api } from '@/lib/api-client';
 import { buildWorldV2, type NpcV2Profile, type NpcStatus } from '@/lib/world-v2';
 import { useGameStore } from '@/store/game-store';
@@ -26,6 +27,7 @@ export default function PeoplePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [interactionMap, setInteractionMap] = useState<Record<string, string[]>>({});
+  const [npcActivity, setNpcActivity] = useState<Record<string, { result: string; readiness: number; morale: number }>>({});
 
   useEffect(() => {
     if (storeSnapshot) {
@@ -78,9 +80,31 @@ export default function PeoplePage() {
         const message = lines[(current.length + selectedNpc.relationScore) % lines.length];
         return { ...prev, [selectedNpcId]: [...current.slice(-9), message] };
       });
-    }, 4200);
+    }, 3200);
     return () => window.clearInterval(timer);
   }, [selectedNpc?.id]);
+
+  useEffect(() => {
+    const loadActivity = () => {
+      api
+        .npcActivity()
+        .then((response) => {
+          setNpcActivity(
+            response.items.reduce<Record<string, { result: string; readiness: number; morale: number }>>((acc, item) => {
+              acc[item.npcId] = { result: item.result, readiness: item.readiness, morale: item.morale };
+              return acc;
+            }, {})
+          );
+        })
+        .catch((err: Error) => {
+          setError(`NPC activity sync gagal: ${err.message}`);
+        });
+    };
+
+    loadActivity();
+    const timer = window.setInterval(loadActivity, 6000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const sendCommand = (cmd: string) => {
     if (!selectedNpc) return;
@@ -132,21 +156,31 @@ export default function PeoplePage() {
 
           <section className="space-y-3">
             {selectedNpc ? (
-              <AvatarFrame
-                name={selectedNpc.name}
-                subtitle={`${selectedNpc.rank} · ${selectedNpc.role}`}
-                uniformTone={npcUniformTone(selectedNpc)}
-                ribbons={selectedNpc.ribbons}
-                medals={selectedNpc.medals}
-                shoulderRankCount={2}
-                details={[
-                  `${selectedNpc.division} / ${selectedNpc.subdivision}`,
-                  `Behavior: ${selectedNpc.behaviorTag}`,
-                  `Relation score: ${selectedNpc.relationScore}`,
-                  `Status: ${selectedNpc.status}`,
-                  `Progress score: ${selectedNpc.progressionScore}`
-                ]}
-              />
+              <>
+                <AvatarFrame
+                  name={selectedNpc.name}
+                  subtitle={`${selectedNpc.rank} · ${selectedNpc.role}`}
+                  uniformTone={npcUniformTone(selectedNpc)}
+                  ribbons={selectedNpc.ribbons}
+                  medals={selectedNpc.medals}
+                  shoulderRankCount={2}
+                  details={[
+                    `${selectedNpc.division} / ${selectedNpc.subdivision}`,
+                    `Behavior: ${selectedNpc.behaviorTag}`,
+                    `Relation score: ${selectedNpc.relationScore}`,
+                    `Status: ${selectedNpc.status}`,
+                    `Progress score: ${selectedNpc.progressionScore}`,
+                    `Server activity: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.result ?? 'syncing...'}`
+                  ]}
+                />
+                <PersonalStatsPanel
+                  title={selectedNpc.name}
+                  seed={selectedNpc.slot + selectedNpc.lastSeenOnDay}
+                  baseMorale={npcActivity[`npc-${selectedNpc.slot + 1}`]?.morale ?? Math.min(100, selectedNpc.relationScore)}
+                  baseHealth={selectedNpc.status === 'INJURED' ? 58 : 82}
+                  baseReadiness={npcActivity[`npc-${selectedNpc.slot + 1}`]?.readiness ?? selectedNpc.commandPower}
+                />
+              </>
             ) : null}
 
             <div className="cyber-panel p-3">

@@ -4,7 +4,14 @@ export interface PendingDecision {
   eventId: number;
   title: string;
   description: string;
-  options: Array<{ id: string; label: string }>;
+  chancePercent: number;
+  conditionLabel: string;
+  options: Array<{
+    id: string;
+    label: string;
+    impactScope: 'SELF' | 'ORGANIZATION';
+    effectPreview: string;
+  }>;
 }
 
 export interface GameSnapshot {

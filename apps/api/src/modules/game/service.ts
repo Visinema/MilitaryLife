@@ -426,3 +426,22 @@ export async function getCurrentSnapshotForSubPage(request: FastifyRequest, repl
     async ({ state, nowMs }) => ({ payload: { snapshot: buildSnapshot(state, nowMs) } })
   );
 }
+
+export async function getNpcBackgroundActivity(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const snapshot = buildSnapshot(state, nowMs);
+    const activity = Array.from({ length: 6 }, (_, i) => {
+      const cycleSeed = snapshot.gameDay * 37 + i * 11 + snapshot.age;
+      const op = ['training', 'deployment', 'career-review', 'resupply', 'medical', 'intel'][cycleSeed % 6];
+      const impact = ['morale+', 'health+', 'funds+', 'promotion+', 'coordination+', 'readiness+'][(cycleSeed + 3) % 6];
+      return {
+        npcId: `npc-${i + 1}`,
+        lastTickDay: Math.max(1, snapshot.gameDay - (i % 2)),
+        operation: op,
+        result: `${op} completed (${impact})`
+      };
+    });
+
+    return { payload: { generatedAt: nowMs, items: activity } };
+  });
+}

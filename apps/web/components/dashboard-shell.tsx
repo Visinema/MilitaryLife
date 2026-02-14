@@ -36,8 +36,6 @@ export function DashboardShell() {
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
-  const [decisionBusy, setDecisionBusy] = useState(false);
-  const decisionInFlightRef = useRef(false);
   const snapshotCooldownUntilRef = useRef(0);
 
   const loadSnapshot = useCallback(async () => {
@@ -144,44 +142,6 @@ export function DashboardShell() {
     },
     [setError, setSnapshot]
   );
-
-  const handleDecision = useCallback(
-    async (optionId: string) => {
-      if (decisionInFlightRef.current) {
-        return;
-      }
-
-      const submitOnce = async (eventId: number): Promise<void> => {
-        try {
-          const response = await api.chooseDecision(eventId, optionId);
-          setSnapshot(response.snapshot);
-          if (response.conflict) {
-            setError(response.reason ?? 'Decision sudah berubah di server.');
-            return;
-          }
-          setError(null);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to submit decision');
-        }
-      };
-
-      decisionInFlightRef.current = true;
-      setDecisionBusy(true);
-      try {
-        if (!snapshot?.pendingDecision) {
-          await loadSnapshot();
-          return;
-        }
-
-        await submitOnce(snapshot.pendingDecision.eventId);
-      } finally {
-        decisionInFlightRef.current = false;
-        setDecisionBusy(false);
-      }
-    },
-    [loadSnapshot, setError, setSnapshot, snapshot]
-  );
-
 
   const restartWorld = useCallback(async () => {
     if (!confirm('Restart world from day 0? This will reset progression.')) return;
@@ -342,7 +302,14 @@ export function DashboardShell() {
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      {snapshot.pendingDecision ? <DecisionModal decision={snapshot.pendingDecision} onChoose={handleDecision} disabled={decisionBusy} /> : null}
+      {snapshot.pendingDecision ? (
+        <DecisionModal
+          decision={snapshot.pendingDecision}
+          onOpenFrame={() => {
+            router.push('/dashboard/event-frame');
+          }}
+        />
+      ) : null}
     </div>
   );
 }
