@@ -324,3 +324,7 @@ Mitigation (still free-tier compatible):
 ---
 
 This repository is intentionally lean for global MVP launch on strict zero-cost infrastructure while preserving clean architecture and transactional integrity.
+
+
+## Deployment Notes
+- For Vercel monorepo deployments, this repo uses a root `vercel.json` that targets the `@mls/web` Next.js build command (`corepack pnpm --filter @mls/web build`) to avoid output-directory mismatch errors.
