@@ -43,10 +43,10 @@ export default function HierarchyPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between cyber-panel p-4">
+      <div className="flex items-center justify-between cyber-panel p-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-muted">Cyber Command Chain</p>
-          <h1 className="text-lg font-semibold text-text">Hierarchy, Current Office Holders & NPC Profiles</h1>
+          <h1 className="text-lg font-semibold text-text">Hierarchy & Smart NPC Command Chain</h1>
         </div>
         <div className="flex gap-2">
           <button onClick={refreshSnapshot} className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
@@ -94,7 +94,7 @@ export default function HierarchyPage() {
               {npc.division} / {npc.subdivision}
             </p>
             <p className="mt-2 text-xs text-text">Medals: {npc.medals.join(' · ')}</p>
-            <p className="text-xs text-text">Ribbons: {npc.ribbons.join(' · ')}</p>
+            <p className="text-xs text-text">Ribbons: {npc.ribbons.map((r) => r.name).join(' · ')}</p>
           </article>
         ))}
       </div>

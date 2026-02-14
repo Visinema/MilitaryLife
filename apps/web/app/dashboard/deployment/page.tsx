@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
-import { ApiError, api } from '@/lib/api-client';
+import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 type MissionStage = 'ASSIGNMENT' | 'BRIEF' | 'COORDINATION' | 'OPERATION' | 'DEBRIEF';
@@ -192,7 +192,22 @@ export default function DeploymentPage() {
         setSnapshot(response.snapshot);
       }
 
-      const details = response.details as { succeeded?: boolean; advancedDays?: number };
+      const details = response.details as { blocked?: boolean; reason?: string; succeeded?: boolean; advancedDays?: number };
+
+      if (missionPauseToken) {
+        await api.resume(missionPauseToken).catch(() => {
+          // Token can be expired/invalid if server already resumed implicitly.
+        });
+      }
+
+      setSnapshot(response.snapshot);
+
+      if (details.blocked) {
+        setMessage(details.reason ?? 'Mission belum bisa dijalankan saat ini.');
+        setMissionPauseToken(null);
+        return;
+      }
+
       const result = details.succeeded ? 'Operasi sukses dan target aman.' : 'Operasi selesai dengan kehilangan momentum.';
       setMessage(
         `${missionPack.title} selesai. Dipimpin: ${canInfluence ? 'Anda memimpin squad' : 'Commander NPC'}. ` +
@@ -200,11 +215,7 @@ export default function DeploymentPage() {
       );
       setMissionPauseToken(null);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setMessage('Penugasan misi belum masuk window 10 hari atau perlu sinkronisasi ulang snapshot.');
-      } else {
-        setMessage(err instanceof Error ? err.message : 'Mission execution failed');
-      }
+      setMessage(err instanceof Error ? err.message : 'Mission execution failed');
     } finally {
       setBusy(false);
     }

@@ -212,21 +212,35 @@ export async function runDeployment(
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const pendingError = ensureNoPendingDecision(state);
     if (pendingError) {
-      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+      const snapshot = buildSnapshot(state, nowMs);
+      const payload: ActionResult = {
+        type: 'DEPLOYMENT',
+        snapshot,
+        details: {
+          blocked: true,
+          reason: pendingError,
+          rankCode: snapshot.rankCode
+        }
+      };
+      return { payload };
     }
 
     const missionCooldownDays = 10;
     const daysSinceLastMission = Math.max(0, state.current_day - state.last_mission_day);
     if (daysSinceLastMission < missionCooldownDays) {
       const waitDays = missionCooldownDays - daysSinceLastMission;
-      return {
-        statusCode: 409,
-        payload: {
-          error: `Mission assignment not ready. Next assignment available in ${waitDays} in-game day(s).`,
+      const snapshot = buildSnapshot(state, nowMs);
+      const payload: ActionResult = {
+        type: 'DEPLOYMENT',
+        snapshot,
+        details: {
+          blocked: true,
+          reason: `Mission assignment not ready. Next assignment available in ${waitDays} in-game day(s).`,
           daysUntilNextMission: waitDays,
-          snapshot: buildSnapshot(state, nowMs)
+          rankCode: snapshot.rankCode
         }
       };
+      return { payload };
     }
 
     const action = applyDeploymentAction(state, missionType);

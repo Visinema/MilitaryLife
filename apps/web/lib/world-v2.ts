@@ -3,7 +3,8 @@ import type { GameSnapshot } from '@mls/shared/game-types';
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
 export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
 
-export const WORLD_V2_VERSION = '3.0.0';
+export const WORLD_V2_VERSION = '3.2.0';
+const MAX_NPCS = 25;
 
 export interface RibbonStyle {
   id: string;
@@ -31,6 +32,7 @@ export interface NpcV2Profile {
   lastSeenOnDay: number;
   relationScore: number;
   behaviorTag: 'DISCIPLINED' | 'AGGRESSIVE' | 'SUPPORTIVE' | 'STRATEGIST';
+  progressionScore: number;
 }
 
 export interface WorldV2State {
@@ -67,20 +69,7 @@ const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', '
 const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
 const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
 const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
-
-const UNIVERSAL_RANKS = [
-  'Recruit',
-  'Private',
-  'Corporal',
-  'Sergeant',
-  'Staff Sergeant',
-  'Warrant Officer',
-  'Lieutenant',
-  'Captain',
-  'Major',
-  'Colonel',
-  'Brigadier'
-] as const;
+const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier'] as const;
 
 type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
 
@@ -118,9 +107,7 @@ function toBranchLabel(branch: string) {
 
 function rankTrack(rankCode: string): WorldV2State['player']['rankTrack'] {
   const normalized = rankCode.toUpperCase();
-  if (normalized.startsWith('O') || normalized.includes('COL') || normalized.includes('MAJ') || normalized.includes('LT')) {
-    return 'OFFICER';
-  }
+  if (normalized.startsWith('O') || normalized.includes('COL') || normalized.includes('MAJ') || normalized.includes('LT')) return 'OFFICER';
   if (normalized.startsWith('WO') || normalized.includes('WARRANT')) return 'WARRANT';
   return 'ENLISTED';
 }
@@ -150,13 +137,6 @@ function pick<T>(source: T[], n: number) {
   return source[Math.abs(n) % source.length];
 }
 
-function statusFromRoll(roll: number): NpcStatus {
-  if (roll < 68) return 'ACTIVE';
-  if (roll < 84) return 'INJURED';
-  if (roll < 95) return 'RESERVE';
-  return 'KIA';
-}
-
 function behaviorTag(seedValue: number): NpcV2Profile['behaviorTag'] {
   const roll = Math.abs(seedValue) % 4;
   if (roll === 0) return 'DISCIPLINED';
@@ -169,19 +149,64 @@ function buildPlayerRibbons(snapshot: GameSnapshot): RibbonStyle[] {
   return RIBBON_DEFINITIONS.filter((definition) => definition.playerUnlock(snapshot));
 }
 
-function npcProgressScore(snapshot: GameSnapshot, slot: number, commandPower: number, relationScore: number, joinedOnDay: number): number {
-  const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
-  return Math.floor(commandPower * 0.35 + relationScore * 0.45 + tenure * 0.25 + slot * 0.4);
-}
-
-function buildNpcRibbons(snapshot: GameSnapshot, slot: number, commandPower: number, relationScore: number, joinedOnDay: number): RibbonStyle[] {
-  const score = npcProgressScore(snapshot, slot, commandPower, relationScore, joinedOnDay);
-  const unlocked = RIBBON_DEFINITIONS.filter((definition) => score >= definition.npcThreshold);
-  return unlocked.slice(0, 12);
-}
-
 function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): number {
   return snapshot.gameDay * 0.28 + snapshot.morale * 0.3 + snapshot.health * 0.25 + influenceRecord * 2.2;
+}
+
+function deathDayForSlot(baseSeed: number, slot: number): number | null {
+  if (Math.abs(baseSeed) % 7 !== 0) return null;
+  return 35 + (Math.abs(baseSeed) % 170) + slot;
+}
+
+function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: number): NpcV2Profile {
+  const baseSeed = seeded(snapshot, slot * 3 + 11);
+  const deathDay = deathDayForSlot(baseSeed, slot);
+  const replacementDelay = 18 + (Math.abs(baseSeed) % 12);
+
+  let generation = 0;
+  if (deathDay !== null && snapshot.gameDay > deathDay) {
+    generation = Math.floor((snapshot.gameDay - deathDay) / replacementDelay) + 1;
+  }
+
+  const joinedOnDay = Math.max(1, slot * 2 + generation * replacementDelay + (deathDay ?? 0));
+  const generationSeed = baseSeed + generation * 101;
+
+  const previousNpcDiedRecently = deathDay !== null && snapshot.gameDay > deathDay && snapshot.gameDay < deathDay + replacementDelay;
+  const status: NpcStatus = previousNpcDiedRecently
+    ? 'KIA'
+    : (() => {
+        const fatigue = Math.abs(generationSeed + snapshot.gameDay) % 100;
+        if (fatigue > 88) return 'INJURED';
+        if (fatigue > 72) return 'RESERVE';
+        return 'ACTIVE';
+      })();
+
+  const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
+  const relationScore = 38 + (Math.abs(generationSeed) % 58);
+  const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75);
+  const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4));
+  const unlocked = RIBBON_DEFINITIONS.filter((definition) => progressionScore >= definition.npcThreshold).slice(0, 10);
+  const rank = universalRankFromScore(progressionScore * 0.35 + commandPower * 0.55);
+
+  return {
+    id: `npc-slot-${slot}-gen-${generation}`,
+    slot,
+    name: `${pick(FIRST_NAMES, generationSeed)} ${pick(LAST_NAMES, generationSeed * 3)}`,
+    branch: toBranchLabel(snapshot.branch),
+    rank,
+    role: roleFromUniversalRank(rank, slot),
+    division: pick(DIVISIONS, generationSeed),
+    subdivision: pick(SUBDIVISIONS, generationSeed * 2),
+    medals: unlocked.slice(0, 4).map((ribbon) => ribbon.name),
+    ribbons: unlocked,
+    status,
+    commandPower,
+    joinedOnDay,
+    lastSeenOnDay: status === 'KIA' ? snapshot.gameDay : Math.max(joinedOnDay, snapshot.gameDay - 1),
+    relationScore,
+    behaviorTag: behaviorTag(generationSeed),
+    progressionScore
+  };
 }
 
 export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
@@ -189,44 +214,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const playerMedals = playerRibbons.slice(0, 6).map((ribbon) => ribbon.name);
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
-  const cycleLength = 45;
-  const cycle = Math.floor(snapshot.gameDay / cycleLength);
-  const replacementsThisCycle = (snapshot.gameDay % cycleLength) % 7;
-
-  const roster: NpcV2Profile[] = Array.from({ length: 18 }, (_, slot) => {
-    const waveOffset = Math.floor((slot + cycle + replacementsThisCycle) / 6);
-    const identitySeed = seeded(snapshot, slot) + waveOffset * 29;
-    const status = statusFromRoll(Math.abs(identitySeed) % 100);
-
-    const joinedOnDay = Math.max(1, cycle * cycleLength - waveOffset * 6 + slot);
-    const lastSeenOnDay = status === 'KIA' ? snapshot.gameDay - ((slot % 4) + 1) : snapshot.gameDay;
-    const commandPower = Math.max(10, 100 - slot * 4);
-    const relationScore = 35 + (Math.abs(identitySeed) % 60);
-    const ribbons = buildNpcRibbons(snapshot, slot, commandPower, relationScore, joinedOnDay);
-
-    return {
-      id: `npc-slot-${slot}-wave-${waveOffset}`,
-      slot,
-      name: `${pick(FIRST_NAMES, identitySeed)} ${pick(LAST_NAMES, identitySeed * 3)}`,
-      branch: toBranchLabel(snapshot.branch),
-      rank: universalRankFromScore(commandPower + relationScore * 0.35 + influenceRecord * 0.6 - slot * 1.5),
-      role: roleFromUniversalRank(
-        universalRankFromScore(commandPower + relationScore * 0.35 + influenceRecord * 0.6 - slot * 1.5),
-        slot
-      ),
-      division: pick(DIVISIONS, identitySeed),
-      subdivision: pick(SUBDIVISIONS, identitySeed * 2),
-      medals: ribbons.slice(0, 4).map((ribbon) => ribbon.name),
-      ribbons,
-      status,
-      commandPower,
-      joinedOnDay,
-      lastSeenOnDay,
-      relationScore,
-      behaviorTag: behaviorTag(identitySeed)
-    };
-  });
-
+  const roster = Array.from({ length: MAX_NPCS }, (_, slot) => buildNpcForSlot(snapshot, slot, influenceRecord));
   const hierarchy = [...roster].filter((npc) => npc.status !== 'KIA').sort((a, b) => b.commandPower - a.commandPower).slice(0, 8);
 
   const stats = {
@@ -234,7 +222,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     injured: roster.filter((npc) => npc.status === 'INJURED').length,
     reserve: roster.filter((npc) => npc.status === 'RESERVE').length,
     kia: roster.filter((npc) => npc.status === 'KIA').length,
-    replacementsThisCycle
+    replacementsThisCycle: roster.filter((npc) => npc.id.includes('-gen-') && !npc.id.endsWith('-gen-0')).length
   };
 
   return {
@@ -253,7 +241,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     stats,
     missionBrief: {
       title: `Operation Iron Network v${WORLD_V2_VERSION}`,
-      objective: 'Stabilize supply corridors, rotate command safely, and keep multi-division NPC units synchronized.',
+      objective: 'Stabilize supply corridors with realistic pacing and persistent smart-NPC progression.',
       sanctions: 'Commanders can issue warning, duty restriction, and promotion hold for failed orders or insubordination.',
       commandRule: 'Hierarchy authority flows from theater to division/subdivision leads with morale impact on non-compliance.',
       recruitmentWindow: snapshot.morale > 72 ? 'Special recruitment open (Tier-1 & specialist tracks).' : 'Standard recruitment only.',

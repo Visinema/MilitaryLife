@@ -78,7 +78,7 @@ export default function PeoplePage() {
         const message = lines[(current.length + selectedNpc.relationScore) % lines.length];
         return { ...prev, [selectedNpcId]: [...current.slice(-9), message] };
       });
-    }, 3200);
+    }, 4200);
     return () => window.clearInterval(timer);
   }, [selectedNpc?.id]);
 
@@ -97,10 +97,10 @@ export default function PeoplePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between cyber-panel p-4">
+      <div className="flex items-center justify-between cyber-panel p-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-muted">People & NPC Console</p>
-          <h1 className="text-lg font-semibold text-text">Realtime NPC Profiles, Avatars, and Interactions</h1>
+          <h1 className="text-lg font-semibold text-text">Realtime NPC Profiles & Smart Interaction</h1>
         </div>
         <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
           Back to Dashboard
@@ -111,10 +111,10 @@ export default function PeoplePage() {
       {!world && !error ? <p className="text-sm text-muted">Loading people list...</p> : null}
 
       {world ? (
-        <div className="grid gap-4 lg:grid-cols-[320px,1fr]">
+        <div className="grid gap-3 lg:grid-cols-[290px,1fr]">
           <aside className="cyber-panel p-3">
             <p className="text-xs uppercase tracking-[0.1em] text-muted">NPC / People List (Scroll Box)</p>
-            <div className="mt-2 max-h-[540px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-2 max-h-[520px] space-y-1.5 overflow-y-auto pr-1">
               {world.roster.map((npc) => (
                 <button
                   key={npc.id}
@@ -123,7 +123,7 @@ export default function PeoplePage() {
                 >
                   <p className="text-sm font-semibold text-text">{npc.name}</p>
                   <p className="text-xs text-muted">{npc.rank} · {npc.division}</p>
-                  <p className="text-xs text-muted">Behavior: {npc.behaviorTag} · Relation: {npc.relationScore}</p>
+                  <p className="text-xs text-muted">Behavior: {npc.behaviorTag} · Relation: {npc.relationScore} · Score: {npc.progressionScore}</p>
                   <span className={`mt-1 inline-flex rounded border px-2 py-0.5 text-[10px] uppercase ${statusTone(npc.status)}`}>{npc.status}</span>
                 </button>
               ))}
@@ -143,7 +143,8 @@ export default function PeoplePage() {
                   `${selectedNpc.division} / ${selectedNpc.subdivision}`,
                   `Behavior: ${selectedNpc.behaviorTag}`,
                   `Relation score: ${selectedNpc.relationScore}`,
-                  `Status: ${selectedNpc.status}`
+                  `Status: ${selectedNpc.status}`,
+                  `Progress score: ${selectedNpc.progressionScore}`
                 ]}
               />
             ) : null}
