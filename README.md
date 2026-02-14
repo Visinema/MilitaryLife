@@ -228,8 +228,9 @@ Railway deploy behavior is pinned via `railway.toml` (`build:api` + root `start`
 corepack pnpm --filter @mls/api migrate
 ```
 
-8. Confirm health endpoint.
-   - `GET /api/v1/health` now checks DB readiness and returns `503` if DB is down.
+8. Confirm health endpoints.
+   - `GET /api/v1/health` is liveness-only and should return `200` once service boots.
+   - `GET /api/v1/health/ready` checks DB readiness and returns `503` if DB is down.
 
 If startup logs show `ECONNREFUSED ::1:5432`, your API is using local DB config in Railway. Link PostgreSQL service and set a non-local `DATABASE_URL` (or rely on `DATABASE_PRIVATE_URL`).
 
@@ -295,7 +296,8 @@ server_reference_time_ms += (resume_now_ms - paused_at_ms)
 
 ## 14. Runbook
 
-- Health check: `GET /api/v1/health`
+- Health check (liveness): `GET /api/v1/health`
+- Readiness check (DB): `GET /api/v1/health/ready`
 - Migration: `corepack pnpm --filter @mls/api migrate`
 - Logs: Vercel function logs + Railway service logs
 - Recovery:

@@ -18,9 +18,28 @@ if (env.AUTO_MIGRATE_ON_BOOT) {
 
 const app = await buildApp();
 
-try {
+async function ensureDatabaseReady(): Promise<void> {
   await probeDatabase(app.db, app.env.DB_HEALTHCHECK_TIMEOUT_MS);
   await ensureCoreSchemaReady(app.db, env.DATABASE_URL, app.log);
+}
+
+async function retryDatabaseReadyInBackground(): Promise<void> {
+  const retryMs = 10_000;
+
+  while (true) {
+    try {
+      await ensureDatabaseReady();
+      app.log.info('database-ready-after-startup-retry');
+      return;
+    } catch (error) {
+      app.log.warn({ err: error, retryMs }, 'database-not-ready-retrying');
+      await new Promise((resolve) => setTimeout(resolve, retryMs));
+    }
+  }
+}
+
+try {
+  await ensureDatabaseReady();
 
   await app.listen({
     host: app.env.API_HOST,
@@ -36,4 +55,6 @@ try {
     host: app.env.API_HOST,
     port: app.env.API_PORT
   });
+
+  void retryDatabaseReadyInBackground();
 }
