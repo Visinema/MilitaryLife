@@ -358,6 +358,37 @@ export async function chooseDecision(
   });
 }
 
+
+export async function restartWorldFromZero(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs, client, profileId }) => {
+    state.server_reference_time_ms = nowMs;
+    state.current_day = 0;
+    state.paused_at_ms = null;
+    state.pause_reason = null;
+    state.pause_token = null;
+    state.pause_expires_at_ms = null;
+    state.rank_index = 0;
+    state.money_cents = 0;
+    state.morale = 70;
+    state.health = 80;
+    state.promotion_points = 0;
+    state.days_in_rank = 0;
+    state.next_event_day = 3;
+    state.last_mission_day = -10;
+    state.pending_event_id = null;
+    state.pending_event_payload = null;
+
+    await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
+
+    return {
+      payload: {
+        ok: true,
+        snapshot: buildSnapshot(state, nowMs)
+      }
+    };
+  });
+}
+
 export async function getDecisionLogs(
   request: FastifyRequest,
   reply: FastifyReply,

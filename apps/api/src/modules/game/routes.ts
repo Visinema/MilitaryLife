@@ -18,7 +18,8 @@ import {
   resumeGame,
   runCareerReview,
   runDeployment,
-  runTraining
+  runTraining,
+  restartWorldFromZero
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -64,6 +65,11 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/actions/career-review', async (request, reply) => {
     await runCareerReview(request, reply);
+  });
+
+
+  app.post('/actions/restart-world', async (request, reply) => {
+    await restartWorldFromZero(request, reply);
   });
 
   app.post('/decisions/:eventId/choose', async (request, reply) => {

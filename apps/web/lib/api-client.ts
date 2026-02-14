@@ -112,6 +112,9 @@ export const api = {
   careerReview() {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});
   },
+  restartWorld() {
+    return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {});
+  },
   chooseDecision(eventId: number, optionId: string) {
     return request<{ result: DecisionResult | null; snapshot: GameSnapshot; conflict?: boolean; reason?: string }>(`/game/decisions/${eventId}/choose`, 'POST', {
       optionId

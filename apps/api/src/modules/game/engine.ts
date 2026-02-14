@@ -216,6 +216,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     pauseReason: state.pause_reason,
     pauseToken: state.pause_token,
     pauseExpiresAtMs: state.pause_expires_at_ms,
+    lastMissionDay: state.last_mission_day,
     pendingDecision:
       state.pending_event_id && state.pending_event_payload
         ? {

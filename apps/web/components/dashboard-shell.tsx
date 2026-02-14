@@ -34,6 +34,8 @@ export function DashboardShell() {
   });
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const decisionInFlightRef = useRef(false);
   const snapshotCooldownUntilRef = useRef(0);
@@ -180,6 +182,23 @@ export function DashboardShell() {
     [loadSnapshot, setError, setSnapshot, snapshot]
   );
 
+
+  const restartWorld = useCallback(async () => {
+    if (!confirm('Restart world from day 0? This will reset progression.')) return;
+
+    setResetBusy(true);
+    try {
+      const response = await api.restartWorld();
+      setSnapshot(response.snapshot);
+      setError(null);
+      setSettingsOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restart world');
+    } finally {
+      setResetBusy(false);
+    }
+  }, [setError, setSnapshot]);
+
   const branchOptions = useMemo(() => BRANCH_OPTIONS[profileForm.country], [profileForm.country]);
 
   if (loading && !snapshot && !noProfile) {
@@ -274,6 +293,28 @@ export function DashboardShell() {
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
       <ActionButtons />
+
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setSettingsOpen((prev) => !prev)}
+          className="rounded border border-border bg-panel px-3 py-1.5 text-xs text-text hover:border-accent"
+        >
+          {settingsOpen ? 'Close Settings' : 'Settings'}
+        </button>
+      </div>
+
+      {settingsOpen ? (
+        <div className="rounded-md border border-border bg-panel p-3">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">World Settings</p>
+          <button
+            onClick={restartWorld}
+            disabled={resetBusy}
+            className="mt-2 rounded border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger disabled:opacity-60"
+          >
+            {resetBusy ? 'Restarting...' : 'Restart World from 0 (Universal)'}
+          </button>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <button
