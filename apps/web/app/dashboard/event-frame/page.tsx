@@ -37,6 +37,10 @@ export default function EventFramePage() {
     try {
       const response = await api.chooseDecision(pending.eventId, optionId);
       setSnapshot(response.snapshot);
+      if (!response.result) {
+        setError(response.reason ?? 'Decision tidak dapat diproses karena konflik data terbaru.');
+        return;
+      }
       setResultText(
         `Hasil: uang ${response.result.applied.moneyDelta}, morale ${response.result.applied.moraleDelta}, health ${response.result.applied.healthDelta}, promotion ${response.result.applied.promotionPointDelta}.`
       );
