@@ -27,7 +27,7 @@ export default function EventFramePage() {
 
   const header = useMemo(() => {
     if (!pending) return 'Tidak ada event aktif.';
-    return `${pending.title} · Chance ${pending.chancePercent}%`;
+    return `${pending.title} · Chance ${pending.chancePercent ?? 35}%`;
   }, [pending]);
 
   const choose = async (optionId: string) => {
@@ -75,7 +75,7 @@ export default function EventFramePage() {
 
         {pending ? (
           <>
-            <p className="mt-2 text-sm text-muted">Condition: {pending.conditionLabel}</p>
+            <p className="mt-2 text-sm text-muted">Condition: {pending.conditionLabel || 'Condition unavailable'}</p>
             <div className="mt-4 space-y-2">
               {pending.options.map((option) => (
                 <button
@@ -85,7 +85,7 @@ export default function EventFramePage() {
                   className="w-full rounded border border-border bg-bg px-4 py-3 text-left text-sm text-text hover:border-accent disabled:opacity-60"
                 >
                   <p>{busy === option.id ? 'Memproses...' : option.label}</p>
-                  <p className="mt-1 text-xs text-muted">Impact: {option.impactScope} · {option.effectPreview}</p>
+                  <p className="mt-1 text-xs text-muted">Impact: {option.impactScope || 'SELF'} · {option.effectPreview || 'Effect summary unavailable'}</p>
                 </button>
               ))}
             </div>

@@ -209,6 +209,41 @@ function snapshotRankCode(state: DbGameStateRow): string {
   return BRANCH_CONFIG[state.branch].ranks[state.rank_index] ?? BRANCH_CONFIG[state.branch].ranks.at(-1) ?? 'UNKNOWN';
 }
 
+function normalizePendingDecisionPayload(state: DbGameStateRow): GameSnapshot['pendingDecision'] {
+  if (!state.pending_event_id || !state.pending_event_payload) {
+    return null;
+  }
+
+  const payload = state.pending_event_payload as {
+    title?: string;
+    description?: string;
+    chancePercent?: number;
+    conditionLabel?: string;
+    options?: Array<{
+      id?: string;
+      label?: string;
+      impactScope?: 'SELF' | 'ORGANIZATION';
+      effectPreview?: string;
+    }>;
+  };
+
+  return {
+    eventId: state.pending_event_id,
+    title: payload.title ?? 'Operational Event',
+    description: payload.description ?? 'Unexpected field update requires your decision.',
+    chancePercent: Number.isFinite(payload.chancePercent) ? Math.max(1, Math.min(100, Number(payload.chancePercent))) : 35,
+    conditionLabel:
+      payload.conditionLabel ??
+      `Rank ${snapshotRankCode(state)} · Day ${state.current_day} · Readiness ${state.health}/${state.morale}`,
+    options: (payload.options ?? []).map((option, index) => ({
+      id: option.id ?? `option-${index + 1}`,
+      label: option.label ?? `Option ${index + 1}`,
+      impactScope: option.impactScope === 'ORGANIZATION' ? 'ORGANIZATION' : 'SELF',
+      effectPreview: option.effectPreview ?? 'Effect summary unavailable'
+    }))
+  };
+}
+
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
   return {
@@ -228,17 +263,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     pauseToken: state.pause_token,
     pauseExpiresAtMs: state.pause_expires_at_ms,
     lastMissionDay: state.last_mission_day,
-    pendingDecision:
-      state.pending_event_id && state.pending_event_payload
-        ? {
-            eventId: state.pending_event_id,
-            title: state.pending_event_payload.title,
-            description: state.pending_event_payload.description,
-            chancePercent: state.pending_event_payload.chancePercent,
-            conditionLabel: state.pending_event_payload.conditionLabel,
-            options: state.pending_event_payload.options
-          }
-        : null
+    pendingDecision: normalizePendingDecisionPayload(state)
   };
 }
 

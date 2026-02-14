@@ -16,8 +16,8 @@ export function DecisionModal({ decision, onOpenFrame }: DecisionModalProps) {
         <p className="mt-2 text-sm text-muted">{decision.description}</p>
 
         <div className="mt-4 grid gap-2 rounded border border-border bg-bg/60 p-3 text-xs text-muted md:grid-cols-2">
-          <p>Chance: <span className="text-text">{decision.chancePercent}%</span></p>
-          <p>Condition: <span className="text-text">{decision.conditionLabel}</span></p>
+          <p>Chance: <span className="text-text">{decision.chancePercent ?? 35}%</span></p>
+          <p>Condition: <span className="text-text">{decision.conditionLabel || 'Condition unavailable'}</span></p>
         </div>
 
         <div className="mt-4 rounded border border-accent/40 bg-accent/10 p-3">

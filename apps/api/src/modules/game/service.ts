@@ -299,12 +299,12 @@ export async function chooseDecision(
   optionId: string
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs, client, profileId }) => {
-    if (!state.pending_event_id || state.pending_event_id !== eventId || state.pause_reason !== 'DECISION') {
+    if (!state.pending_event_id || state.pending_event_id !== eventId) {
       return {
         payload: {
           result: null,
           conflict: true,
-          reason: 'No matching pending decision',
+          reason: state.pending_event_id ? 'Pending decision changed on server' : 'No pending decision available',
           snapshot: buildSnapshot(state, nowMs)
         }
       };
