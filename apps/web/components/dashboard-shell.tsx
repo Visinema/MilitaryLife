@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api-client';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
@@ -34,6 +34,8 @@ export function DashboardShell() {
   });
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const decisionInFlightRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
     setLoading(true);
@@ -132,6 +134,10 @@ export function DashboardShell() {
 
   const handleDecision = useCallback(
     async (optionId: string) => {
+      if (decisionInFlightRef.current) {
+        return;
+      }
+
       const submit = async (eventId: number, allowRetry: boolean): Promise<void> => {
         try {
           const response = await api.chooseDecision(eventId, optionId);
@@ -154,12 +160,19 @@ export function DashboardShell() {
         }
       };
 
-      if (!snapshot?.pendingDecision) {
-        await loadSnapshot();
-        return;
-      }
+      decisionInFlightRef.current = true;
+      setDecisionBusy(true);
+      try {
+        if (!snapshot?.pendingDecision) {
+          await loadSnapshot();
+          return;
+        }
 
-      await submit(snapshot.pendingDecision.eventId, true);
+        await submit(snapshot.pendingDecision.eventId, true);
+      } finally {
+        decisionInFlightRef.current = false;
+        setDecisionBusy(false);
+      }
     },
     [loadSnapshot, setError, setSnapshot, snapshot]
   );
@@ -285,7 +298,7 @@ export function DashboardShell() {
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      {snapshot.pendingDecision ? <DecisionModal decision={snapshot.pendingDecision} onChoose={handleDecision} /> : null}
+      {snapshot.pendingDecision ? <DecisionModal decision={snapshot.pendingDecision} onChoose={handleDecision} disabled={decisionBusy} /> : null}
     </div>
   );
 }

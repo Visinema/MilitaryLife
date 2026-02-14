@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,7 +21,11 @@ export default function LoginPage() {
       await api.login(email, password);
       router.replace('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Email atau password salah.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed');
+      }
     } finally {
       setLoading(false);
     }

@@ -6,9 +6,10 @@ import type { PendingDecision } from '@mls/shared/game-types';
 interface DecisionModalProps {
   decision: PendingDecision;
   onChoose: (optionId: string) => Promise<void>;
+  disabled?: boolean;
 }
 
-export function DecisionModal({ decision, onChoose }: DecisionModalProps) {
+export function DecisionModal({ decision, onChoose, disabled = false }: DecisionModalProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +38,7 @@ export function DecisionModal({ decision, onChoose }: DecisionModalProps) {
             <button
               key={option.id}
               onClick={() => handleChoose(option.id)}
-              disabled={Boolean(loadingId)}
+              disabled={Boolean(loadingId) || disabled}
               className="w-full rounded border border-border bg-bg px-4 py-3 text-left text-sm text-text transition hover:border-accent disabled:opacity-60"
             >
               {loadingId === option.id ? 'Applying...' : option.label}
