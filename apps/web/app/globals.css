@@ -10,8 +10,21 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #161c1a;
-  color: #e8ece8;
+  background: radial-gradient(circle at 20% 10%, rgba(60, 110, 255, 0.16), transparent 40%),
+    radial-gradient(circle at 80% 0%, rgba(53, 242, 255, 0.16), transparent 35%),
+    #070b16;
+  color: #e6f3ff;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(53, 242, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 242, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.18;
 }
 
 * {
@@ -28,4 +41,11 @@ select,
 button,
 textarea {
   font: inherit;
+}
+
+@layer components {
+  .cyber-panel {
+    @apply rounded-md border border-border bg-panel shadow-panel;
+    backdrop-filter: blur(8px);
+  }
 }
