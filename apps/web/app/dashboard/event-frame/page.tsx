@@ -38,6 +38,15 @@ export default function EventFramePage() {
       const response = await api.chooseDecision(pending.eventId, optionId);
       setSnapshot(response.snapshot);
       if (!response.result) {
+        const refreshed = await api.snapshot();
+        setSnapshot(refreshed.snapshot);
+        if (!refreshed.snapshot.pendingDecision) {
+          setResultText('Event sudah diselesaikan dari sesi lain. Mengembalikan ke dashboard...');
+          redirectTimerRef.current = window.setTimeout(() => {
+            router.replace('/dashboard');
+          }, 1200);
+          return;
+        }
         setError(response.reason ?? 'Decision tidak dapat diproses karena konflik data terbaru.');
         return;
       }

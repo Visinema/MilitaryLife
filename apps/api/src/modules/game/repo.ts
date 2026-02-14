@@ -25,13 +25,13 @@ export interface DbGameStateRow {
   pending_event_payload: {
     title: string;
     description: string;
-    chancePercent: number;
-    conditionLabel: string;
+    chancePercent?: number;
+    conditionLabel?: string;
     options: Array<{
       id: string;
       label: string;
-      impactScope: 'SELF' | 'ORGANIZATION';
-      effectPreview: string;
+      impactScope?: 'SELF' | 'ORGANIZATION';
+      effectPreview?: string;
     }>;
   } | null;
   version: number;

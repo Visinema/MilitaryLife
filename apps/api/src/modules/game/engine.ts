@@ -23,6 +23,12 @@ export function autoResumeIfExpired(state: DbGameStateRow, nowMs: number): boole
     return false;
   }
 
+  // Keep decision lock active until user resolves pending decision.
+  // Auto-resuming here causes stale "No matching pending decision" conflicts on Event Frame.
+  if (state.pause_reason === 'DECISION' && state.pending_event_id) {
+    return false;
+  }
+
   resumeState(state, nowMs);
   return true;
 }
@@ -137,6 +143,18 @@ export function tryPromotion(state: DbGameStateRow): boolean {
   return true;
 }
 
+function fallbackImpactScope(option: { effects?: { money?: number; morale?: number; promotionPoints?: number } }): 'SELF' | 'ORGANIZATION' {
+  return (option.effects?.promotionPoints ?? 0) + (option.effects?.morale ?? 0) >= 4 || Math.abs(option.effects?.money ?? 0) >= 1200
+    ? 'ORGANIZATION'
+    : 'SELF';
+}
+
+function fallbackEffectPreview(option: {
+  effects?: { money?: number; morale?: number; health?: number; promotionPoints?: number };
+}): string {
+  return `Δ$${Math.round((option.effects?.money ?? 0) / 100)} · M ${option.effects?.morale ?? 0} · H ${option.effects?.health ?? 0} · P ${option.effects?.promotionPoints ?? 0}`;
+}
+
 export async function maybeQueueDecisionEvent(
   client: PoolClient,
   state: DbGameStateRow,
@@ -193,11 +211,8 @@ export async function maybeQueueDecisionEvent(
     options: picked.options.map((option) => ({
       id: option.id,
       label: option.label,
-      impactScope:
-        (option.effects?.promotionPoints ?? 0) + (option.effects?.morale ?? 0) >= 4 || Math.abs(option.effects?.money ?? 0) >= 1200
-          ? 'ORGANIZATION'
-          : 'SELF',
-      effectPreview: `Δ$${Math.round((option.effects?.money ?? 0) / 100)} · M ${option.effects?.morale ?? 0} · H ${option.effects?.health ?? 0} · P ${option.effects?.promotionPoints ?? 0}`
+      impactScope: fallbackImpactScope(option),
+      effectPreview: fallbackEffectPreview(option)
     }))
   };
 
@@ -227,13 +242,13 @@ function normalizePendingDecisionPayload(state: DbGameStateRow): GameSnapshot['p
     }>;
   };
 
-  return {
+  const normalized: NonNullable<GameSnapshot['pendingDecision']> = {
     eventId: state.pending_event_id,
     title: payload.title ?? 'Operational Event',
     description: payload.description ?? 'Unexpected field update requires your decision.',
     chancePercent: Number.isFinite(payload.chancePercent) ? Math.max(1, Math.min(100, Number(payload.chancePercent))) : 35,
     conditionLabel:
-      payload.conditionLabel ??
+      payload.conditionLabel?.trim() ??
       `Rank ${snapshotRankCode(state)} · Day ${state.current_day} · Readiness ${state.health}/${state.morale}`,
     options: (payload.options ?? []).map((option, index) => ({
       id: option.id ?? `option-${index + 1}`,
@@ -242,6 +257,16 @@ function normalizePendingDecisionPayload(state: DbGameStateRow): GameSnapshot['p
       effectPreview: option.effectPreview ?? 'Effect summary unavailable'
     }))
   };
+
+  state.pending_event_payload = {
+    title: normalized.title,
+    description: normalized.description,
+    chancePercent: normalized.chancePercent,
+    conditionLabel: normalized.conditionLabel,
+    options: normalized.options
+  };
+
+  return normalized;
 }
 
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
