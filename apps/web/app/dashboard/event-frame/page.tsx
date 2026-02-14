@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
@@ -13,10 +13,14 @@ export default function EventFramePage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [resultText, setResultText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const redirectTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (snapshot) return;
-    void api.snapshot().then((res) => setSnapshot(res.snapshot));
+    void api
+      .snapshot()
+      .then((res) => setSnapshot(res.snapshot))
+      .catch((err: Error) => setError(`Gagal memuat snapshot: ${err.message}`));
   }, [setSnapshot, snapshot]);
 
   const pending = snapshot?.pendingDecision ?? null;
@@ -36,7 +40,7 @@ export default function EventFramePage() {
       setResultText(
         `Hasil: uang ${response.result.applied.moneyDelta}, morale ${response.result.applied.moraleDelta}, health ${response.result.applied.healthDelta}, promotion ${response.result.applied.promotionPointDelta}.`
       );
-      window.setTimeout(() => {
+      redirectTimerRef.current = window.setTimeout(() => {
         router.replace('/dashboard');
       }, 1400);
     } catch (err) {
@@ -45,6 +49,14 @@ export default function EventFramePage() {
       setBusy(null);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        window.clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="space-y-4">

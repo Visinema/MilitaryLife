@@ -145,7 +145,14 @@ export const api = {
   npcActivity() {
     return request<{
       generatedAt: number;
-      items: Array<{ npcId: string; lastTickDay: number; operation: string; result: string }>;
+      items: Array<{
+        npcId: string;
+        lastTickDay: number;
+        operation: string;
+        result: string;
+        readiness: number;
+        morale: number;
+      }>;
     }>('/game/npc-activity', 'GET');
   }
 };

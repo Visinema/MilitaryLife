@@ -12,11 +12,15 @@ export default function ProfilePage() {
   const router = useRouter();
   const snapshot = useGameStore((state) => state.snapshot);
   const setSnapshot = useGameStore((state) => state.setSnapshot);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (snapshot) return;
-    void api.snapshot().then((response) => setSnapshot(response.snapshot));
+    void api
+      .snapshot()
+      .then((response) => setSnapshot(response.snapshot))
+      .catch((err: Error) => setError(`Gagal memuat profile: ${err.message}`));
   }, [setSnapshot, snapshot]);
 
   const logout = async () => {
@@ -40,6 +44,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="rounded-md border border-border bg-panel p-4 shadow-panel">
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
         <p className="text-xs uppercase tracking-[0.12em] text-muted">Current Branch</p>
         <p className="mt-1 text-base text-text">{snapshot?.branch ?? '-'}</p>
 
