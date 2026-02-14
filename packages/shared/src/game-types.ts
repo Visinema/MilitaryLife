@@ -23,6 +23,7 @@ export interface GameSnapshot {
   pauseReason: PauseReason | null;
   pauseToken: string | null;
   pauseExpiresAtMs: number | null;
+  lastMissionDay: number;
   pendingDecision: PendingDecision | null;
 }
 

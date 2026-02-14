@@ -132,8 +132,10 @@ export default function DeploymentPage() {
 
   const missionPack = useMemo(() => (snapshot ? buildMissionPack(snapshot) : null), [snapshot]);
   const canInfluence = Boolean(missionPack && missionPack.authority >= 60);
-  const assignmentWindowOpen = Boolean(snapshot && snapshot.gameDay % MISSION_ASSIGNMENT_INTERVAL_DAYS === 0);
-  const nextWindowInDays = snapshot ? MISSION_ASSIGNMENT_INTERVAL_DAYS - (snapshot.gameDay % MISSION_ASSIGNMENT_INTERVAL_DAYS) : 0;
+  const lastMissionDay = snapshot?.lastMissionDay ?? -MISSION_ASSIGNMENT_INTERVAL_DAYS;
+  const daysSinceLastMission = snapshot ? Math.max(0, snapshot.gameDay - lastMissionDay) : 0;
+  const assignmentWindowOpen = daysSinceLastMission >= MISSION_ASSIGNMENT_INTERVAL_DAYS;
+  const nextWindowInDays = assignmentWindowOpen ? 0 : MISSION_ASSIGNMENT_INTERVAL_DAYS - daysSinceLastMission;
 
   const togglePrep = (id: string) => {
     setSelectedPrep((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
@@ -150,7 +152,7 @@ export default function DeploymentPage() {
       setMissionPauseToken(pauseRes.pauseToken);
       setSnapshot(pauseRes.snapshot);
       setStage('OPERATION');
-      setMessage('Mission clock paused. Operation frame berjalan tanpa progres waktu dunia.');
+      setMessage('Mission clock paused. Operation frame berjalan tanpa progres waktu dunia (1 hari = 4 detik realtime).');
       setOpProgress(0);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Failed to start mission operation');
@@ -235,8 +237,8 @@ export default function DeploymentPage() {
           Command authority: {Math.round(missionPack.authority)} / 100 · Durasi misi: {missionPack.durationDays} hari.
         </p>
         <p className="mt-1 text-xs text-muted">
-          Assignment window: setiap {MISSION_ASSIGNMENT_INTERVAL_DAYS} hari ·{' '}
-          {assignmentWindowOpen ? 'ACTIVE sekarang' : `next in ${nextWindowInDays} day(s)`}
+          Assignment window: minimal tiap {MISSION_ASSIGNMENT_INTERVAL_DAYS} hari dari misi terakhir ·{' '}
+          {assignmentWindowOpen ? 'READY sekarang' : `ready in ${nextWindowInDays} day(s)`}
         </p>
       </div>
 

@@ -37,6 +37,7 @@ export interface WorldV2State {
   player: {
     branchLabel: string;
     rankTrack: 'ENLISTED' | 'WARRANT' | 'OFFICER';
+    universalRank: string;
     uniformTone: string;
     medals: string[];
     ribbons: RibbonStyle[];
@@ -66,6 +67,22 @@ const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', '
 const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
 const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
 const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
+
+const UNIVERSAL_RANKS = [
+  'Recruit',
+  'Private',
+  'Corporal',
+  'Sergeant',
+  'Staff Sergeant',
+  'Warrant Officer',
+  'Lieutenant',
+  'Captain',
+  'Major',
+  'Colonel',
+  'Brigadier'
+] as const;
+
+type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
 
 interface RibbonDefinition extends RibbonStyle {
   playerUnlock: (snapshot: GameSnapshot) => boolean;
@@ -100,9 +117,24 @@ function toBranchLabel(branch: string) {
 }
 
 function rankTrack(rankCode: string): WorldV2State['player']['rankTrack'] {
-  if (rankCode.startsWith('O')) return 'OFFICER';
-  if (rankCode.startsWith('WO')) return 'WARRANT';
+  const normalized = rankCode.toUpperCase();
+  if (normalized.startsWith('O') || normalized.includes('COL') || normalized.includes('MAJ') || normalized.includes('LT')) {
+    return 'OFFICER';
+  }
+  if (normalized.startsWith('WO') || normalized.includes('WARRANT')) return 'WARRANT';
   return 'ENLISTED';
+}
+
+function universalRankFromScore(score: number): UniversalRank {
+  const idx = Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, Math.floor(score / 10)));
+  return UNIVERSAL_RANKS[idx] ?? 'Recruit';
+}
+
+function roleFromUniversalRank(rank: UniversalRank, slot: number): string {
+  if (rank === 'Brigadier' || rank === 'Colonel') return slot === 0 ? 'Theater Commander' : 'Deputy Commander';
+  if (rank === 'Major' || rank === 'Captain') return 'Division Commander';
+  if (rank === 'Lieutenant' || rank === 'Warrant Officer') return 'Sector Leader';
+  return 'Field Commander';
 }
 
 function uniformTone(branch: string) {
@@ -148,6 +180,10 @@ function buildNpcRibbons(snapshot: GameSnapshot, slot: number, commandPower: num
   return unlocked.slice(0, 12);
 }
 
+function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): number {
+  return snapshot.gameDay * 0.28 + snapshot.morale * 0.3 + snapshot.health * 0.25 + influenceRecord * 2.2;
+}
+
 export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const playerRibbons = buildPlayerRibbons(snapshot);
   const playerMedals = playerRibbons.slice(0, 6).map((ribbon) => ribbon.name);
@@ -173,8 +209,11 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       slot,
       name: `${pick(FIRST_NAMES, identitySeed)} ${pick(LAST_NAMES, identitySeed * 3)}`,
       branch: toBranchLabel(snapshot.branch),
-      rank: slot < 2 ? 'Colonel' : slot < 6 ? 'Major' : slot < 12 ? 'Captain' : 'Sergeant',
-      role: slot === 0 ? 'Theater Commander' : slot === 1 ? 'Deputy Commander' : slot < 6 ? 'Division Commander' : 'Field Commander',
+      rank: universalRankFromScore(commandPower + relationScore * 0.35 + influenceRecord * 0.6 - slot * 1.5),
+      role: roleFromUniversalRank(
+        universalRankFromScore(commandPower + relationScore * 0.35 + influenceRecord * 0.6 - slot * 1.5),
+        slot
+      ),
       division: pick(DIVISIONS, identitySeed),
       subdivision: pick(SUBDIVISIONS, identitySeed * 2),
       medals: ribbons.slice(0, 4).map((ribbon) => ribbon.name),
@@ -202,6 +241,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     player: {
       branchLabel: toBranchLabel(snapshot.branch),
       rankTrack: rankTrack(snapshot.rankCode),
+      universalRank: universalRankFromScore(playerRankScore(snapshot, influenceRecord)),
       uniformTone: uniformTone(snapshot.branch),
       medals: playerMedals,
       ribbons: playerRibbons.slice(0, 12),

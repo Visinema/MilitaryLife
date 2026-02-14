@@ -42,11 +42,11 @@ export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shou
               <span key={idx} className="h-3 w-3 rotate-45 border border-accent bg-accent/30" />
             ))}
           </div>
-          <div className="absolute right-2 top-24 grid grid-cols-3 gap-1">
+          <div className="absolute left-1/2 top-[118px] grid -translate-x-1/2 grid-cols-4 gap-[2px] rounded bg-black/15 p-1">
             {ribbons.slice(0, 12).map((ribbon) => (
               <div
                 key={ribbon.id}
-                className="h-2 w-6 rounded-sm border border-border"
+                className="h-[6px] w-5 rounded-[2px] border border-border/70"
                 style={{ background: ribbonBackground(ribbon) }}
                 title={`${ribbon.name} (+${ribbon.influenceBuff} influence)`}
               />

@@ -1,4 +1,4 @@
-export const GAME_MS_PER_DAY = 10_000;
+export const GAME_MS_PER_DAY = 4_000;
 export const IN_GAME_START_DATE = '2026-01-01';
 
 export const COUNTRIES = ['US', 'ID'] as const;
