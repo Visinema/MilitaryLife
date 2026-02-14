@@ -7,8 +7,8 @@ import { api, ApiError } from '@/lib/api-client';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { useGameStore } from '@/store/game-store';
 import { ActionButtons } from './action-buttons';
-import { StatGrid } from './stat-grid';
 import { TopbarTime } from './topbar-time';
+import { V2CommandCenter } from './v2-command-center';
 
 const DecisionModal = dynamic(() => import('./decision-modal').then((mod) => mod.DecisionModal), {
   ssr: false
@@ -233,7 +233,7 @@ export function DashboardShell() {
   return (
     <div className="space-y-4">
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
-      <StatGrid snapshot={snapshot} />
+      <V2CommandCenter snapshot={snapshot} />
       <ActionButtons />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
