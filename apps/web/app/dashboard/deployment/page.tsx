@@ -184,14 +184,6 @@ export default function DeploymentPage() {
       const preferredAggressive = selectedStrategy === 'wedge' && canInfluence;
       const missionType: 'PATROL' | 'SUPPORT' = preferredAggressive ? 'PATROL' : 'SUPPORT';
       const response = await api.deployment(missionType, missionPack.durationDays);
-
-      if (missionPauseToken) {
-        const resumed = await api.resume(missionPauseToken);
-        setSnapshot(resumed.snapshot);
-      } else {
-        setSnapshot(response.snapshot);
-      }
-
       const details = response.details as { blocked?: boolean; reason?: string; succeeded?: boolean; advancedDays?: number };
 
       if (missionPauseToken) {
@@ -223,7 +215,7 @@ export default function DeploymentPage() {
 
   if (!snapshot || !missionPack) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
           <div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading deployment console...</div>
       </div>
     );
@@ -231,7 +223,7 @@ export default function DeploymentPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-md border border-border bg-panel px-4 py-3 shadow-panel">
+      <div className="flex items-center justify-between rounded-md border border-border bg-panel px-3 py-2.5 shadow-panel">
         <h1 className="text-lg font-semibold">Mission Operations</h1>
         <Link href="/dashboard" className="text-sm text-muted underline">
           Back to Dashboard

@@ -120,7 +120,8 @@ export async function ensureSingleActiveSession(
   );
 
   if (stillValid.rows[0]?.exists) {
-    return 'conflict';
+    await client.query(`UPDATE game_states SET active_session_id = $2 WHERE profile_id = $1`, [profileId, incomingSessionId]);
+    return 'ok';
   }
 
   await client.query(`UPDATE game_states SET active_session_id = $2 WHERE profile_id = $1`, [profileId, incomingSessionId]);

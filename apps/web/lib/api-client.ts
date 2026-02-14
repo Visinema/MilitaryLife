@@ -113,7 +113,7 @@ export const api = {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});
   },
   chooseDecision(eventId: number, optionId: string) {
-    return request<{ result: DecisionResult; snapshot: GameSnapshot }>(`/game/decisions/${eventId}/choose`, 'POST', {
+    return request<{ result: DecisionResult | null; snapshot: GameSnapshot; conflict?: boolean; reason?: string }>(`/game/decisions/${eventId}/choose`, 'POST', {
       optionId
     });
   },

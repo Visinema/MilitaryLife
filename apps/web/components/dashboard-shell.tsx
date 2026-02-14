@@ -153,19 +153,12 @@ export function DashboardShell() {
         try {
           const response = await api.chooseDecision(eventId, optionId);
           setSnapshot(response.snapshot);
-          setError(null);
-        } catch (err) {
-          if (err instanceof ApiError && err.status === 409) {
-            setError('Decision sudah berubah di server. Sinkronisasi data terbaru...');
-            try {
-              const refreshed = await api.snapshot();
-              setSnapshot(refreshed.snapshot);
-            } catch {
-              snapshotCooldownUntilRef.current = Date.now() + 15_000;
-              setError('Decision berubah, tetapi server belum siap (5xx). Coba lagi beberapa detik.');
-            }
+          if (response.conflict) {
+            setError(response.reason ?? 'Decision sudah berubah di server.');
             return;
           }
+          setError(null);
+        } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to submit decision');
         }
       };
@@ -277,12 +270,12 @@ export function DashboardShell() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
       <ActionButtons />
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <button
           onClick={() => runAction('training')}
           disabled={Boolean(actionBusy)}

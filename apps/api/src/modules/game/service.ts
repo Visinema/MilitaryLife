@@ -300,7 +300,14 @@ export async function chooseDecision(
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs, client, profileId }) => {
     if (!state.pending_event_id || state.pending_event_id !== eventId || state.pause_reason !== 'DECISION') {
-      return { statusCode: 409, payload: { error: 'No matching pending decision' } };
+      return {
+        payload: {
+          result: null,
+          conflict: true,
+          reason: 'No matching pending decision',
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
     }
 
     const event = await getEventById(client, eventId);
