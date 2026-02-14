@@ -71,6 +71,22 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
   return elapsed;
 }
 
+
+export function advanceGameDays(state: DbGameStateRow, days: number): number {
+  const elapsed = Math.max(0, Math.floor(days));
+  if (elapsed === 0) {
+    return 0;
+  }
+
+  const branchConfig = BRANCH_CONFIG[state.branch];
+  const salary = branchConfig.salaryPerDayCents[state.rank_index] ?? branchConfig.salaryPerDayCents.at(-1) ?? 0;
+
+  state.current_day += elapsed;
+  state.money_cents += salary * elapsed;
+  state.days_in_rank += elapsed;
+  return elapsed;
+}
+
 function canPromote(state: DbGameStateRow): boolean {
   if (state.rank_index >= 6) return false;
 
@@ -333,6 +349,7 @@ export function snapshotStateForLog(state: DbGameStateRow): Record<string, unkno
     daysInRank: state.days_in_rank,
     nextEventDay: state.next_event_day,
     pendingEventId: state.pending_event_id,
-    pauseReason: state.pause_reason
+    pauseReason: state.pause_reason,
+    lastMissionDay: state.last_mission_day
   };
 }

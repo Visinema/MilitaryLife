@@ -14,7 +14,8 @@ export const trainingSchema = z.object({
 });
 
 export const deploymentSchema = z.object({
-  missionType: z.enum(['PATROL', 'SUPPORT'])
+  missionType: z.enum(['PATROL', 'SUPPORT']),
+  missionDurationDays: z.coerce.number().int().min(1).max(14).default(2)
 });
 
 export const decisionChoiceSchema = z.object({

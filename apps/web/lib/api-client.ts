@@ -106,8 +106,8 @@ export const api = {
   training(intensity: 'LOW' | 'MEDIUM' | 'HIGH') {
     return request<ActionResult>('/game/actions/training', 'POST', { intensity });
   },
-  deployment(missionType: 'PATROL' | 'SUPPORT') {
-    return request<ActionResult>('/game/actions/deployment', 'POST', { missionType });
+  deployment(missionType: 'PATROL' | 'SUPPORT', missionDurationDays = 2) {
+    return request<ActionResult>('/game/actions/deployment', 'POST', { missionType, missionDurationDays });
   },
   careerReview() {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});

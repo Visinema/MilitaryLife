@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { ActionResult, DecisionResult } from '@mls/shared/game-types';
 import { BRANCH_CONFIG } from './branch-config.js';
 import {
+  advanceGameDays,
   applyDecisionEffects,
   applyDeploymentAction,
   applyTrainingAction,
@@ -205,7 +206,8 @@ export async function runTraining(
 export async function runDeployment(
   request: FastifyRequest,
   reply: FastifyReply,
-  missionType: 'PATROL' | 'SUPPORT'
+  missionType: 'PATROL' | 'SUPPORT',
+  missionDurationDays = 2
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
     const pendingError = ensureNoPendingDecision(state);
@@ -213,7 +215,23 @@ export async function runDeployment(
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
     }
 
+    const missionCooldownDays = 10;
+    const daysSinceLastMission = Math.max(0, state.current_day - state.last_mission_day);
+    if (daysSinceLastMission < missionCooldownDays) {
+      const waitDays = missionCooldownDays - daysSinceLastMission;
+      return {
+        statusCode: 409,
+        payload: {
+          error: `Mission assignment not ready. Next assignment available in ${waitDays} in-game day(s).`,
+          daysUntilNextMission: waitDays,
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
+    }
+
     const action = applyDeploymentAction(state, missionType);
+    const advancedDays = advanceGameDays(state, missionDurationDays);
+    state.last_mission_day = state.current_day;
     const promoted = tryPromotion(state);
 
     const snapshot = buildSnapshot(state, nowMs);
@@ -223,7 +241,10 @@ export async function runDeployment(
       details: {
         ...action.details,
         promoted,
-        rankCode: snapshot.rankCode
+        rankCode: snapshot.rankCode,
+        missionDurationDays,
+        advancedDays,
+        nextMissionInDays: missionCooldownDays
       }
     };
 

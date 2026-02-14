@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { PausedRouteGuard } from '@/components/paused-route-guard';
-import { api } from '@/lib/api-client';
+import { ApiError, api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 type MissionStage = 'ASSIGNMENT' | 'BRIEF' | 'COORDINATION' | 'OPERATION' | 'DEBRIEF';
@@ -28,6 +28,8 @@ type Obstacle = {
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
 };
 
+const MISSION_ASSIGNMENT_INTERVAL_DAYS = 10;
+
 function commandAuthority(snapshot: GameSnapshot): number {
   const rankFactor = snapshot.rankCode.length * 8;
   return Math.min(100, Math.max(10, rankFactor + snapshot.morale / 2 + snapshot.health / 3 + snapshot.gameDay / 2));
@@ -37,6 +39,12 @@ function difficultyLabel(authority: number): 'LOW' | 'MID' | 'HIGH' {
   if (authority >= 70) return 'HIGH';
   if (authority >= 45) return 'MID';
   return 'LOW';
+}
+
+function missionDurationForTier(tier: 'LOW' | 'MID' | 'HIGH'): number {
+  if (tier === 'HIGH') return 5;
+  if (tier === 'MID') return 3;
+  return 2;
 }
 
 function buildMissionPack(snapshot: GameSnapshot) {
@@ -101,7 +109,8 @@ function buildMissionPack(snapshot: GameSnapshot) {
     title,
     prepOptions,
     strategyOptions,
-    obstacles
+    obstacles,
+    durationDays: missionDurationForTier(tier)
   };
 }
 
@@ -114,6 +123,7 @@ export default function DeploymentPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<string>('');
   const [opProgress, setOpProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [missionPauseToken, setMissionPauseToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (snapshot) return;
@@ -122,15 +132,29 @@ export default function DeploymentPage() {
 
   const missionPack = useMemo(() => (snapshot ? buildMissionPack(snapshot) : null), [snapshot]);
   const canInfluence = Boolean(missionPack && missionPack.authority >= 60);
+  const assignmentWindowOpen = Boolean(snapshot && snapshot.gameDay % MISSION_ASSIGNMENT_INTERVAL_DAYS === 0);
+  const nextWindowInDays = snapshot ? MISSION_ASSIGNMENT_INTERVAL_DAYS - (snapshot.gameDay % MISSION_ASSIGNMENT_INTERVAL_DAYS) : 0;
 
   const togglePrep = (id: string) => {
     setSelectedPrep((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   };
 
-  const startOperation = () => {
-    setStage('OPERATION');
-    setMessage(null);
-    setOpProgress(0);
+  const startOperation = async () => {
+    if (!assignmentWindowOpen) {
+      setMessage(`Mission assignment belum tersedia. Tunggu ${nextWindowInDays} hari in-game lagi.`);
+      return;
+    }
+
+    try {
+      const pauseRes = await api.pause('MODAL');
+      setMissionPauseToken(pauseRes.pauseToken);
+      setSnapshot(pauseRes.snapshot);
+      setStage('OPERATION');
+      setMessage('Mission clock paused. Operation frame berjalan tanpa progres waktu dunia.');
+      setOpProgress(0);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Failed to start mission operation');
+    }
   };
 
   useEffect(() => {
@@ -145,7 +169,7 @@ export default function DeploymentPage() {
         }
         return next;
       });
-    }, 240);
+    }, 220);
 
     return () => window.clearInterval(timer);
   }, [stage]);
@@ -158,15 +182,28 @@ export default function DeploymentPage() {
     try {
       const preferredAggressive = selectedStrategy === 'wedge' && canInfluence;
       const missionType: 'PATROL' | 'SUPPORT' = preferredAggressive ? 'PATROL' : 'SUPPORT';
-      const response = await api.deployment(missionType);
-      setSnapshot(response.snapshot);
+      const response = await api.deployment(missionType, missionPack.durationDays);
 
-      const result = response.details.succeeded ? 'Operasi sukses dan target aman.' : 'Operasi selesai dengan kehilangan momentum.';
+      if (missionPauseToken) {
+        const resumed = await api.resume(missionPauseToken);
+        setSnapshot(resumed.snapshot);
+      } else {
+        setSnapshot(response.snapshot);
+      }
+
+      const details = response.details as { succeeded?: boolean; advancedDays?: number };
+      const result = details.succeeded ? 'Operasi sukses dan target aman.' : 'Operasi selesai dengan kehilangan momentum.';
       setMessage(
-        `${missionPack.title} selesai. Dipimpin: ${canInfluence ? 'Anda memimpin squad' : 'Commander NPC'}. ${result}`
+        `${missionPack.title} selesai. Dipimpin: ${canInfluence ? 'Anda memimpin squad' : 'Commander NPC'}. ` +
+          `${result} Waktu lompat +${details.advancedDays ?? missionPack.durationDays} hari.`
       );
+      setMissionPauseToken(null);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Mission execution failed');
+      if (err instanceof ApiError && err.status === 409) {
+        setMessage('Penugasan misi belum masuk window 10 hari atau perlu sinkronisasi ulang snapshot.');
+      } else {
+        setMessage(err instanceof Error ? err.message : 'Mission execution failed');
+      }
     } finally {
       setBusy(false);
     }
@@ -195,8 +232,11 @@ export default function DeploymentPage() {
         <p className="text-xs uppercase tracking-[0.12em] text-muted">Stage: {stage}</p>
         <h2 className="mt-2 text-base font-semibold text-text">{missionPack.title}</h2>
         <p className="mt-1 text-sm text-muted">
-          Command authority: {Math.round(missionPack.authority)} / 100 ·{' '}
-          {canInfluence ? 'Anda boleh mempengaruhi rapat strategi.' : 'Pangkat/pengaruh belum cukup untuk override keputusan rapat.'}
+          Command authority: {Math.round(missionPack.authority)} / 100 · Durasi misi: {missionPack.durationDays} hari.
+        </p>
+        <p className="mt-1 text-xs text-muted">
+          Assignment window: setiap {MISSION_ASSIGNMENT_INTERVAL_DAYS} hari ·{' '}
+          {assignmentWindowOpen ? 'ACTIVE sekarang' : `next in ${nextWindowInDays} day(s)`}
         </p>
       </div>
 
@@ -209,7 +249,8 @@ export default function DeploymentPage() {
           </div>
           <button
             onClick={() => setStage('BRIEF')}
-            className="mt-4 rounded border border-accent bg-accent/20 px-3 py-2 text-sm font-medium"
+            disabled={!assignmentWindowOpen}
+            className="mt-4 rounded border border-accent bg-accent/20 px-3 py-2 text-sm font-medium disabled:opacity-50"
           >
             Continue to Mission Brief
           </button>
@@ -271,10 +312,10 @@ export default function DeploymentPage() {
           </div>
           <button
             onClick={startOperation}
-            disabled={!selectedStrategy}
+            disabled={!selectedStrategy || !assignmentWindowOpen}
             className="mt-4 rounded border border-accent bg-accent/20 px-3 py-2 text-sm font-medium disabled:opacity-60"
           >
-            Launch Mission Operation
+            Launch Mission Operation (Pause Time)
           </button>
         </div>
       ) : null}
@@ -288,7 +329,7 @@ export default function DeploymentPage() {
           <div className="mt-3 h-3 overflow-hidden rounded bg-bg">
             <div className="h-full bg-accent transition-all" style={{ width: `${opProgress}%` }} />
           </div>
-          <p className="mt-2 text-xs text-muted">Mission progress: {opProgress}%</p>
+          <p className="mt-2 text-xs text-muted">Mission progress: {opProgress}% · world clock paused</p>
           <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
             {missionPack.obstacles.map((obstacle) => (
               <div key={obstacle.id} className="rounded border border-border bg-bg p-3 text-xs">
@@ -303,7 +344,7 @@ export default function DeploymentPage() {
       {stage === 'DEBRIEF' ? (
         <div className="rounded-md border border-border bg-panel p-4 shadow-panel">
           <h3 className="text-sm font-semibold">Mission Debrief</h3>
-          <p className="mt-1 text-sm text-muted">Eksekusi backend dilakukan sekali setelah simulasi frame selesai untuk menjaga UI tetap responsif.</p>
+          <p className="mt-1 text-sm text-muted">Finalize mission untuk menutup pause, lalu game day langsung melompat sesuai durasi misi.</p>
           <button
             onClick={finalizeMission}
             disabled={busy}

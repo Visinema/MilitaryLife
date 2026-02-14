@@ -1,13 +1,33 @@
-import type { NpcV2Profile } from '@/lib/world-v2';
+import type { NpcV2Profile, RibbonStyle } from '@/lib/world-v2';
 
 interface AvatarFrameProps {
   name: string;
   subtitle: string;
   uniformTone: string;
-  ribbons: string[];
+  ribbons: RibbonStyle[];
   medals: string[];
   shoulderRankCount?: number;
   details?: string[];
+}
+
+function ribbonBackground(ribbon: RibbonStyle): string {
+  const [c1, c2, c3] = ribbon.colors;
+  switch (ribbon.pattern) {
+    case 'SOLID':
+      return c1;
+    case 'CENTER_STRIPE':
+      return `linear-gradient(90deg, ${c1} 0 38%, ${c2} 38% 62%, ${c3} 62% 100%)`;
+    case 'TRI_BAND':
+      return `linear-gradient(90deg, ${c1} 0 33%, ${c2} 33% 66%, ${c3} 66% 100%)`;
+    case 'CHEVRON':
+      return `repeating-linear-gradient(135deg, ${c1} 0 6px, ${c2} 6px 12px, ${c3} 12px 18px)`;
+    case 'CHECKER':
+      return `repeating-linear-gradient(45deg, ${c1} 0 4px, ${c2} 4px 8px, ${c3} 8px 12px)`;
+    case 'DIAGONAL':
+      return `linear-gradient(135deg, ${c1} 0 30%, ${c2} 30% 70%, ${c3} 70% 100%)`;
+    default:
+      return c1;
+  }
 }
 
 export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shoulderRankCount = 2, details = [] }: AvatarFrameProps) {
@@ -23,8 +43,13 @@ export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shou
             ))}
           </div>
           <div className="absolute right-2 top-24 grid grid-cols-3 gap-1">
-            {ribbons.slice(0, 12).map((r, idx) => (
-              <div key={`${r}-${idx}`} className="h-2 w-6 rounded-sm border border-border bg-accent/80" title={r} />
+            {ribbons.slice(0, 12).map((ribbon) => (
+              <div
+                key={ribbon.id}
+                className="h-2 w-6 rounded-sm border border-border"
+                style={{ background: ribbonBackground(ribbon) }}
+                title={`${ribbon.name} (+${ribbon.influenceBuff} influence)`}
+              />
             ))}
           </div>
         </div>
@@ -40,7 +65,7 @@ export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shou
         </div>
       </div>
       <p className="mt-2 text-xs text-text">Medals: {medals.join(' · ')}</p>
-      <p className="text-xs text-text">Ribbons: {ribbons.join(' · ')}</p>
+      <p className="text-xs text-text">Ribbon buff score: +{ribbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0)} influence</p>
     </div>
   );
 }

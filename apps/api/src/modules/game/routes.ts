@@ -56,7 +56,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/deployment', async (request, reply) => {
     try {
       const body = parseOrThrow(deploymentSchema, request.body);
-      await runDeployment(request, reply, body.missionType);
+      await runDeployment(request, reply, body.missionType, body.missionDurationDays);
     } catch (err) {
       sendValidationError(reply, err);
     }

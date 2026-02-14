@@ -1,8 +1,18 @@
 import type { GameSnapshot } from '@mls/shared/game-types';
 
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
+export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
 
-export const WORLD_V2_VERSION = '2.2.0';
+export const WORLD_V2_VERSION = '3.0.0';
+
+export interface RibbonStyle {
+  id: string;
+  name: string;
+  colors: [string, string, string];
+  pattern: RibbonPattern;
+  unlockedBy: string;
+  influenceBuff: number;
+}
 
 export interface NpcV2Profile {
   id: string;
@@ -14,7 +24,7 @@ export interface NpcV2Profile {
   division: string;
   subdivision: string;
   medals: string[];
-  ribbons: string[];
+  ribbons: RibbonStyle[];
   status: NpcStatus;
   commandPower: number;
   joinedOnDay: number;
@@ -29,8 +39,9 @@ export interface WorldV2State {
     rankTrack: 'ENLISTED' | 'WARRANT' | 'OFFICER';
     uniformTone: string;
     medals: string[];
-    ribbons: string[];
+    ribbons: RibbonStyle[];
     commandAuthority: number;
+    influenceRecord: number;
   };
   roster: NpcV2Profile[];
   hierarchy: NpcV2Profile[];
@@ -47,6 +58,7 @@ export interface WorldV2State {
     sanctions: string;
     commandRule: string;
     recruitmentWindow: string;
+    mandatoryAssignmentEveryDays: number;
   };
 }
 
@@ -54,8 +66,34 @@ const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', '
 const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
 const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
 const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
-const MEDALS = ['Gallantry Star', 'Meritorious Service', 'Campaign Medal', 'Unit Commendation', 'Leadership Medal'];
-const RIBBONS = ['Valor Ribbon', 'Service Ribbon', 'Readiness Ribbon', 'Expeditionary Ribbon', 'Long Service Ribbon'];
+
+interface RibbonDefinition extends RibbonStyle {
+  playerUnlock: (snapshot: GameSnapshot) => boolean;
+  npcThreshold: number;
+}
+
+const RIBBON_DEFINITIONS: RibbonDefinition[] = [
+  { id: 'founders-thread', name: 'Founder\'s Thread', colors: ['#2547c8', '#ffffff', '#2547c8'], pattern: 'CENTER_STRIPE', unlockedBy: 'Awal karier', influenceBuff: 1, playerUnlock: () => true, npcThreshold: 5 },
+  { id: 'discipline-band', name: 'Discipline Band', colors: ['#1e3a2f', '#9fd3a7', '#1e3a2f'], pattern: 'TRI_BAND', unlockedBy: 'Morale ≥ 72', influenceBuff: 2, playerUnlock: (s) => s.morale >= 72, npcThreshold: 14 },
+  { id: 'resilience-stripe', name: 'Resilience Stripe', colors: ['#5f2a2a', '#f1a98b', '#5f2a2a'], pattern: 'CENTER_STRIPE', unlockedBy: 'Health ≥ 82', influenceBuff: 2, playerUnlock: (s) => s.health >= 82, npcThreshold: 18 },
+  { id: 'logistics-grid', name: 'Logistics Grid', colors: ['#3a2e1f', '#d0b276', '#3a2e1f'], pattern: 'CHECKER', unlockedBy: 'Money ≥ 750k', influenceBuff: 2, playerUnlock: (s) => s.moneyCents >= 750_000, npcThreshold: 24 },
+  { id: 'campaign-trace', name: 'Campaign Trace', colors: ['#4b4f5f', '#8fa3ff', '#4b4f5f'], pattern: 'DIAGONAL', unlockedBy: 'Game day ≥ 15', influenceBuff: 1, playerUnlock: (s) => s.gameDay >= 15, npcThreshold: 10 },
+  { id: 'frontline-chevron', name: 'Frontline Chevron', colors: ['#26412e', '#f4f7f4', '#26412e'], pattern: 'CHEVRON', unlockedBy: 'Game day ≥ 30', influenceBuff: 2, playerUnlock: (s) => s.gameDay >= 30, npcThreshold: 28 },
+  { id: 'rapid-response', name: 'Rapid Response', colors: ['#153668', '#78b5ff', '#153668'], pattern: 'SOLID', unlockedBy: 'Morale ≥ 78 & Health ≥ 78', influenceBuff: 3, playerUnlock: (s) => s.morale >= 78 && s.health >= 78, npcThreshold: 30 },
+  { id: 'signal-lock', name: 'Signal Lock', colors: ['#1f3f47', '#63d2d6', '#1f3f47'], pattern: 'CENTER_STRIPE', unlockedBy: 'Game day ≥ 45', influenceBuff: 2, playerUnlock: (s) => s.gameDay >= 45, npcThreshold: 33 },
+  { id: 'night-watch', name: 'Night Watch', colors: ['#1a1c37', '#7e84d9', '#1a1c37'], pattern: 'TRI_BAND', unlockedBy: 'Game day ≥ 60', influenceBuff: 3, playerUnlock: (s) => s.gameDay >= 60, npcThreshold: 38 },
+  { id: 'strategist-mark', name: 'Strategist Mark', colors: ['#2e2f21', '#d7d274', '#2e2f21'], pattern: 'DIAGONAL', unlockedBy: 'Rank code length ≥ 3', influenceBuff: 2, playerUnlock: (s) => s.rankCode.length >= 3, npcThreshold: 35 },
+  { id: 'border-shield', name: 'Border Shield', colors: ['#2f3024', '#95a86f', '#2f3024'], pattern: 'CENTER_STRIPE', unlockedBy: 'Game day ≥ 75', influenceBuff: 3, playerUnlock: (s) => s.gameDay >= 75, npcThreshold: 40 },
+  { id: 'air-sea-bridge', name: 'Air-Sea Bridge', colors: ['#2f3d56', '#79c4ff', '#2f3d56'], pattern: 'CHECKER', unlockedBy: 'Game day ≥ 90', influenceBuff: 3, playerUnlock: (s) => s.gameDay >= 90, npcThreshold: 45 },
+  { id: 'field-mentor', name: 'Field Mentor', colors: ['#453220', '#f0cf91', '#453220'], pattern: 'CHEVRON', unlockedBy: 'Morale ≥ 84', influenceBuff: 3, playerUnlock: (s) => s.morale >= 84, npcThreshold: 48 },
+  { id: 'iron-ledger', name: 'Iron Ledger', colors: ['#2f2f2f', '#b9b9b9', '#2f2f2f'], pattern: 'SOLID', unlockedBy: 'Money ≥ 1.5M', influenceBuff: 4, playerUnlock: (s) => s.moneyCents >= 1_500_000, npcThreshold: 55 },
+  { id: 'vanguard-seal', name: 'Vanguard Seal', colors: ['#2f2038', '#b78ced', '#2f2038'], pattern: 'TRI_BAND', unlockedBy: 'Game day ≥ 120', influenceBuff: 4, playerUnlock: (s) => s.gameDay >= 120, npcThreshold: 58 },
+  { id: 'joint-command', name: 'Joint Command', colors: ['#1d3d3b', '#79e1d9', '#1d3d3b'], pattern: 'CHEVRON', unlockedBy: 'Morale ≥ 88 & Health ≥ 86', influenceBuff: 4, playerUnlock: (s) => s.morale >= 88 && s.health >= 86, npcThreshold: 62 },
+  { id: 'steadfast-honor', name: 'Steadfast Honor', colors: ['#3d1f1f', '#ff928f', '#3d1f1f'], pattern: 'CENTER_STRIPE', unlockedBy: 'Health ≥ 90', influenceBuff: 4, playerUnlock: (s) => s.health >= 90, npcThreshold: 64 },
+  { id: 'theater-master', name: 'Theater Master', colors: ['#2e2d18', '#f4ec96', '#2e2d18'], pattern: 'DIAGONAL', unlockedBy: 'Game day ≥ 150', influenceBuff: 5, playerUnlock: (s) => s.gameDay >= 150, npcThreshold: 70 },
+  { id: 'alliance-banner', name: 'Alliance Banner', colors: ['#173b5f', '#c8e8ff', '#173b5f'], pattern: 'TRI_BAND', unlockedBy: 'Game day ≥ 180', influenceBuff: 5, playerUnlock: (s) => s.gameDay >= 180, npcThreshold: 74 },
+  { id: 'legacy-halo', name: 'Legacy Halo', colors: ['#3d2c14', '#f5c56d', '#3d2c14'], pattern: 'CHECKER', unlockedBy: 'Game day ≥ 240', influenceBuff: 6, playerUnlock: (s) => s.gameDay >= 240, npcThreshold: 82 }
+];
 
 function toBranchLabel(branch: string) {
   return branch.replace('US_', 'US ').replace('ID_', 'ID ').replaceAll('_', ' ');
@@ -80,16 +118,6 @@ function pick<T>(source: T[], n: number) {
   return source[Math.abs(n) % source.length];
 }
 
-function medalsFor(snapshot: GameSnapshot) {
-  const items: string[] = [];
-  if (snapshot.gameDay > 60) items.push('Long Service Medal');
-  if (snapshot.health >= 85) items.push('Readiness Medal');
-  if (snapshot.morale >= 80) items.push('Leadership Commendation');
-  if (snapshot.moneyCents > 1_500_000) items.push('Logistics Efficiency');
-  if (!items.length) items.push('Initial Entry Ribbon');
-  return items;
-}
-
 function statusFromRoll(roll: number): NpcStatus {
   if (roll < 68) return 'ACTIVE';
   if (roll < 84) return 'INJURED';
@@ -105,9 +133,25 @@ function behaviorTag(seedValue: number): NpcV2Profile['behaviorTag'] {
   return 'STRATEGIST';
 }
 
+function buildPlayerRibbons(snapshot: GameSnapshot): RibbonStyle[] {
+  return RIBBON_DEFINITIONS.filter((definition) => definition.playerUnlock(snapshot));
+}
+
+function npcProgressScore(snapshot: GameSnapshot, slot: number, commandPower: number, relationScore: number, joinedOnDay: number): number {
+  const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
+  return Math.floor(commandPower * 0.35 + relationScore * 0.45 + tenure * 0.25 + slot * 0.4);
+}
+
+function buildNpcRibbons(snapshot: GameSnapshot, slot: number, commandPower: number, relationScore: number, joinedOnDay: number): RibbonStyle[] {
+  const score = npcProgressScore(snapshot, slot, commandPower, relationScore, joinedOnDay);
+  const unlocked = RIBBON_DEFINITIONS.filter((definition) => score >= definition.npcThreshold);
+  return unlocked.slice(0, 12);
+}
+
 export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
-  const playerMedals = medalsFor(snapshot);
-  const playerRibbons = playerMedals.map((_, i) => pick(RIBBONS, seeded(snapshot, i)));
+  const playerRibbons = buildPlayerRibbons(snapshot);
+  const playerMedals = playerRibbons.slice(0, 6).map((ribbon) => ribbon.name);
+  const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
   const cycleLength = 45;
   const cycle = Math.floor(snapshot.gameDay / cycleLength);
@@ -120,6 +164,9 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
 
     const joinedOnDay = Math.max(1, cycle * cycleLength - waveOffset * 6 + slot);
     const lastSeenOnDay = status === 'KIA' ? snapshot.gameDay - ((slot % 4) + 1) : snapshot.gameDay;
+    const commandPower = Math.max(10, 100 - slot * 4);
+    const relationScore = 35 + (Math.abs(identitySeed) % 60);
+    const ribbons = buildNpcRibbons(snapshot, slot, commandPower, relationScore, joinedOnDay);
 
     return {
       id: `npc-slot-${slot}-wave-${waveOffset}`,
@@ -130,13 +177,13 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       role: slot === 0 ? 'Theater Commander' : slot === 1 ? 'Deputy Commander' : slot < 6 ? 'Division Commander' : 'Field Commander',
       division: pick(DIVISIONS, identitySeed),
       subdivision: pick(SUBDIVISIONS, identitySeed * 2),
-      medals: [pick(MEDALS, identitySeed), pick(MEDALS, identitySeed + 2)],
-      ribbons: [pick(RIBBONS, identitySeed), pick(RIBBONS, identitySeed + 1)],
+      medals: ribbons.slice(0, 4).map((ribbon) => ribbon.name),
+      ribbons,
       status,
-      commandPower: Math.max(10, 100 - slot * 4),
+      commandPower,
       joinedOnDay,
       lastSeenOnDay,
-      relationScore: 35 + (Math.abs(identitySeed) % 60),
+      relationScore,
       behaviorTag: behaviorTag(identitySeed)
     };
   });
@@ -157,8 +204,9 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       rankTrack: rankTrack(snapshot.rankCode),
       uniformTone: uniformTone(snapshot.branch),
       medals: playerMedals,
-      ribbons: playerRibbons,
-      commandAuthority: Math.min(100, 40 + snapshot.gameDay / 5)
+      ribbons: playerRibbons.slice(0, 12),
+      commandAuthority: Math.min(100, 40 + snapshot.gameDay / 5 + influenceRecord * 0.8),
+      influenceRecord
     },
     roster,
     hierarchy,
@@ -168,7 +216,8 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       objective: 'Stabilize supply corridors, rotate command safely, and keep multi-division NPC units synchronized.',
       sanctions: 'Commanders can issue warning, duty restriction, and promotion hold for failed orders or insubordination.',
       commandRule: 'Hierarchy authority flows from theater to division/subdivision leads with morale impact on non-compliance.',
-      recruitmentWindow: snapshot.morale > 72 ? 'Special recruitment open (Tier-1 & specialist tracks).' : 'Standard recruitment only.'
+      recruitmentWindow: snapshot.morale > 72 ? 'Special recruitment open (Tier-1 & specialist tracks).' : 'Standard recruitment only.',
+      mandatoryAssignmentEveryDays: 10
     }
   };
 }

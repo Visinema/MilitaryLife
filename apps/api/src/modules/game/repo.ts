@@ -20,6 +20,7 @@ export interface DbGameStateRow {
   promotion_points: number;
   days_in_rank: number;
   next_event_day: number;
+  last_mission_day: number;
   pending_event_id: number | null;
   pending_event_payload: {
     title: string;
@@ -78,6 +79,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.promotion_points,
         gs.days_in_rank,
         gs.next_event_day,
+        gs.last_mission_day,
         gs.pending_event_id,
         gs.pending_event_payload,
         gs.version
@@ -144,8 +146,9 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         promotion_points = $13,
         days_in_rank = $14,
         next_event_day = $15,
-        pending_event_id = $16,
-        pending_event_payload = $17,
+        last_mission_day = $16,
+        pending_event_id = $17,
+        pending_event_payload = $18,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -166,6 +169,7 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.promotion_points,
       state.days_in_rank,
       state.next_event_day,
+      state.last_mission_day,
       state.pending_event_id,
       state.pending_event_payload
     ]

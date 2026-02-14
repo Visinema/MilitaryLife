@@ -43,7 +43,8 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
               shoulderRankCount={Math.min(4, Math.max(2, snapshot.rankCode.length % 5))}
               details={[
                 `Authority: ${Math.round(world.player.commandAuthority)}%`,
-                `Recruitment: ${world.missionBrief.recruitmentWindow}`,
+                `Influence record buff: +${world.player.influenceRecord}`,
+                `Mission assignment: every ${world.missionBrief.mandatoryAssignmentEveryDays} days`,
                 `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`
               ]}
             />
