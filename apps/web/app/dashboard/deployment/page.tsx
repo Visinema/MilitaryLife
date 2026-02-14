@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
-import { PausedRouteGuard } from '@/components/paused-route-guard';
 import { ApiError, api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
@@ -214,15 +213,13 @@ export default function DeploymentPage() {
   if (!snapshot || !missionPack) {
     return (
       <div className="space-y-4">
-        <PausedRouteGuard />
-        <div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading deployment console...</div>
+          <div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading deployment console...</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <PausedRouteGuard />
       <div className="flex items-center justify-between rounded-md border border-border bg-panel px-4 py-3 shadow-panel">
         <h1 className="text-lg font-semibold">Mission Operations</h1>
         <Link href="/dashboard" className="text-sm text-muted underline">

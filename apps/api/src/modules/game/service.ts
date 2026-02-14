@@ -179,7 +179,7 @@ export async function runTraining(
   reply: FastifyReply,
   intensity: 'LOW' | 'MEDIUM' | 'HIGH'
 ): Promise<void> {
-  await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const pendingError = ensureNoPendingDecision(state);
     if (pendingError) {
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
@@ -209,7 +209,7 @@ export async function runDeployment(
   missionType: 'PATROL' | 'SUPPORT',
   missionDurationDays = 2
 ): Promise<void> {
-  await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const pendingError = ensureNoPendingDecision(state);
     if (pendingError) {
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
