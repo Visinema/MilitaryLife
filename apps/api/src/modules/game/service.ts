@@ -259,8 +259,8 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
 }
 
 
-function hasCommandAccess(state: DbGameStateRow): boolean {
-  return BRANCH_CONFIG[state.branch].ranks.length === 1;
+function hasCommandAccess(_state: DbGameStateRow): boolean {
+  return true;
 }
 
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
@@ -505,7 +505,7 @@ export async function runMilitaryAcademy(
       score,
       grade,
       divisionFreedomLevel: freedomLevel,
-      trainerName: tier === 2 ? 'Lt. Gen. Arman Wibisono' : 'Col. Andi Pratama',
+      trainerName: tier === 2 ? 'Operator Arman Wibisono' : 'Operator Andi Pratama',
       issuedAtDay: state.current_day,
       message: 'Congratulations on your successful completion of the academy assessment phase.',
       assignedDivision: state.preferred_division ?? "INFANTRY"

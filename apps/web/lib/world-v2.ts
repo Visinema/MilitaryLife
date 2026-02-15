@@ -38,7 +38,7 @@ export interface NpcV2Profile {
 export interface WorldV2State {
   player: {
     branchLabel: string;
-    rankTrack: 'ENLISTED' | 'WARRANT' | 'OFFICER';
+    rankTrack: 'UNIFIED';
     universalRank: string;
     uniformTone: string;
     medals: string[];
@@ -105,11 +105,8 @@ function toBranchLabel(branch: string) {
   return branch.replace('US_', 'US ').replace('ID_', 'ID ').replaceAll('_', ' ');
 }
 
-function rankTrack(rankCode: string): WorldV2State['player']['rankTrack'] {
-  const normalized = rankCode.toUpperCase();
-  if (normalized.startsWith('O') || normalized.includes('COL') || normalized.includes('MAJ') || normalized.includes('LT')) return 'OFFICER';
-  if (normalized.startsWith('WO') || normalized.includes('WARRANT')) return 'WARRANT';
-  return 'ENLISTED';
+function rankTrack(_rankCode: string): WorldV2State['player']['rankTrack'] {
+  return 'UNIFIED';
 }
 
 function universalRankFromScore(score: number): UniversalRank {
