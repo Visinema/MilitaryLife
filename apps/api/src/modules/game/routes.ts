@@ -9,7 +9,8 @@ import {
   trainingSchema,
   militaryAcademySchema,
   travelSchema,
-  commandActionSchema
+  commandActionSchema,
+  socialInteractionSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -26,7 +27,8 @@ import {
   restartWorldFromZero,
   runMilitaryAcademy,
   runTravel,
-  runCommandAction
+  runCommandAction,
+  runSocialInteraction
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -110,6 +112,17 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/restart-world', async (request, reply) => {
     await restartWorldFromZero(request, reply);
   });
+
+
+  app.post('/actions/social-interaction', async (request, reply) => {
+    try {
+      const body = parseOrThrow(socialInteractionSchema, request.body ?? {});
+      await runSocialInteraction(request, reply, body);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
 
   app.post('/decisions/:eventId/choose', async (request, reply) => {
     try {

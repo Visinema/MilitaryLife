@@ -27,6 +27,14 @@ export default function PeoplePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [interactionMap, setInteractionMap] = useState<Record<string, string[]>>({});
+  const [interactionBusy, setInteractionBusy] = useState(false);
+  const [lastInteraction, setLastInteraction] = useState<null | {
+    type: 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
+    moraleDelta: number;
+    healthDelta: number;
+    promotionPointsDelta: number;
+    moneyDelta: number;
+  }>(null);
   const [npcActivity, setNpcActivity] = useState<
     Record<
       string,
@@ -125,15 +133,54 @@ export default function PeoplePage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sendCommand = (cmd: string) => {
+  const sendCommand = async (cmd: string, interaction: 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF') => {
     if (!selectedNpc) return;
+    setInteractionBusy(true);
+    const currentNpc = selectedNpc;
     setInteractionMap((prev) => {
-      const current = prev[selectedNpc.id] ?? initialLog(selectedNpc);
+      const current = prev[currentNpc.id] ?? initialLog(currentNpc);
       return {
         ...prev,
-        [selectedNpc.id]: [...current.slice(-8), `You: ${cmd}`, `${selectedNpc.name}: Command acknowledged.`].slice(-10)
+        [currentNpc.id]: [...current.slice(-8), `You: ${cmd}`, `${currentNpc.name}: Processing interaction...`].slice(-10)
       };
     });
+
+    try {
+      const response = await api.socialInteraction(`npc-${currentNpc.slot + 1}`, interaction, cmd);
+      setSnapshot(response.snapshot);
+      setStoreSnapshot(response.snapshot);
+      const effect = (response.details?.effect ?? {}) as {
+        moraleDelta?: number;
+        healthDelta?: number;
+        promotionPointsDelta?: number;
+        moneyDelta?: number;
+      };
+      setLastInteraction({
+        type: interaction,
+        moraleDelta: effect.moraleDelta ?? 0,
+        healthDelta: effect.healthDelta ?? 0,
+        promotionPointsDelta: effect.promotionPointsDelta ?? 0,
+        moneyDelta: effect.moneyDelta ?? 0
+      });
+      setInteractionMap((prev) => {
+        const current = prev[currentNpc.id] ?? initialLog(currentNpc);
+        return {
+          ...prev,
+          [currentNpc.id]: [...current.slice(-8), `${currentNpc.name}: Interaction complete. Cohesion updated.`].slice(-10)
+        };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Social interaction failed');
+      setInteractionMap((prev) => {
+        const current = prev[currentNpc.id] ?? initialLog(currentNpc);
+        return {
+          ...prev,
+          [currentNpc.id]: [...current.slice(-8), `${currentNpc.name}: Unable to complete interaction now.`].slice(-10)
+        };
+      });
+    } finally {
+      setInteractionBusy(false);
+    }
   };
 
   const activeLog = selectedNpc ? interactionMap[selectedNpc.id] ?? initialLog(selectedNpc) : [];
@@ -219,16 +266,27 @@ export default function PeoplePage() {
                 ))}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <button onClick={() => sendCommand('Hold position and secure perimeter')} className="rounded border border-border px-2 py-1 text-xs text-text">
-                  Hold Position
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentoring session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Mentor
                 </button>
-                <button onClick={() => sendCommand('Proceed with recon and report every 5 min')} className="rounded border border-border px-2 py-1 text-xs text-text">
-                  Recon
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Support package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Support
                 </button>
-                <button onClick={() => sendCommand('Assist wounded unit and regroup')} className="rounded border border-border px-2 py-1 text-xs text-text">
-                  Assist Unit
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Trust-building sync: align goals and clarify personal concerns.', 'BOND')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Bond
+                </button>
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Post-action debrief: extract lessons and set immediate improvements.', 'DEBRIEF')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Debrief
                 </button>
               </div>
+              {lastInteraction ? (
+                <p className="mt-2 rounded border border-border bg-bg/60 p-2 text-xs text-muted">
+                  Last interaction ({lastInteraction.type}) · Morale {lastInteraction.moraleDelta >= 0 ? '+' : ''}
+                  {lastInteraction.moraleDelta} · Health {lastInteraction.healthDelta >= 0 ? '+' : ''}
+                  {lastInteraction.healthDelta} · Promotion {lastInteraction.promotionPointsDelta >= 0 ? '+' : ''}
+                  {lastInteraction.promotionPointsDelta} · Funds {Math.round(lastInteraction.moneyDelta / 100)}
+                </p>
+              ) : null}
             </div>
           </section>
         </div>

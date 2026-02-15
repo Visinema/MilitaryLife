@@ -42,3 +42,10 @@ export const commandActionSchema = z.object({
   targetNpcId: z.string().min(1).max(64).optional(),
   note: z.string().min(1).max(240).optional()
 });
+
+
+export const socialInteractionSchema = z.object({
+  npcId: z.string().min(1).max(64),
+  interaction: z.enum(['MENTOR', 'SUPPORT', 'BOND', 'DEBRIEF']),
+  note: z.string().min(1).max(180).optional()
+});

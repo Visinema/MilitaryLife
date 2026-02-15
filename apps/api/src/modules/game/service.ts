@@ -763,6 +763,69 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
   });
 }
 
+
+function npcHash(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) % 9973;
+  }
+  return hash;
+}
+
+export async function runSocialInteraction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { npcId: string; interaction: 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF'; note?: string }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const pendingError = ensureNoPendingDecision(state);
+    if (pendingError) {
+      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const { npcId, interaction, note } = payload;
+    const seed = npcHash(npcId) + state.current_day * 7 + state.rank_index * 13;
+    const variance = (seed % 5) - 2;
+
+    const baseline = {
+      MENTOR: { morale: 3, health: 0, points: 3, money: -120 },
+      SUPPORT: { morale: 2, health: 1, points: 2, money: -80 },
+      BOND: { morale: 4, health: 0, points: 1, money: -160 },
+      DEBRIEF: { morale: 1, health: 0, points: 4, money: -60 }
+    }[interaction];
+
+    const moraleDelta = Math.max(-3, Math.min(6, baseline.morale + Math.floor(variance / 2)));
+    const healthDelta = Math.max(-2, Math.min(3, baseline.health + (seed % 3 === 0 ? 1 : 0)));
+    const pointsDelta = Math.max(0, baseline.points + (seed % 4 === 0 ? 1 : 0));
+    const moneyDelta = baseline.money;
+
+    state.morale = Math.max(0, Math.min(100, state.morale + moraleDelta));
+    state.health = Math.max(0, Math.min(100, state.health + healthDelta));
+    state.promotion_points = Math.max(0, state.promotion_points + pointsDelta);
+    state.money_cents = Math.max(0, state.money_cents + moneyDelta);
+
+    const snapshot = buildSnapshot(state, nowMs);
+    const result: ActionResult = {
+      type: 'SOCIAL_INTERACTION',
+      snapshot,
+      details: {
+        npcId,
+        interaction,
+        note: note?.trim() ?? null,
+        effect: {
+          moraleDelta,
+          healthDelta,
+          promotionPointsDelta: pointsDelta,
+          moneyDelta
+        },
+        summary: `${interaction} completed with ${npcId}. Team cohesion and readiness updated.`
+      }
+    };
+
+    return { payload: result };
+  });
+}
+
 export async function getDecisionLogs(
   request: FastifyRequest,
   reply: FastifyReply,

@@ -5,6 +5,7 @@ type HttpMethod = 'GET' | 'POST';
 
 export type TravelPlace = 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN';
 export type CommandAction = 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION';
+export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
 
 type RequestOptions = {
   cache?: RequestCache;
@@ -130,6 +131,9 @@ export const api = {
   },
   command(action: CommandAction, targetNpcId?: string, note?: string) {
     return request<ActionResult>('/game/actions/command', 'POST', { action, targetNpcId, note });
+  },
+  socialInteraction(npcId: string, interaction: SocialInteractionType, note?: string) {
+    return request<ActionResult>('/game/actions/social-interaction', 'POST', { npcId, interaction, note });
   },
   restartWorld() {
     return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {});
