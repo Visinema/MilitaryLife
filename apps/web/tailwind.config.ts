@@ -5,18 +5,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: '#f4f8ff',
-        panel: '#ffffff',
-        border: '#d4deef',
-        accent: '#2563eb',
-        text: '#0f172a',
-        muted: '#475569',
-        danger: '#dc2626',
-        ok: '#059669'
+        bg: '#d7dbe2',
+        panel: '#e6eaf0',
+        border: '#aeb6c4',
+        accent: '#1d4ed8',
+        text: '#0b1220',
+        muted: '#334155',
+        danger: '#b91c1c',
+        ok: '#047857'
       },
       boxShadow: {
-        panel: '0 6px 16px rgba(15, 23, 42, 0.08), 0 1px 0 rgba(255, 255, 255, 0.8)',
-        neon: '0 0 0 3px rgba(37, 99, 235, 0.16)'
+        panel: '0 4px 14px rgba(15, 23, 42, 0.14), 0 1px 0 rgba(255, 255, 255, 0.35)',
+        neon: '0 0 0 2px rgba(29, 78, 216, 0.2)'
       },
       backgroundImage: {
         'cyber-grid': 'linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px)'

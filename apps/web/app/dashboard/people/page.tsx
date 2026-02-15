@@ -191,6 +191,7 @@ export default function PeoplePage() {
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-muted">People & NPC Console</p>
           <h1 className="text-base font-semibold text-text">Smart Social Ops · Realtime NPC</h1>
+          <p className="text-[11px] text-muted">Layout ringkas, interaksi cepat, dampak langsung ke morale/health/promotion.</p>
         </div>
         <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
           Back to Dashboard
@@ -265,18 +266,18 @@ export default function PeoplePage() {
                   </p>
                 ))}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentoring session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+              <div className="mt-2 grid grid-cols-2 gap-1.5 md:grid-cols-4">
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentor Uniting session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
                   Mentor
                 </button>
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Support package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Support Log package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
                   Support
                 </button>
                 <button disabled={interactionBusy} onClick={() => void sendCommand('Trust-building sync: align goals and clarify personal concerns.', 'BOND')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Bond
+                  Build Trust
                 </button>
                 <button disabled={interactionBusy} onClick={() => void sendCommand('Post-action debrief: extract lessons and set immediate improvements.', 'DEBRIEF')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Debrief
+                  Fast Debrief
                 </button>
               </div>
               {lastInteraction ? (
