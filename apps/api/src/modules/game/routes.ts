@@ -133,7 +133,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/recruitment-apply', async (request, reply) => {
     try {
       const body = parseOrThrow(recruitmentApplySchema, request.body ?? {});
-      await runRecruitmentApply(request, reply, body);
+      await runRecruitmentApply(request, reply, { trackId: body.trackId, answers: body.answers ?? {} });
     } catch (err) {
       sendValidationError(reply, err);
     }
