@@ -429,10 +429,10 @@ export function DashboardShell() {
         <div className="cyber-panel space-y-1.5 p-2">
           <p className="text-xs uppercase tracking-[0.1em] text-muted">Inventory · Certificates</p>
           <div className="grid gap-1 md:grid-cols-2">
-            {(snapshot.certificates ?? []).length === 0 ? (
+            {(Array.isArray(snapshot.certificates) ? snapshot.certificates : []).length === 0 ? (
               <p className="rounded border border-border bg-bg/60 px-2 py-1.5 text-[11px] text-muted">No certificate stored yet.</p>
             ) : (
-              (snapshot.certificates ?? []).map((cert) => (
+              (Array.isArray(snapshot.certificates) ? snapshot.certificates : []).map((cert) => (
                 <button key={cert.id} onClick={() => setOpenedCertificateId(cert.id)} className="rounded border border-border bg-bg/60 px-2 py-1.5 text-left text-[11px] text-text hover:border-accent">
                   {cert.academyName} · Grade {cert.grade} · Score {cert.score} · Open Certificate
                 </button>
@@ -445,7 +445,7 @@ export function DashboardShell() {
       {openedCertificateId ? (
         <div className="cyber-panel p-2.5">
           {(() => {
-            const cert = (snapshot.certificates ?? []).find((item) => item.id === openedCertificateId);
+            const cert = (Array.isArray(snapshot.certificates) ? snapshot.certificates : []).find((item) => item.id === openedCertificateId);
             if (!cert) return <p className="text-[11px] text-muted">Certificate not found.</p>;
             return (
               <div className="rounded-md border-2 border-amber-300/70 bg-gradient-to-br from-amber-50 via-[#f8f0d6] to-amber-100 p-4 text-[#2f2412] shadow-panel">

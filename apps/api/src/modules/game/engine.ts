@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
+import type { AcademyCertificate, ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
 import type { PauseReason } from '@mls/shared/constants';
 import { clamp, roll, sampleGeometricGap, sampleWeighted } from '../../utils/random.js';
 import { computeAge, computeGameDay, toInGameDate } from './time.js';
@@ -373,7 +373,7 @@ function normalizePendingDecisionPayload(state: DbGameStateRow): GameSnapshot['p
     conditionLabel:
       payload.conditionLabel?.trim() ??
       `Rank ${snapshotRankCode(state)} · Day ${state.current_day} · Readiness ${state.health}/${state.morale}`,
-    options: (payload.options ?? []).map((option, index) => ({
+    options: (Array.isArray(payload.options) ? payload.options : []).map((option, index) => ({
       id: option.id ?? `option-${index + 1}`,
       label: option.label ?? `Option ${index + 1}`,
       impactScope: option.impactScope === 'ORGANIZATION' ? 'ORGANIZATION' : 'SELF',
@@ -392,8 +392,28 @@ function normalizePendingDecisionPayload(state: DbGameStateRow): GameSnapshot['p
   return normalized;
 }
 
+function normalizeCertificateInventory(rawValue: unknown): AcademyCertificate[] {
+  if (!Array.isArray(rawValue)) {
+    return [];
+  }
+
+  return rawValue
+    .filter((item): item is AcademyCertificate => {
+      return Boolean(
+        item &&
+          typeof item === 'object' &&
+          typeof (item as { id?: unknown }).id === 'string' &&
+          typeof (item as { academyName?: unknown }).academyName === 'string' &&
+          typeof (item as { score?: unknown }).score === 'number' &&
+          typeof (item as { trainerName?: unknown }).trainerName === 'string'
+      );
+    })
+    .slice(0, 20);
+}
+
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
+  const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
   return {
     serverNowMs: nowMs,
     serverReferenceTimeMs: state.server_reference_time_ms,
@@ -416,7 +436,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     academyCertifiedOfficer: state.academy_tier >= 1,
     academyCertifiedHighOfficer: state.academy_tier >= 2,
     lastTravelPlace: state.last_travel_place,
-    certificates: state.certificate_inventory,
+    certificates: normalizedCertificates,
     divisionFreedomScore: state.division_freedom_score,
     preferredDivision: state.preferred_division,
     pendingDecision: normalizePendingDecisionPayload(state)

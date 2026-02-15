@@ -491,7 +491,7 @@ export async function runMilitaryAcademy(
       assignedDivision: state.preferred_division ?? "INFANTRY"
     };
 
-    const existing = state.certificate_inventory ?? [];
+    const existing = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
     state.certificate_inventory = [certificate, ...existing].slice(0, 20);
 
     const snapshot = buildSnapshot(state, nowMs);
