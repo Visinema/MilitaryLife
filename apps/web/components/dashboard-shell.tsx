@@ -44,6 +44,14 @@ const ACADEMY_QUESTIONS: Array<{ prompt: string; options: string[] }> = [
 
 const DIVISION_OPTIONS = ['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER'] as const;
 
+type AcademyOutcome = {
+  passed: boolean;
+  score: number;
+  passThreshold: number;
+  message: string;
+  certificateId?: string;
+};
+
 export function DashboardShell() {
   const router = useRouter();
   const snapshot = useGameStore((state) => state.snapshot);
@@ -72,6 +80,7 @@ export function DashboardShell() {
   const [divisionDraft, setDivisionDraft] = useState<(typeof DIVISION_OPTIONS)[number]>('INFANTRY');
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
+  const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
 
@@ -200,10 +209,27 @@ export function DashboardShell() {
       setSnapshot(response.snapshot);
       setAcademyOpen(false);
 
-      const certificate = (response.details as { certificate?: { id?: string } } | undefined)?.certificate;
-      if (certificate?.id) {
+      const details = (response.details ?? {}) as {
+        passed?: boolean;
+        score?: number;
+        passThreshold?: number;
+        message?: string;
+        certificate?: { id?: string };
+      };
+      const passed = Boolean(details.passed);
+      const score = Number(details.score ?? 0);
+      const passThreshold = Number(details.passThreshold ?? (academyTierDraft === 2 ? 80 : 60));
+      setAcademyOutcome({
+        passed,
+        score,
+        passThreshold,
+        message: details.message ?? (passed ? 'Selamat, Anda lulus Military Academy.' : 'Anda belum lulus Military Academy.'),
+        certificateId: details.certificate?.id
+      });
+
+      if (details.certificate?.id) {
         setInventoryOpen(true);
-        setOpenedCertificateId(certificate.id);
+        setOpenedCertificateId(details.certificate.id);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -247,6 +273,13 @@ export function DashboardShell() {
   }, [setError, setSnapshot]);
 
   const branchOptions = useMemo(() => BRANCH_OPTIONS[profileForm.country], [profileForm.country]);
+  const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
+
+  useEffect(() => {
+    if (!openedCertificateId) return;
+    if (safeCertificates.some((item) => item.id === openedCertificateId)) return;
+    setOpenedCertificateId(safeCertificates[0]?.id ?? null);
+  }, [openedCertificateId, safeCertificates]);
 
   if (loading && !snapshot && !noProfile) {
     return <div className="rounded-md border border-border bg-panel p-6 text-sm text-muted">Loading game data...</div>;
@@ -376,7 +409,15 @@ export function DashboardShell() {
             {actionBusy === 'CAREER_REVIEW' ? 'Running...' : 'Career Review'}
           </button>
           <button
-            onClick={() => setInventoryOpen((prev) => !prev)}
+            onClick={() => {
+              setInventoryOpen((prev) => {
+                const next = !prev;
+                if (next && !openedCertificateId && safeCertificates.length > 0) {
+                  setOpenedCertificateId(safeCertificates[0].id);
+                }
+                return next;
+              });
+            }}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent"
           >
             {inventoryOpen ? 'Close Inventory' : 'Inventory'}
@@ -447,10 +488,10 @@ export function DashboardShell() {
         <div className="cyber-panel space-y-1.5 p-2">
           <p className="text-xs uppercase tracking-[0.1em] text-muted">Inventory · Certificates</p>
           <div className="grid gap-1 md:grid-cols-2">
-            {(Array.isArray(snapshot.certificates) ? snapshot.certificates : []).length === 0 ? (
+            {safeCertificates.length === 0 ? (
               <p className="rounded border border-border bg-bg/60 px-2 py-1.5 text-[11px] text-muted">No certificate stored yet.</p>
             ) : (
-              (Array.isArray(snapshot.certificates) ? snapshot.certificates : []).map((cert) => (
+              safeCertificates.map((cert) => (
                 <button key={cert.id} onClick={() => setOpenedCertificateId(cert.id)} className="rounded border border-border bg-bg/60 px-2 py-1.5 text-left text-[11px] text-text hover:border-accent">
                   {cert.academyName} · Grade {cert.grade} · Score {cert.score} · Open Certificate
                 </button>
@@ -463,7 +504,7 @@ export function DashboardShell() {
       {openedCertificateId ? (
         <div className="cyber-panel p-2.5">
           {(() => {
-            const cert = (Array.isArray(snapshot.certificates) ? snapshot.certificates : []).find((item) => item.id === openedCertificateId);
+            const cert = safeCertificates.find((item) => item.id === openedCertificateId);
             if (!cert) return <p className="text-[11px] text-muted">Certificate not found.</p>;
             return (
               <div className="rounded-md border-2 border-amber-300/70 bg-gradient-to-br from-amber-50 via-[#f8f0d6] to-amber-100 p-4 text-[#2f2412] shadow-panel">
@@ -488,6 +529,34 @@ export function DashboardShell() {
               </div>
             );
           })()}
+        </div>
+      ) : null}
+
+
+      {academyOutcome ? (
+        <div className={`rounded-md border p-2 text-xs ${academyOutcome.passed ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100' : 'border-danger/60 bg-danger/10 text-danger'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="font-semibold">{academyOutcome.passed ? 'Lulus Military Academy' : 'Belum Lulus Military Academy'}</p>
+              <p className="mt-0.5 text-[11px] opacity-90">Skor {academyOutcome.score} / Minimal {academyOutcome.passThreshold}</p>
+              <p className="mt-0.5 text-[11px] opacity-90">{academyOutcome.message}</p>
+            </div>
+            <div className="flex gap-1">
+              {academyOutcome.passed && academyOutcome.certificateId ? (
+                <button
+                  onClick={() => {
+                    setInventoryOpen(true);
+                    setOpenedCertificateId(academyOutcome.certificateId ?? null);
+                    setAcademyOutcome(null);
+                  }}
+                  className="rounded border border-current px-2 py-1 text-[11px]"
+                >
+                  Lihat Sertifikat
+                </button>
+              ) : null}
+              <button onClick={() => setAcademyOutcome(null)} className="rounded border border-current px-2 py-1 text-[11px]">Tutup</button>
+            </div>
+          </div>
         </div>
       ) : null}
 
