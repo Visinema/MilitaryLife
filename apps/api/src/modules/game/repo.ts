@@ -147,6 +147,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   const row = result.rows[0] ?? null;
   if (!row) return null;
 
+  row.certificate_inventory = parseJsonbArray(row.certificate_inventory);
   return row;
 }
 
