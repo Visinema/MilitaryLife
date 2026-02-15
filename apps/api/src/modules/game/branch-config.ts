@@ -27,11 +27,14 @@ export interface BranchConfig {
   deployment: DeploymentProfile;
 }
 
+const UNIFIED_RANK = 'Operator';
+const UNIFIED_RANKS = [UNIFIED_RANK];
+
 export const BRANCH_CONFIG: Record<BranchCode, BranchConfig> = {
   US_ARMY: {
     branch: 'US_ARMY',
-    ranks: ['PV1', 'PV2', 'PFC', 'SPC', 'SGT', 'SSG', 'SFC', 'Lieutenant', 'Captain', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'],
-    salaryPerDayCents: [4200, 4500, 4900, 5400, 6200, 7100, 8100, 9000, 9400, 9800, 11600, 13600, 16000],
+    ranks: UNIFIED_RANKS,
+    salaryPerDayCents: [4200],
     eventChanceModifier: 1.08,
     deployment: {
       patrol: {
@@ -54,8 +57,8 @@ export const BRANCH_CONFIG: Record<BranchCode, BranchConfig> = {
   },
   US_NAVY: {
     branch: 'US_NAVY',
-    ranks: ['SR', 'SA', 'SN', 'PO3', 'PO2', 'PO1', 'CPO', 'Lieutenant', 'Captain', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'],
-    salaryPerDayCents: [4300, 4700, 5100, 5600, 6500, 7400, 8500, 9200, 9700, 10100, 11900, 14000, 16400],
+    ranks: UNIFIED_RANKS,
+    salaryPerDayCents: [4300],
     eventChanceModifier: 0.97,
     deployment: {
       patrol: {
@@ -78,8 +81,8 @@ export const BRANCH_CONFIG: Record<BranchCode, BranchConfig> = {
   },
   ID_TNI_AD: {
     branch: 'ID_TNI_AD',
-    ranks: ['Prada', 'Pratu', 'Praka', 'Kopda', 'Koptu', 'Serda', 'Sertu', 'Letnan', 'Kapten', 'Brigadier General', 'Major General', 'Letnan Jendral', 'General'],
-    salaryPerDayCents: [1200, 1300, 1450, 1600, 1800, 2050, 2300, 2600, 2850, 3000, 3800, 4700, 5600],
+    ranks: UNIFIED_RANKS,
+    salaryPerDayCents: [1200],
     eventChanceModifier: 1.05,
     deployment: {
       patrol: {
@@ -102,8 +105,8 @@ export const BRANCH_CONFIG: Record<BranchCode, BranchConfig> = {
   },
   ID_TNI_AL: {
     branch: 'ID_TNI_AL',
-    ranks: ['KLD', 'KLS', 'KLK', 'Kopda', 'Koptu', 'Serda', 'Sertu', 'Letnan', 'Kapten', 'Brigadier General', 'Major General', 'Letnan Jendral', 'General'],
-    salaryPerDayCents: [1250, 1360, 1500, 1670, 1880, 2140, 2400, 2750, 2950, 3150, 3950, 4850, 5750],
+    ranks: UNIFIED_RANKS,
+    salaryPerDayCents: [1250],
     eventChanceModifier: 0.96,
     deployment: {
       patrol: {

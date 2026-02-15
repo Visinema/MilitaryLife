@@ -52,10 +52,10 @@ function buildMissionPack(snapshot: GameSnapshot) {
 
   const chair =
     tier === 'HIGH'
-      ? 'Lt. Colonel A. Pradana (Joint Operations Chair)'
+      ? 'Operator A. Pradana (Joint Operations Chair)'
       : tier === 'MID'
-        ? 'Major S. Halim (Sector Commander)'
-        : 'Captain R. Hayes (Squad Lead)';
+        ? 'Operator S. Halim (Sector Coordinator)'
+        : 'Operator R. Hayes (Squad Lead)';
 
   const missionPool = [
     'Urban Evacuation Corridor Stabilization',

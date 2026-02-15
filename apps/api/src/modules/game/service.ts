@@ -174,6 +174,11 @@ async function withLockedState(
       return;
     }
 
+    if (state.rank_index !== 0) {
+      state.rank_index = 0;
+      state.days_in_rank = 0;
+    }
+
     const nowMs = Date.now();
     const initialStateCheckpoint = createStateCheckpoint(state);
     autoResumeIfExpired(state, nowMs);
@@ -255,18 +260,7 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
 
 
 function hasCommandAccess(state: DbGameStateRow): boolean {
-  const ranks = BRANCH_CONFIG[state.branch].ranks;
-  const currentRank = (ranks[state.rank_index] ?? '').toLowerCase();
-  const captainIndex = ranks.findIndex((rank) => {
-    const lowered = rank.toLowerCase();
-    return lowered.includes('captain') || lowered.includes('kapten');
-  });
-
-  if (captainIndex >= 0) {
-    return state.rank_index >= captainIndex;
-  }
-
-  return currentRank.includes('major') || currentRank.includes('colonel') || currentRank.includes('general') || state.rank_index >= 8;
+  return BRANCH_CONFIG[state.branch].ranks.length === 1;
 }
 
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
@@ -470,15 +464,8 @@ export async function runMilitaryAcademy(
     state.promotion_points += pointsBoost;
     state.academy_tier = Math.max(state.academy_tier, tier);
 
-    const lieutenantIndex = BRANCH_CONFIG[state.branch].ranks.findIndex((rank) => {
-      const lowered = rank.toLowerCase();
-      return (lowered.includes('lieutenant') || lowered.includes('letnan')) && !lowered.includes('jendral') && !lowered.includes('general');
-    });
-
-    if (lieutenantIndex >= 0 && state.rank_index < lieutenantIndex) {
-      state.rank_index = lieutenantIndex;
-      state.days_in_rank = 0;
-    }
+    state.rank_index = 0;
+    state.days_in_rank = 0;
 
     const freedomIncrement = Math.max(10, Math.floor(score / 2));
     state.division_freedom_score = Math.min(100, state.division_freedom_score + freedomIncrement);
@@ -681,7 +668,7 @@ export async function runCommandAction(
       return {
         statusCode: 403,
         payload: {
-          error: `Command access requires Captain/Kapten rank or higher. Current rank: ${currentRank}` ,
+          error: `Command access is unavailable for the current profile. Current rank: ${currentRank}`,
           snapshot: buildSnapshot(state, nowMs)
         }
       };

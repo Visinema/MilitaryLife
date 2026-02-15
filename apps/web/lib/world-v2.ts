@@ -69,7 +69,7 @@ const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', '
 const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
 const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
 const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
-const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'] as const;
+const UNIVERSAL_RANKS = ['Operator'] as const;
 
 type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
 
@@ -114,7 +114,7 @@ function rankTrack(rankCode: string): WorldV2State['player']['rankTrack'] {
 
 function universalRankFromScore(score: number): UniversalRank {
   const idx = Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, Math.floor(score / 10)));
-  return UNIVERSAL_RANKS[idx] ?? 'Recruit';
+  return UNIVERSAL_RANKS[idx] ?? 'Operator';
 }
 
 function universalRankFromSnapshot(snapshot: GameSnapshot, influenceRecord: number): UniversalRank {
@@ -127,12 +127,8 @@ function universalRankFromSnapshot(snapshot: GameSnapshot, influenceRecord: numb
   return universalRankFromScore(playerRankScore(snapshot, influenceRecord));
 }
 
-function roleFromUniversalRank(rank: UniversalRank, slot: number): string {
-  if (rank === 'General' || rank === 'Lieutenant General') return slot === 0 ? 'Theater Commander' : 'Deputy Commander';
-  if (rank === 'Major General' || rank === 'Brigadier General' || rank === 'Colonel') return 'Division Commander';
-  if (rank === 'Major' || rank === 'Captain') return 'Task Group Commander';
-  if (rank === 'Lieutenant' || rank === 'Warrant Officer') return 'Sector Leader';
-  return 'Field Commander';
+function roleFromUniversalRank(_rank: UniversalRank, slot: number): string {
+  return slot === 0 ? 'Unit Coordinator' : 'Field Operator';
 }
 
 function uniformTone(branch: string) {

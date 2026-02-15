@@ -22,16 +22,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
-  const normalizedRank = snapshot.rankCode.toLowerCase();
-  const commandUnlocked =
-    (snapshot.rankIndex ?? 0) >= 8 ||
-    normalizedRank.includes('captain') ||
-    normalizedRank.includes('kapten') ||
-    normalizedRank.includes('major') ||
-    normalizedRank.includes('colonel') ||
-    normalizedRank.includes('kolonel') ||
-    normalizedRank.includes('general') ||
-    normalizedRank.includes('jendral');
+  const commandUnlocked = true;
 
   const runCommandAction = async (action: CommandAction) => {
     if (!commandUnlocked) return;
@@ -160,10 +151,10 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                     <button onClick={() => void runCommandAction('ISSUE_PROMOTION')} disabled={Boolean(commandBusy)} className="rounded border border-border bg-panel px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'ISSUE_PROMOTION' ? 'Issuing...' : 'Promote NPC'}</button>
                     <button onClick={() => void runCommandAction('ISSUE_SANCTION')} disabled={Boolean(commandBusy)} className="rounded border border-danger/60 bg-danger/10 px-1.5 py-1 text-[11px] text-danger disabled:opacity-60">{commandBusy === 'ISSUE_SANCTION' ? 'Issuing...' : 'Sanction NPC'}</button>
                   </div>
-                  <p className="mt-1 text-[10px] text-muted">Captain++ command unlocked: plan mission, command subordinates, issue sanction/promotion.</p>
+                  <p className="mt-1 text-[10px] text-muted">Unified command active: plan mission, command subordinates, issue sanction/promotion.</p>
                 </>
               ) : (
-                <p className="mt-1 text-[11px] text-muted">Locked. Current rank: {snapshot.rankCode}. Reach Captain/Kapten or higher to unlock Commands.</p>
+                <p className="mt-1 text-[11px] text-muted">Locked. Current rank: {snapshot.rankCode}.</p>
               )}
             </div>
 
