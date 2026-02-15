@@ -100,7 +100,7 @@ export default function PeoplePage() {
         const message = lines[(current.length + selectedNpc.relationScore) % lines.length];
         return { ...prev, [selectedNpcId]: [...current.slice(-9), message] };
       });
-    }, 3200);
+    }, 1800);
     return () => window.clearInterval(timer);
   }, [selectedNpc?.id]);
 
@@ -129,7 +129,7 @@ export default function PeoplePage() {
     };
 
     loadActivity();
-    const timer = window.setInterval(loadActivity, 6000);
+    const timer = window.setInterval(loadActivity, 9000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -190,7 +190,7 @@ export default function PeoplePage() {
       <div className="flex items-center justify-between cyber-panel p-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-muted">People & NPC Console</p>
-          <h1 className="text-lg font-semibold text-text">Realtime NPC Profiles & Smart Interaction</h1>
+          <h1 className="text-base font-semibold text-text">Smart Social Ops · Realtime NPC</h1>
         </div>
         <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
           Back to Dashboard

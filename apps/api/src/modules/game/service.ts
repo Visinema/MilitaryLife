@@ -786,6 +786,7 @@ export async function runSocialInteraction(
     const { npcId, interaction, note } = payload;
     const seed = npcHash(npcId) + state.current_day * 7 + state.rank_index * 13;
     const variance = (seed % 5) - 2;
+    const readinessFactor = Math.round((state.morale + state.health) / 40);
 
     const baseline = {
       MENTOR: { morale: 3, health: 0, points: 3, money: -120 },
@@ -794,10 +795,10 @@ export async function runSocialInteraction(
       DEBRIEF: { morale: 1, health: 0, points: 4, money: -60 }
     }[interaction];
 
-    const moraleDelta = Math.max(-3, Math.min(6, baseline.morale + Math.floor(variance / 2)));
+    const moraleDelta = Math.max(-3, Math.min(7, baseline.morale + Math.floor(variance / 2) + (readinessFactor > 4 ? 1 : 0)));
     const healthDelta = Math.max(-2, Math.min(3, baseline.health + (seed % 3 === 0 ? 1 : 0)));
-    const pointsDelta = Math.max(0, baseline.points + (seed % 4 === 0 ? 1 : 0));
-    const moneyDelta = baseline.money;
+    const pointsDelta = Math.max(1, baseline.points + (seed % 4 === 0 ? 1 : 0) + (readinessFactor >= 5 ? 1 : 0));
+    const moneyDelta = baseline.money + (interaction === 'DEBRIEF' ? 20 : 0);
 
     state.morale = Math.max(0, Math.min(100, state.morale + moraleDelta));
     state.health = Math.max(0, Math.min(100, state.health + healthDelta));

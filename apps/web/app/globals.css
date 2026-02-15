@@ -3,17 +3,17 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
 body {
   margin: 0;
   padding: 0;
-  background: radial-gradient(circle at 20% 10%, rgba(60, 110, 255, 0.12), transparent 35%),
-    radial-gradient(circle at 80% 0%, rgba(53, 242, 255, 0.12), transparent 30%),
-    #070b16;
-  color: #e6f3ff;
+  background: radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.18), transparent 32%),
+    radial-gradient(circle at 90% 10%, rgba(14, 165, 233, 0.16), transparent 30%),
+    #f4f8ff;
+  color: #0f172a;
 }
 
 body::before {
@@ -21,10 +21,10 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(rgba(53, 242, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(53, 242, 255, 0.05) 1px, transparent 1px);
-  background-size: 32px 32px;
-  opacity: 0.12;
+  background-image: linear-gradient(rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.35;
 }
 
 * {
@@ -45,7 +45,6 @@ textarea {
 
 @layer components {
   .cyber-panel {
-    @apply rounded-md border border-border bg-panel shadow-panel;
-    backdrop-filter: blur(5px);
+    @apply rounded-sm border border-border bg-panel shadow-panel;
   }
 }

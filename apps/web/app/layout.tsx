@@ -10,7 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-bg text-text antialiased">
-        <main className="mx-auto min-h-screen w-full max-w-[96rem] px-3 py-2.5 md:px-4 md:py-3">{children}</main>
+        <main className="mx-auto min-h-screen w-full max-w-none px-1 py-1 md:px-2 md:py-1.5">{children}</main>
       </body>
     </html>
   );
