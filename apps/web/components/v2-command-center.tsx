@@ -25,11 +25,16 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const normalizedRank = snapshot.rankCode.toLowerCase();
   const universalRank = world.player.universalRank.toLowerCase();
   const commandUnlocked =
-    (snapshot.rankIndex ?? 0) >= 9 ||
+    (snapshot.rankIndex ?? 0) >= 7 ||
+    normalizedRank.includes('captain') ||
+    normalizedRank.includes('kapten') ||
+    normalizedRank.includes('major') ||
     normalizedRank.includes('colonel') ||
     normalizedRank.includes('kolonel') ||
     normalizedRank.includes('general') ||
     normalizedRank.includes('jendral') ||
+    universalRank.includes('captain') ||
+    universalRank.includes('major') ||
     universalRank.includes('colonel') ||
     universalRank.includes('general');
 
@@ -160,10 +165,10 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                     <button onClick={() => void runCommandAction('ISSUE_PROMOTION')} disabled={Boolean(commandBusy)} className="rounded border border-border bg-panel px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'ISSUE_PROMOTION' ? 'Issuing...' : 'Promote NPC'}</button>
                     <button onClick={() => void runCommandAction('ISSUE_SANCTION')} disabled={Boolean(commandBusy)} className="rounded border border-danger/60 bg-danger/10 px-1.5 py-1 text-[11px] text-danger disabled:opacity-60">{commandBusy === 'ISSUE_SANCTION' ? 'Issuing...' : 'Sanction NPC'}</button>
                   </div>
-                  <p className="mt-1 text-[10px] text-muted">Colonel++ command unlocked: plan mission, command subordinates, issue sanction/promotion.</p>
+                  <p className="mt-1 text-[10px] text-muted">Captain++ command unlocked: plan mission, command subordinates, issue sanction/promotion.</p>
                 </>
               ) : (
-                <p className="mt-1 text-[11px] text-muted">Locked. Reach Colonel or higher to unlock Commands.</p>
+                <p className="mt-1 text-[11px] text-muted">Locked. Reach Captain or higher to unlock Commands.</p>
               )}
             </div>
 

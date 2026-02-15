@@ -257,13 +257,16 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
 function hasCommandAccess(state: DbGameStateRow): boolean {
   const ranks = BRANCH_CONFIG[state.branch].ranks;
   const currentRank = (ranks[state.rank_index] ?? '').toLowerCase();
-  const colonelIndex = ranks.findIndex((rank) => rank.toLowerCase().includes('colonel') || rank.toLowerCase().includes('kolonel'));
+  const captainIndex = ranks.findIndex((rank) => {
+    const lowered = rank.toLowerCase();
+    return lowered.includes('captain') || lowered.includes('kapten');
+  });
 
-  if (colonelIndex >= 0) {
-    return state.rank_index >= colonelIndex;
+  if (captainIndex >= 0) {
+    return state.rank_index >= captainIndex;
   }
 
-  return currentRank.includes('general') || state.rank_index >= 9;
+  return currentRank.includes('major') || currentRank.includes('colonel') || currentRank.includes('general') || state.rank_index >= 8;
 }
 
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
@@ -674,7 +677,7 @@ export async function runCommandAction(
 
     const canAccessCommand = hasCommandAccess(state);
     if (!canAccessCommand) {
-      return { statusCode: 403, payload: { error: 'Command access requires Colonel rank or higher', snapshot: buildSnapshot(state, nowMs) } };
+      return { statusCode: 403, payload: { error: 'Command access requires Captain rank or higher', snapshot: buildSnapshot(state, nowMs) } };
     }
 
     const { action, targetNpcId, note } = payload;
