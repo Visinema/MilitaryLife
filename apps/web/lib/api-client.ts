@@ -165,6 +165,9 @@ export const api = {
   ceremony() {
     return request<{ ceremony: CeremonyReport }>('/game/ceremony', 'GET');
   },
+  ceremonyComplete() {
+    return request<{ ok: boolean; awardedToPlayer?: boolean; snapshot: GameSnapshot; alreadyCompleted?: boolean }>('/game/actions/ceremony-complete', 'POST', {});
+  },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
   },

@@ -138,8 +138,28 @@ function behaviorTag(seedValue: number): NpcV2Profile['behaviorTag'] {
   return 'STRATEGIST';
 }
 
+
+function ribbonFromAwardName(name: string, idx: number): RibbonStyle {
+  const palettes: Array<[string, string, string]> = [
+    ['#2f3d56', '#79c4ff', '#2f3d56'],
+    ['#26412e', '#f4f7f4', '#26412e'],
+    ['#5f2a2a', '#f1a98b', '#5f2a2a'],
+    ['#2f2038', '#b78ced', '#2f2038']
+  ];
+  const patterns: RibbonPattern[] = ['CENTER_STRIPE', 'TRI_BAND', 'CHEVRON', 'SOLID'];
+  return {
+    id: `ceremony-ribbon-${idx}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    name,
+    colors: palettes[idx % palettes.length] as [string, string, string],
+    pattern: patterns[idx % patterns.length] ?? 'CENTER_STRIPE',
+    unlockedBy: 'Nominasi Upacara',
+    influenceBuff: 2
+  };
+}
+
 function buildPlayerRibbons(snapshot: GameSnapshot): RibbonStyle[] {
-  return RIBBON_DEFINITIONS.filter((definition) => definition.playerUnlock(snapshot));
+  const awarded = Array.isArray(snapshot.playerRibbons) ? snapshot.playerRibbons : [];
+  return awarded.map((name, idx) => ribbonFromAwardName(name, idx));
 }
 
 function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): number {
@@ -151,7 +171,7 @@ function deathDayForSlot(baseSeed: number, slot: number): number | null {
   return 35 + (Math.abs(baseSeed) % 170) + slot;
 }
 
-function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: number): NpcV2Profile {
+function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>): NpcV2Profile {
   const baseSeed = seeded(snapshot, slot * 3 + 11);
   const deathDay = deathDayForSlot(baseSeed, slot);
   const replacementDelay = 18 + (Math.abs(baseSeed) % 12);
@@ -178,20 +198,22 @@ function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: 
   const relationScore = 38 + (Math.abs(generationSeed) % 58);
   const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75);
   const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4));
-  const unlocked = RIBBON_DEFINITIONS.filter((definition) => progressionScore >= definition.npcThreshold).slice(0, 10);
   const rank = universalRankFromScore(progressionScore * 0.35 + commandPower * 0.55);
+  const npcName = `${pick(FIRST_NAMES, generationSeed)} ${pick(LAST_NAMES, generationSeed * 3)}`;
+  const ceremonyAward = awardsByNpc.get(npcName);
+  const ribbons = ceremonyAward ? [ribbonFromAwardName(ceremonyAward.ribbonName, slot)] : [];
 
   return {
     id: `npc-slot-${slot}-gen-${generation}`,
     slot,
-    name: `${pick(FIRST_NAMES, generationSeed)} ${pick(LAST_NAMES, generationSeed * 3)}`,
+    name: npcName,
     branch: toBranchLabel(snapshot.branch),
     rank,
     role: roleFromUniversalRank(rank, slot),
     division: pick(DIVISIONS, generationSeed),
     subdivision: pick(SUBDIVISIONS, generationSeed * 2),
-    medals: unlocked.slice(0, 4).map((ribbon) => ribbon.name),
-    ribbons: unlocked,
+    medals: ceremonyAward ? [ceremonyAward.medalName] : [],
+    ribbons,
     status,
     commandPower,
     joinedOnDay,
@@ -204,10 +226,11 @@ function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: 
 
 export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const playerRibbons = buildPlayerRibbons(snapshot);
-  const playerMedals = playerRibbons.slice(0, 6).map((ribbon) => ribbon.name);
+  const playerMedals = Array.isArray(snapshot.playerMedals) ? snapshot.playerMedals.slice(-6) : [];
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
-  const roster = Array.from({ length: MAX_NPCS }, (_, slot) => buildNpcForSlot(snapshot, slot, influenceRecord));
+  const awardsByNpc = new Map((snapshot.ceremonyRecentAwards ?? []).map((item) => [item.npcName, { medalName: item.medalName, ribbonName: item.ribbonName }]));
+  const roster = Array.from({ length: MAX_NPCS }, (_, slot) => buildNpcForSlot(snapshot, slot, influenceRecord, awardsByNpc));
   const hierarchy = [...roster].filter((npc) => npc.status !== 'KIA').sort((a, b) => b.commandPower - a.commandPower).slice(0, 8);
 
   const stats = {

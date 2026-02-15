@@ -61,6 +61,10 @@ interface StateCheckpoint {
   certificateInventory: DbGameStateRow['certificate_inventory'];
   divisionFreedomScore: number;
   preferredDivision: string | null;
+  ceremonyCompletedDay: number;
+  ceremonyRecentAwards: DbGameStateRow['ceremony_recent_awards'];
+  playerMedals: DbGameStateRow['player_medals'];
+  playerRibbons: DbGameStateRow['player_ribbons'];
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -87,6 +91,10 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     certificateInventory: state.certificate_inventory,
     divisionFreedomScore: state.division_freedom_score,
     preferredDivision: state.preferred_division,
+    ceremonyCompletedDay: state.ceremony_completed_day,
+    ceremonyRecentAwards: state.ceremony_recent_awards,
+    playerMedals: state.player_medals,
+    playerRibbons: state.player_ribbons,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -114,6 +122,10 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.certificate_inventory !== checkpoint.certificateInventory ||
     state.division_freedom_score !== checkpoint.divisionFreedomScore ||
     state.preferred_division !== checkpoint.preferredDivision ||
+    state.ceremony_completed_day !== checkpoint.ceremonyCompletedDay ||
+    state.ceremony_recent_awards !== checkpoint.ceremonyRecentAwards ||
+    state.player_medals !== checkpoint.playerMedals ||
+    state.player_ribbons !== checkpoint.playerRibbons ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -179,6 +191,7 @@ async function withLockedState(
     const initialStateCheckpoint = createStateCheckpoint(state);
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
+    enforceCeremonyPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
 
     if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
       await maybeQueueDecisionEvent(client, state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
@@ -247,6 +260,10 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
       return { payload: { error: 'Invalid pause token' }, statusCode: 409 };
     }
 
+    if (ceremonyPending(state)) {
+      return { payload: { error: 'Complete mandatory ceremony before resuming', snapshot: buildSnapshot(state, nowMs) }, statusCode: 409 };
+    }
+
     resumeState(state, nowMs);
     synchronizeProgress(state, nowMs);
 
@@ -270,9 +287,27 @@ function hasCommandAccess(state: DbGameStateRow): boolean {
   return currentRank.includes('major') || currentRank.includes('colonel') || currentRank.includes('general') || state.rank_index >= 8;
 }
 
+
+function currentCeremonyCycleDay(gameDay: number): number {
+  if (gameDay < 12) return 0;
+  return Math.floor(gameDay / 12) * 12;
+}
+
+function ceremonyPending(state: DbGameStateRow): boolean {
+  const cycleDay = currentCeremonyCycleDay(state.current_day);
+  return cycleDay >= 12 && state.ceremony_completed_day < cycleDay;
+}
+
+function enforceCeremonyPause(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
+  if (!ceremonyPending(state)) return;
+  if (state.pause_reason === 'DECISION') return;
+  pauseState(state, 'SUBPAGE', nowMs, timeoutMinutes);
+}
+
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
-  if (!state.pending_event_id) return null;
-  return 'Resolve pending decision before taking actions';
+  if (state.pending_event_id) return 'Resolve pending decision before taking actions';
+  if (ceremonyPending(state)) return 'Ceremony is mandatory today. Open Ceremony page to proceed.';
+  return null;
 }
 
 export async function runTraining(
@@ -828,6 +863,45 @@ export async function runSocialInteraction(
   });
 }
 
+
+export async function completeCeremony(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    if (!ceremonyPending(state)) {
+      return { payload: { ok: true, snapshot: buildSnapshot(state, nowMs), alreadyCompleted: true } };
+    }
+
+    const report = buildCeremonyReport(state);
+    const awardedToPlayer = (state.rank_index + state.morale + state.health + state.current_day) % 2 === 0;
+
+    const playerMedals = awardedToPlayer ? [
+      ...state.player_medals,
+      `Chief Citation Day ${report.ceremonyDay}`
+    ] : state.player_medals;
+    const playerRibbons = awardedToPlayer ? [
+      ...state.player_ribbons,
+      `Ceremony Ribbon Day ${report.ceremonyDay}`
+    ] : state.player_ribbons;
+
+    state.player_medals = Array.from(new Set(playerMedals)).slice(-24);
+    state.player_ribbons = Array.from(new Set(playerRibbons)).slice(-24);
+    state.ceremony_recent_awards = report.recipients;
+    state.ceremony_completed_day = report.ceremonyDay;
+
+    if (state.pause_reason === 'SUBPAGE' && state.paused_at_ms) {
+      resumeState(state, nowMs);
+      synchronizeProgress(state, nowMs);
+    }
+
+    return {
+      payload: {
+        ok: true,
+        awardedToPlayer,
+        snapshot: buildSnapshot(state, nowMs)
+      }
+    };
+  });
+}
+
 export async function getDecisionLogs(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -858,7 +932,10 @@ export async function getGameConfig(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function getCeremonyReport(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  await withLockedState(request, reply, { queueEvents: false }, async ({ state }) => {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    if (!ceremonyPending(state)) {
+      return { statusCode: 409, payload: { error: 'Ceremony has not started yet', snapshot: buildSnapshot(state, nowMs) } };
+    }
     return { payload: { ceremony: buildCeremonyReport(state) } };
   });
 }

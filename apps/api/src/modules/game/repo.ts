@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
-import type { AcademyCertificate } from '@mls/shared/game-types';
+import type { AcademyCertificate, CeremonyRecipient } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -28,6 +28,10 @@ export interface DbGameStateRow {
   division_freedom_score: number;
   preferred_division: string | null;
   pending_event_id: number | null;
+  ceremony_completed_day: number;
+  ceremony_recent_awards: CeremonyRecipient[];
+  player_medals: string[];
+  player_ribbons: string[];
   pending_event_payload: {
     title: string;
     description: string;
@@ -65,6 +69,33 @@ export interface DbCandidateEvent {
   last_seen_day: number;
 }
 
+
+
+function parseJsonbStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function parseCeremonyRecipients(value: unknown): CeremonyRecipient[] {
+  if (Array.isArray(value)) return value as CeremonyRecipient[];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as CeremonyRecipient[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 function parseJsonbArray(value: unknown): AcademyCertificate[] {
   if (Array.isArray(value)) {
@@ -134,6 +165,10 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.division_freedom_score,
         gs.preferred_division,
         gs.pending_event_id,
+        gs.ceremony_completed_day,
+        gs.ceremony_recent_awards,
+        gs.player_medals,
+        gs.player_ribbons,
         gs.pending_event_payload,
         gs.version
       FROM profiles p
@@ -148,6 +183,9 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   if (!row) return null;
 
   row.certificate_inventory = parseJsonbArray(row.certificate_inventory);
+  row.ceremony_recent_awards = parseCeremonyRecipients(row.ceremony_recent_awards);
+  row.player_medals = parseJsonbStringArray(row.player_medals);
+  row.player_ribbons = parseJsonbStringArray(row.player_ribbons);
   return row;
 }
 
@@ -211,7 +249,11 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         division_freedom_score = $20,
         preferred_division = $21,
         pending_event_id = $22,
-        pending_event_payload = $23::jsonb,
+        ceremony_completed_day = $23,
+        ceremony_recent_awards = $24::jsonb,
+        player_medals = $25::jsonb,
+        player_ribbons = $26::jsonb,
+        pending_event_payload = $27::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -239,6 +281,10 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.division_freedom_score,
       state.preferred_division,
       state.pending_event_id,
+      state.ceremony_completed_day,
+      toJsonbParam(state.ceremony_recent_awards, []),
+      toJsonbParam(state.player_medals, []),
+      toJsonbParam(state.player_ribbons, []),
       toJsonbParam(state.pending_event_payload, null)
     ]
   );

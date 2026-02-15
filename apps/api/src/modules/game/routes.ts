@@ -29,7 +29,8 @@ import {
   runMilitaryAcademy,
   runTravel,
   runCommandAction,
-  runSocialInteraction
+  runSocialInteraction,
+  completeCeremony
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -114,6 +115,10 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     await restartWorldFromZero(request, reply);
   });
 
+
+  app.post('/actions/ceremony-complete', async (request, reply) => {
+    await completeCeremony(request, reply);
+  });
 
   app.post('/actions/social-interaction', async (request, reply) => {
     try {

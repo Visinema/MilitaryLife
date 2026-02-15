@@ -90,6 +90,10 @@ export interface GameSnapshot {
   pendingDecision: PendingDecision | null;
   ceremonyDue: boolean;
   nextCeremonyDay: number;
+  ceremonyCompletedDay: number;
+  ceremonyRecentAwards: CeremonyRecipient[];
+  playerMedals: string[];
+  playerRibbons: string[];
 }
 
 export interface DecisionResult {

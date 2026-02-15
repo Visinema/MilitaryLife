@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CeremonyReport } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
@@ -9,10 +9,23 @@ import { useGameStore } from '@/store/game-store';
 export default function CeremonyPage() {
   const [ceremony, setCeremony] = useState<CeremonyReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const snapshot = useGameStore((state) => state.snapshot);
+  const setSnapshot = useGameStore((state) => state.setSnapshot);
 
   useEffect(() => {
-    if (!snapshot?.ceremonyDue) {
+    if (snapshot) return;
+    api
+      .snapshot()
+      .then((response) => setSnapshot(response.snapshot))
+      .catch((err: Error) => setError(err.message));
+  }, [setSnapshot, snapshot]);
+
+  const ceremonyDue = Boolean(snapshot?.ceremonyDue);
+
+  useEffect(() => {
+    setError(null);
+    if (!ceremonyDue) {
       setCeremony(null);
       return;
     }
@@ -30,7 +43,24 @@ export default function CeremonyPage() {
     return () => {
       cancelled = true;
     };
-  }, [snapshot?.ceremonyDue]);
+  }, [ceremonyDue]);
+
+  const recentAwards = useMemo(() => snapshot?.ceremonyRecentAwards ?? [], [snapshot?.ceremonyRecentAwards]);
+
+  const completeCeremony = async () => {
+    if (!ceremonyDue || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.ceremonyComplete();
+      setSnapshot(response.snapshot);
+      setCeremony(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -38,16 +68,20 @@ export default function CeremonyPage() {
         <p className="text-xs uppercase tracking-[0.14em] text-muted">Upacara Medal</p>
         <h1 className="text-lg font-semibold text-text">Parade 12 Harian · Pemberian Pita oleh Chief of Staff</h1>
         <p className="mt-1 text-xs text-muted">
-          {snapshot?.ceremonyDue
-            ? 'Upacara aktif hari ini. Seluruh personel hadir dan sesi medal berjalan satu per satu.'
+          {ceremonyDue
+            ? 'Upacara aktif dan game dipause sampai upacara diselesaikan.'
             : `Upacara berikutnya di Day ${snapshot?.nextCeremonyDay ?? '-'}.`}
         </p>
         <div className="mt-2 flex gap-2">
           <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-1 text-xs text-text">
             Back Dashboard
           </Link>
-          <button onClick={() => window.location.reload()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-xs text-text">
-            Reload Ceremony
+          <button
+            onClick={completeCeremony}
+            disabled={!ceremonyDue || busy}
+            className="rounded border border-accent bg-accent/20 px-3 py-1 text-xs text-text disabled:opacity-60"
+          >
+            {busy ? 'Menyelesaikan...' : 'Selesaikan Upacara (Unpause)'}
           </button>
         </div>
       </div>
@@ -74,15 +108,6 @@ export default function CeremonyPage() {
           </section>
 
           <section className="cyber-panel p-3 text-xs">
-            <h2 className="text-sm font-semibold text-text">Visual & Logs Upacara</h2>
-            <div className="mt-2 space-y-1">
-              {ceremony.logs.map((log, idx) => (
-                <p key={idx} className="rounded border border-border/60 bg-bg/60 px-2 py-1 text-muted">[{idx + 1}] {log}</p>
-              ))}
-            </div>
-          </section>
-
-          <section className="cyber-panel p-3 text-xs">
             <h2 className="text-sm font-semibold text-text">Sesi Pemberian Medal (Satu per Satu)</h2>
             <div className="mt-2 space-y-2">
               {ceremony.recipients.map((recipient) => (
@@ -98,8 +123,21 @@ export default function CeremonyPage() {
           </section>
         </>
       ) : (
-        <p className="text-sm text-muted">{snapshot?.ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari upacara aktif.'}</p>
+        <p className="text-sm text-muted">{ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari kelipatan 12 berikutnya.'}</p>
       )}
+
+      {!ceremonyDue && recentAwards.length > 0 ? (
+        <section className="cyber-panel p-3 text-xs">
+          <h2 className="text-sm font-semibold text-text">Riwayat Nominasi Upacara Terakhir</h2>
+          <div className="mt-2 space-y-1">
+            {recentAwards.map((recipient) => (
+              <p key={`${recipient.order}-${recipient.npcName}`} className="rounded border border-border/60 bg-bg/70 px-2 py-1 text-muted">
+                #{recipient.order} {recipient.npcName} · {recipient.medalName}
+              </p>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

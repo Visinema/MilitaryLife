@@ -184,9 +184,13 @@ export function autoResumeIfExpired(state: DbGameStateRow, nowMs: number): boole
     return false;
   }
 
-  // Keep decision lock active until user resolves pending decision.
-  // Auto-resuming here causes stale "No matching pending decision" conflicts on Event Frame.
+  // Keep mandatory locks active until fully resolved.
   if (state.pause_reason === 'DECISION' && state.pending_event_id) {
+    return false;
+  }
+
+  const ceremonyCycleDay = state.current_day >= 12 ? Math.floor(state.current_day / 12) * 12 : 0;
+  if (state.pause_reason === 'SUBPAGE' && ceremonyCycleDay >= 12 && state.ceremony_completed_day < ceremonyCycleDay) {
     return false;
   }
 
@@ -464,9 +468,8 @@ function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['division
 
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
-  const currentCeremonyDay = gameDay < 12 ? 12 : Math.floor(gameDay / 12) * 12;
-  const ceremonyWindowDays = 2;
-  const ceremonyDue = gameDay >= 12 && gameDay - currentCeremonyDay <= ceremonyWindowDays;
+  const currentCeremonyDay = gameDay >= 12 ? Math.floor(gameDay / 12) * 12 : 0;
+  const ceremonyDue = currentCeremonyDay >= 12 && gameDay % 12 === 0 && state.ceremony_completed_day < currentCeremonyDay;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
   return {
     serverNowMs: nowMs,
@@ -496,7 +499,11 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     divisionAccess: getDivisionAccessProfile(state),
     pendingDecision: normalizePendingDecisionPayload(state),
     ceremonyDue,
-    nextCeremonyDay: gameDay % 12 === 0 ? gameDay + 12 : gameDay + (12 - (gameDay % 12))
+    nextCeremonyDay: gameDay < 12 ? 12 : gameDay % 12 === 0 ? gameDay + 12 : gameDay + (12 - (gameDay % 12)),
+    ceremonyCompletedDay: state.ceremony_completed_day,
+    ceremonyRecentAwards: state.ceremony_recent_awards,
+    playerMedals: state.player_medals,
+    playerRibbons: state.player_ribbons
   };
 }
 
