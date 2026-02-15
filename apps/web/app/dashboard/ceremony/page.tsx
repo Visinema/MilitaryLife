@@ -55,6 +55,15 @@ export default function CeremonyPage() {
 
   const recentAwards = useMemo(() => snapshot?.ceremonyRecentAwards ?? [], [snapshot?.ceremonyRecentAwards]);
 
+  useEffect(() => {
+    if (!ceremonyDue) return;
+    const timer = window.setInterval(() => {
+      api.snapshot().then((res) => setSnapshot(res.snapshot)).catch(() => null);
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [ceremonyDue, setSnapshot]);
+
+
   const completeCeremony = async () => {
     if (!ceremonyDue || busy) return;
     setBusy(true);

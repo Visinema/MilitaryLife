@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import type { CountryCode } from '@mls/shared/constants';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
@@ -56,6 +56,7 @@ type AcademyOutcome = {
 
 export function DashboardShell() {
   const router = useRouter();
+  const pathname = usePathname();
   const snapshot = useGameStore((state) => state.snapshot);
   const clockOffsetMs = useGameStore((state) => state.clockOffsetMs);
   const loading = useGameStore((state) => state.loading);
@@ -332,11 +333,8 @@ export function DashboardShell() {
     if (typeof window === 'undefined') return;
     if (document.visibilityState !== 'visible') return;
 
+    if (pathname.startsWith('/dashboard/ceremony')) return;
     const ceremonyCycleDay = snapshot.gameDay < 12 ? 12 : snapshot.gameDay - (snapshot.gameDay % 12);
-    const key = `ceremony-auto-cycle-${ceremonyCycleDay}`;
-    if (window.sessionStorage.getItem(key)) return;
-
-    window.sessionStorage.setItem(key, '1');
     ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
       router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
     });
@@ -347,7 +345,7 @@ export function DashboardShell() {
         ceremonyRedirectFrameRef.current = null;
       }
     };
-  }, [pageReady, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
+  }, [pageReady, pathname, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
 
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 
