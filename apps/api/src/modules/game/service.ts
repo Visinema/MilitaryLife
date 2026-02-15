@@ -626,6 +626,64 @@ export async function chooseDecision(
 }
 
 
+
+export async function runCommandAction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { action: 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION'; targetNpcId?: string; note?: string }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const pendingError = ensureNoPendingDecision(state);
+    if (pendingError) {
+      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const canAccessCommand = state.rank_index >= 9;
+    if (!canAccessCommand) {
+      return { statusCode: 403, payload: { error: 'Command access requires Colonel rank or higher', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const { action, targetNpcId, note } = payload;
+    const normalizedNote = note?.trim() ?? '';
+
+    if (action === 'PLAN_MISSION') {
+      state.promotion_points += 4;
+      state.morale = Math.min(100, state.morale + 1);
+      state.next_event_day = Math.max(state.current_day + 2, state.next_event_day);
+    }
+
+    if (action === 'ISSUE_SANCTION') {
+      state.morale = Math.max(0, state.morale - 1);
+      state.promotion_points += 2;
+    }
+
+    if (action === 'ISSUE_PROMOTION') {
+      state.morale = Math.min(100, state.morale + 2);
+      state.promotion_points += 5;
+    }
+
+    const snapshot = buildSnapshot(state, nowMs);
+    const result: ActionResult = {
+      type: 'COMMAND',
+      snapshot,
+      details: {
+        action,
+        targetNpcId: targetNpcId ?? null,
+        note: normalizedNote,
+        commandAccess: true,
+        issuedByRank: snapshot.rankCode,
+        effect: {
+          morale: snapshot.morale,
+          promotionPoints: state.promotion_points,
+          nextEventDay: state.next_event_day
+        }
+      }
+    };
+
+    return { payload: result };
+  });
+}
+
 export async function restartWorldFromZero(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs, client, profileId }) => {
     state.server_reference_time_ms = nowMs;

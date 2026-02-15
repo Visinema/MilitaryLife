@@ -8,7 +8,8 @@ import {
   resumeSchema,
   trainingSchema,
   militaryAcademySchema,
-  travelSchema
+  travelSchema,
+  commandActionSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -24,7 +25,8 @@ import {
   runTraining,
   restartWorldFromZero,
   runMilitaryAcademy,
-  runTravel
+  runTravel,
+  runCommandAction
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -94,6 +96,16 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+
+
+  app.post('/actions/command', async (request, reply) => {
+    try {
+      const body = parseOrThrow(commandActionSchema, request.body ?? {});
+      await runCommandAction(request, reply, body);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
 
   app.post('/actions/restart-world', async (request, reply) => {
     await restartWorldFromZero(request, reply);

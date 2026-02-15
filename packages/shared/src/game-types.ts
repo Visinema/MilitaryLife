@@ -75,7 +75,7 @@ export interface DecisionResult {
 }
 
 export interface ActionResult {
-  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL';
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND';
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }

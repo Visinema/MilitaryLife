@@ -36,3 +36,9 @@ export const militaryAcademySchema = z.object({
 export const travelSchema = z.object({
   place: z.enum(['BASE_HQ', 'BORDER_OUTPOST', 'LOGISTICS_HUB', 'TACTICAL_TOWN'])
 });
+
+export const commandActionSchema = z.object({
+  action: z.enum(['PLAN_MISSION', 'ISSUE_SANCTION', 'ISSUE_PROMOTION']),
+  targetNpcId: z.string().min(1).max(64).optional(),
+  note: z.string().min(1).max(240).optional()
+});

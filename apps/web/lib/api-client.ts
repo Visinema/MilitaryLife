@@ -4,6 +4,7 @@ import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/gam
 type HttpMethod = 'GET' | 'POST';
 
 export type TravelPlace = 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN';
+export type CommandAction = 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION';
 
 type RequestOptions = {
   cache?: RequestCache;
@@ -126,6 +127,9 @@ export const api = {
   },
   travel(place: TravelPlace) {
     return request<ActionResult>('/game/actions/travel', 'POST', { place });
+  },
+  command(action: CommandAction, targetNpcId?: string, note?: string) {
+    return request<ActionResult>('/game/actions/command', 'POST', { action, targetNpcId, note });
   },
   restartWorld() {
     return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {});

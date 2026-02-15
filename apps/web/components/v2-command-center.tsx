@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
+import { api, ApiError, type CommandAction } from '@/lib/api-client';
 import { buildWorldV2 } from '@/lib/world-v2';
+import { useGameStore } from '@/store/game-store';
 import { AvatarFrame } from './avatar-frame';
 import { PersonalStatsPanel } from './personal-stats-panel';
 
@@ -13,7 +15,32 @@ interface V2CommandCenterProps {
 
 export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const [mobileTab, setMobileTab] = useState<'overview' | 'mission'>('overview');
+  const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
+  const [commandNote, setCommandNote] = useState('');
+  const [targetNpcId, setTargetNpcId] = useState<string>('');
+  const setSnapshot = useGameStore((state) => state.setSnapshot);
+  const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
+  const commandUnlocked = (snapshot.rankIndex ?? 0) >= 9;
+
+  const runCommandAction = async (action: CommandAction) => {
+    if (!commandUnlocked) return;
+    setCommandBusy(action);
+    try {
+      const result = await api.command(action, targetNpcId || undefined, commandNote || undefined);
+      setSnapshot(result.snapshot);
+      setError(null);
+      if (action === 'PLAN_MISSION') setCommandNote('');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Command action failed');
+      }
+    } finally {
+      setCommandBusy(null);
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -66,6 +93,56 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 baseHealth={snapshot.health}
                 baseReadiness={Math.round(world.player.commandAuthority)}
               />
+            </div>
+
+            <div className="mt-2 rounded border border-border/70 bg-bg/60 p-2">
+              <p className="text-xs uppercase tracking-[0.1em] text-muted">Command Hierarchy</p>
+              <div className="mt-1 grid gap-1">
+                {world.hierarchy.slice(0, 6).map((npc) => (
+                  <div key={npc.id} className="grid grid-cols-[1.2fr,0.8fr,0.8fr] gap-1 rounded border border-border/60 px-1.5 py-1 text-[11px]">
+                    <p className="truncate text-text">{npc.name}</p>
+                    <p className="truncate text-muted">{npc.rank}</p>
+                    <p className="truncate text-muted">{npc.role}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-2 rounded border border-border/70 bg-bg/60 p-2">
+              <p className="text-xs uppercase tracking-[0.1em] text-muted">Commands</p>
+              {commandUnlocked ? (
+                <>
+                  <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                    <select
+                      className="rounded border border-border bg-bg px-1.5 py-1 text-[11px] text-text"
+                      value={targetNpcId}
+                      onChange={(event) => setTargetNpcId(event.target.value)}
+                    >
+                      <option value="">Target NPC (optional)</option>
+                      {world.hierarchy.slice(0, 8).map((npc) => (
+                        <option key={npc.id} value={npc.id}>
+                          {npc.name} · {npc.role}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="rounded border border-border bg-bg px-1.5 py-1 text-[11px] text-text"
+                      value={commandNote}
+                      onChange={(event) => setCommandNote(event.target.value)}
+                      placeholder="Command note / mission objective"
+                      maxLength={240}
+                    />
+                  </div>
+                  <div className="mt-1 grid grid-cols-3 gap-1">
+                    <button onClick={() => void runCommandAction('PLAN_MISSION')} disabled={Boolean(commandBusy)} className="rounded border border-accent bg-accent/20 px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'PLAN_MISSION' ? 'Planning...' : 'Plan Mission'}</button>
+                    <button onClick={() => void runCommandAction('ISSUE_PROMOTION')} disabled={Boolean(commandBusy)} className="rounded border border-border bg-panel px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'ISSUE_PROMOTION' ? 'Issuing...' : 'Promote NPC'}</button>
+                    <button onClick={() => void runCommandAction('ISSUE_SANCTION')} disabled={Boolean(commandBusy)} className="rounded border border-danger/60 bg-danger/10 px-1.5 py-1 text-[11px] text-danger disabled:opacity-60">{commandBusy === 'ISSUE_SANCTION' ? 'Issuing...' : 'Sanction NPC'}</button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted">Colonel++ command unlocked: plan mission, command subordinates, issue sanction/promotion.</p>
+                </>
+              ) : (
+                <p className="mt-1 text-[11px] text-muted">Locked. Reach Colonel or higher to unlock Commands.</p>
+              )}
             </div>
 
             <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
