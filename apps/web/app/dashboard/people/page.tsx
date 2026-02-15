@@ -213,7 +213,7 @@ export default function PeoplePage() {
                   className={`w-full rounded border px-3 py-2 text-left ${selectedNpc?.id === npc.id ? 'border-accent bg-accent/10' : 'border-border bg-bg/50'}`}
                 >
                   <p className="text-sm font-semibold text-text">{npc.name}</p>
-                  <p className="text-xs text-muted">{npc.rank} · {npc.division}</p>
+                  <p className="text-xs text-muted">{npc.rank} · {npc.division} · {npc.unit}</p>
                   <p className="text-xs text-muted">Behavior: {npc.behaviorTag} · Relation: {npc.relationScore} · Score: {npc.progressionScore}</p>
                   <span className={`mt-1 inline-flex rounded border px-2 py-0.5 text-[10px] uppercase ${statusTone(npc.status)}`}>{npc.status}</span>
                 </button>
@@ -232,7 +232,7 @@ export default function PeoplePage() {
                   medals={selectedNpc.medals}
                   shoulderRankCount={2}
                   details={[
-                    `${selectedNpc.division} / ${selectedNpc.subdivision}`,
+                    `${selectedNpc.division} / ${selectedNpc.subdivision} / ${selectedNpc.unit}`,
                     `Behavior: ${selectedNpc.behaviorTag}`,
                     `Relation score: ${selectedNpc.relationScore}`,
                     `Status: ${selectedNpc.status}`,
