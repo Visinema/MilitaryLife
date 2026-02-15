@@ -125,6 +125,28 @@ export default function CeremonyPage() {
           </section>
 
           <section className="cyber-panel p-3 text-xs">
+            <h2 className="text-sm font-semibold text-text">Status Pita Medal Pemain</h2>
+            {ceremony.playerAward ? (
+              <p className="mt-1 text-text">
+                {ceremony.playerAward.playerName} menerima {ceremony.playerAward.medalName} / {ceremony.playerAward.ribbonName}
+              </p>
+            ) : (
+              <p className="mt-1 text-muted">{snapshot?.playerName ?? 'Player'} belum mendapat nominasi pita medal pada siklus ini.</p>
+            )}
+          </section>
+
+          <section className="cyber-panel p-3 text-xs">
+            <h2 className="text-sm font-semibold text-text">Logs Upacara</h2>
+            <div className="mt-2 space-y-1">
+              {ceremony.logs.map((line, idx) => (
+                <p key={`log-${idx}`} className="rounded border border-border/60 bg-bg/60 px-2 py-1 text-muted">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </section>
+
+          <section className="cyber-panel p-3 text-xs">
             <h2 className="text-sm font-semibold text-text">Sesi Pemberian Medal (Satu per Satu)</h2>
             <div className="mt-2 space-y-2">
               {ceremony.recipients.map((recipient) => (

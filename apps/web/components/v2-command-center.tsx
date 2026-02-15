@@ -72,8 +72,8 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
             <AvatarFrame
-              name={`${world.player.branchLabel} · ${snapshot.rankCode}`}
-              subtitle={`Rank: ${world.player.rankLabel}`}
+              name={snapshot.playerName}
+              subtitle={`${world.player.rankLabel} · ${snapshot.playerPosition}`}
               uniformTone={world.player.uniformTone}
               ribbons={world.player.ribbons}
               medals={world.player.medals}

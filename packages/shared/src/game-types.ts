@@ -52,6 +52,14 @@ export interface CeremonyRecipient {
   reason: string;
 }
 
+
+export interface CeremonyPlayerAward {
+  playerName: string;
+  medalName: string;
+  ribbonName: string;
+  reason: string;
+}
+
 export interface RaiderCasualty {
   slot: number;
   npcName: string;
@@ -69,6 +77,7 @@ export interface CeremonyReport {
   chiefOfStaff: CeremonyChiefOfStaff;
   logs: string[];
   recipients: CeremonyRecipient[];
+  playerAward: CeremonyPlayerAward | null;
 }
 
 export interface GameSnapshot {

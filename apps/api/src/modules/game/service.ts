@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { ActionResult, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
-import { buildCeremonyReport } from './ceremony.js';
+import { buildCeremonyReport, getPlayerCeremonyAward, isPlayerAwardedOnCeremony } from './ceremony.js';
 import {
   advanceGameDays,
   applyDecisionEffects,
@@ -888,10 +888,11 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     }
 
     const report = buildCeremonyReport(state);
-    const awardedToPlayer = (state.rank_index + state.morale + state.health + state.current_day) % 2 === 0;
+    const awardedToPlayer = isPlayerAwardedOnCeremony(state);
+    const playerAward = getPlayerCeremonyAward(state, report.recipients);
 
-    const playerMedalName = report.recipients[0]?.medalName ?? 'Distinguished Service Medal';
-    const playerRibbonName = report.recipients[0]?.ribbonName ?? 'Ceremony Ribbon';
+    const playerMedalName = playerAward?.medalName ?? 'Distinguished Service Medal';
+    const playerRibbonName = playerAward?.ribbonName ?? 'Ceremony Ribbon';
 
     const playerMedals = awardedToPlayer ? [
       ...state.player_medals,

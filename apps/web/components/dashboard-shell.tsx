@@ -75,6 +75,7 @@ export function DashboardShell() {
   });
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [manualControlBusy, setManualControlBusy] = useState<'pause' | 'continue' | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const [academyOpen, setAcademyOpen] = useState(false);
@@ -186,6 +187,37 @@ export function DashboardShell() {
     router.push('/dashboard/event-frame');
     return true;
   }, [router, setError, snapshot]);
+
+
+  const runManualPause = useCallback(async () => {
+    setManualControlBusy('pause');
+    try {
+      const response = await api.pause('MODAL');
+      setSnapshot(response.snapshot);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Manual pause gagal');
+    } finally {
+      setManualControlBusy(null);
+    }
+  }, [setError, setSnapshot]);
+
+  const runManualContinue = useCallback(async () => {
+    if (!snapshot?.pauseToken) {
+      setError('Pause token tidak tersedia. Refresh snapshot lalu coba lagi.');
+      return;
+    }
+    setManualControlBusy('continue');
+    try {
+      const response = await api.resume(snapshot.pauseToken);
+      setSnapshot(response.snapshot);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Manual continue gagal');
+    } finally {
+      setManualControlBusy(null);
+    }
+  }, [setError, setSnapshot, snapshot?.pauseToken]);
 
   const runTravel = useCallback(
     async (place: TravelPlace) => {
@@ -444,7 +476,13 @@ export function DashboardShell() {
 
   return (
     <div className="space-y-1.5">
-      <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
+      <TopbarTime
+        snapshot={snapshot}
+        clockOffsetMs={clockOffsetMs}
+        onManualPause={() => void runManualPause()}
+        onManualContinue={() => void runManualContinue()}
+        controlBusy={manualControlBusy}
+      />
       <V2CommandCenter snapshot={snapshot} />
       <div className="cyber-panel space-y-1.5 p-2">
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-5">

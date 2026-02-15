@@ -91,6 +91,17 @@ export default function HierarchyPage() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {!snapshot && !error ? <p className="text-sm text-muted">Loading hierarchy...</p> : null}
 
+
+      {snapshot ? (
+        <section className="cyber-panel p-3 text-xs">
+          <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Player Command Slot</p>
+          <p className="mt-1 text-sm font-semibold text-text">{snapshot.playerName}</p>
+          <p className="text-muted">{snapshot.rankCode} · {snapshot.branch} · {snapshot.playerPosition}</p>
+          <p className="text-muted">Medals: {(snapshot.playerMedals ?? []).join(' · ') || '-'}</p>
+          <p className="text-muted">Ribbons: {(snapshot.playerRibbons ?? []).join(' · ') || '-'}</p>
+        </section>
+      ) : null}
+
       {world ? (
         <>
         <div className="grid grid-cols-2 gap-2 cyber-panel p-3 text-xs text-muted sm:grid-cols-5">

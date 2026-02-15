@@ -7,9 +7,12 @@ import { deriveLiveGameDay, inGameDateFromDay } from '@/lib/clock';
 interface TopbarTimeProps {
   snapshot: GameSnapshot;
   clockOffsetMs: number;
+  onManualPause: () => void;
+  onManualContinue: () => void;
+  controlBusy?: 'pause' | 'continue' | null;
 }
 
-export function TopbarTime({ snapshot, clockOffsetMs }: TopbarTimeProps) {
+export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy }: TopbarTimeProps) {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -30,8 +33,26 @@ export function TopbarTime({ snapshot, clockOffsetMs }: TopbarTimeProps) {
         <p className="text-xs uppercase tracking-[0.12em] text-muted">Game Day</p>
         <p className="text-base font-semibold text-text">Day {day}</p>
       </div>
-      <div className="rounded border border-border px-2.5 py-1 text-[11px] uppercase tracking-[0.1em] text-muted">
-        {snapshot.paused ? 'Paused' : 'Running'}
+      <div className="flex items-center gap-1.5">
+        <div className="rounded border border-border px-2 py-1 text-[10px] uppercase tracking-[0.1em] text-muted">
+          {snapshot.paused ? 'Paused' : 'Running'}
+        </div>
+        <button
+          onClick={onManualPause}
+          disabled={snapshot.paused || controlBusy === 'pause'}
+          className="rounded border border-border px-2 py-1 text-[10px] text-text disabled:opacity-50"
+          title="Manual pause untuk recovery saat bug"
+        >
+          {controlBusy === 'pause' ? '...' : 'Pause'}
+        </button>
+        <button
+          onClick={onManualContinue}
+          disabled={!snapshot.paused || controlBusy === 'continue'}
+          className="rounded border border-accent/60 bg-accent/10 px-2 py-1 text-[10px] text-text disabled:opacity-50"
+          title="Manual continue untuk recovery saat stuck"
+        >
+          {controlBusy === 'continue' ? '...' : 'Continue'}
+        </button>
       </div>
     </div>
   );
