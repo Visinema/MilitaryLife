@@ -46,7 +46,7 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown, opti
   const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: unknown } & T;
 
   if (!response.ok) {
-    throw new ApiError(response.status, payload.error ?? 'Request failed', payload.details);
+    throw new ApiError(response.status, payload.error ?? 'Request failed', payload.details ?? payload);
   }
 
   return payload as T;

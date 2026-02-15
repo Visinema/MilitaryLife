@@ -182,6 +182,13 @@ export function DashboardShell() {
   );
 
   const runMilitaryAcademy = useCallback(async () => {
+    if (snapshot?.pendingDecision) {
+      setError('Selesaikan pending decision terlebih dahulu sebelum masuk Military Academy.');
+      setAcademyOpen(false);
+      router.push('/dashboard/event-frame');
+      return;
+    }
+
     const key = academyTierDraft === 2 ? 'ACADEMY_T2' : 'ACADEMY_T1';
     setActionBusy(key);
     try {
@@ -192,12 +199,23 @@ export function DashboardShell() {
       });
       setSnapshot(response.snapshot);
       setAcademyOpen(false);
+
+      const certificate = (response.details as { certificate?: { id?: string } } | undefined)?.certificate;
+      if (certificate?.id) {
+        setInventoryOpen(true);
+        setOpenedCertificateId(certificate.id);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Military academy action failed');
+      if (err instanceof ApiError && err.status === 409) {
+        setError('Aksi academy bentrok dengan pending decision. Buka Event Frame untuk menyelesaikan decision.');
+        router.push('/dashboard/event-frame');
+      } else {
+        setError(err instanceof Error ? err.message : 'Military academy action failed');
+      }
     } finally {
       setActionBusy(null);
     }
-  }, [academyAnswers, academyTierDraft, divisionDraft, setError, setSnapshot]);
+  }, [academyAnswers, academyTierDraft, divisionDraft, router, setError, setSnapshot, snapshot]);
 
 
   const runCareerReview = useCallback(async () => {
