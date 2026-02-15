@@ -5,6 +5,7 @@ import type { AcademyCertificate, CeremonyRecipient } from '@mls/shared/game-typ
 export interface DbGameStateRow {
   profile_id: string;
   start_age: number;
+  player_name: string;
   country: CountryCode;
   branch: BranchCode;
   active_session_id: string | null;
@@ -142,6 +143,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
       SELECT
         p.id AS profile_id,
         p.start_age,
+        p.name AS player_name,
         p.country::text AS country,
         p.branch::text AS branch,
         gs.active_session_id,

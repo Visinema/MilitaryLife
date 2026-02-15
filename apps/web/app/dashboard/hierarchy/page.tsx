@@ -31,6 +31,18 @@ export default function HierarchyPage() {
   const world = useMemo(() => (snapshot ? buildWorldV2(snapshot) : null), [snapshot]);
   const hierarchy = world?.hierarchy ?? [];
 
+  const internalHierarchy = useMemo(() => {
+    const groups = new Map<string, Array<{ name: string; role: string; unit: string; rank: string }>>();
+    for (const npc of hierarchy) {
+      const key = npc.division;
+      const row = groups.get(key) ?? [];
+      row.push({ name: npc.name, role: npc.role, unit: npc.unit, rank: npc.rank });
+      groups.set(key, row);
+    }
+    return Array.from(groups.entries()).map(([division, members]) => ({ division, members: members.slice(0, 8) }));
+  }, [hierarchy]);
+
+
   const refreshSnapshot = () => {
     api
       .snapshot()
@@ -86,6 +98,16 @@ export default function HierarchyPage() {
         </>
       ) : null}
 
+
+      {world ? (
+        <section className="cyber-panel p-3 text-xs space-y-1">
+          <h2 className="text-sm font-semibold text-text">Brainstorm: Saat Raider Menyerang Markas</h2>
+          <p className="text-muted">Jika threat {world.missionBrief.raiderThreatLevel}, raider team bisa memulai fase: infiltrasi perimeter → sabotase komunikasi → breach gudang amunisi.</p>
+          <p className="text-muted">Inovasi: aktifkan sistem counter-raider AI, alarm zonal, lockdown sektor otomatis, dan log taktis real-time per unit.</p>
+          <p className="text-muted">Inovasi lanjutan: evaluasi KPI anti-raid (waktu respon, korban, kerusakan aset) untuk rotasi jabatan komandan divisi/satuan.</p>
+        </section>
+      ) : null}
+
       <section className="cyber-panel space-y-2 p-3 text-xs">
         <h2 className="text-sm font-semibold text-text">Brainstorm Expansi Divisi / Satuan / Unit / Jabatan</h2>
         <ul className="list-disc space-y-1 pl-4 text-muted">
@@ -96,6 +118,25 @@ export default function HierarchyPage() {
           <li>Tambahkan UI peta hierarki agar promosi dan penggantian jabatan terlihat real-time.</li>
         </ul>
       </section>
+
+
+      {internalHierarchy.length > 0 ? (
+        <section className="cyber-panel p-3 text-xs space-y-2">
+          <h2 className="text-sm font-semibold text-text">Hierarki Internal Divisi / Satuan / Korps</h2>
+          {internalHierarchy.map((group) => (
+            <div key={group.division} className="rounded border border-border/60 bg-bg/60 p-2">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted">{group.division}</p>
+              <div className="mt-1 space-y-1">
+                {group.members.map((member) => (
+                  <p key={`${group.division}-${member.name}`} className="text-muted">
+                    {member.rank} · {member.name} — {member.role} ({member.unit})
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {hierarchy.map((npc, idx) => (

@@ -68,6 +68,7 @@ export interface GameSnapshot {
   gameDay: number;
   inGameDate: string;
   age: number;
+  playerName: string;
   country: CountryCode;
   branch: BranchCode;
   rankCode: string;

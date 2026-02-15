@@ -206,6 +206,13 @@ export default function PeoplePage() {
           <aside className="cyber-panel p-3">
             <p className="text-xs uppercase tracking-[0.1em] text-muted">NPC / People List (Scroll Box)</p>
             <div className="mt-2 max-h-[520px] space-y-1.5 overflow-y-auto pr-1">
+              {snapshot ? (
+                <div className="rounded border border-accent/50 bg-accent/10 px-3 py-2">
+                  <p className="text-sm font-semibold text-text">{snapshot.playerName} (You)</p>
+                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch}</p>
+                  <p className="text-xs text-muted">Terdaftar pada roster people aktif.</p>
+                </div>
+              ) : null}
               {world.roster.map((npc) => (
                 <button
                   key={npc.id}

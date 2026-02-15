@@ -477,6 +477,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     gameDay,
     inGameDate: toInGameDate(gameDay),
     age: computeAge(state.start_age, gameDay),
+    playerName: state.player_name,
     country: state.country,
     branch: state.branch,
     rankCode: snapshotRankCode(state),
