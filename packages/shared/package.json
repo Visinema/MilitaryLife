@@ -24,6 +24,10 @@
     "./game-types": {
       "types": "./dist/game-types.d.ts",
       "default": "./dist/game-types.js"
+    },
+    "./npc-registry": {
+      "types": "./dist/npc-registry.d.ts",
+      "default": "./dist/npc-registry.js"
     }
   },
   "scripts": {

@@ -1,10 +1,11 @@
 import type { GameSnapshot } from '@mls/shared/game-types';
+import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
 export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
 
 export const WORLD_V2_VERSION = '3.2.0';
-const MAX_NPCS = 25;
+const MAX_NPCS = MAX_ACTIVE_NPCS;
 
 export interface RibbonStyle {
   id: string;
@@ -64,10 +65,6 @@ export interface WorldV2State {
   };
 }
 
-const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', 'Sinta', 'Dimas', 'Raka', 'Fikri', 'Tara'];
-const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
-const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
-const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
 const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'] as const;
 
 type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
@@ -123,7 +120,7 @@ function uniformTone(branch: string) {
 }
 
 function seeded(snapshot: GameSnapshot, i: number) {
-  return snapshot.gameDay * 97 + snapshot.age * 13 + snapshot.rankCode.length * 7 + i * 17;
+  return snapshot.age * 13 + snapshot.rankCode.length * 7 + i * 17;
 }
 
 function pick<T>(source: T[], n: number) {
@@ -166,40 +163,19 @@ function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): numbe
   return snapshot.gameDay * 0.28 + snapshot.morale * 0.3 + snapshot.health * 0.25 + influenceRecord * 2.2;
 }
 
-function deathDayForSlot(baseSeed: number, slot: number): number | null {
-  if (Math.abs(baseSeed) % 7 !== 0) return null;
-  return 35 + (Math.abs(baseSeed) % 170) + slot;
-}
-
-function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>): NpcV2Profile {
+function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>): NpcV2Profile {
+  const slot = identity.slot;
   const baseSeed = seeded(snapshot, slot * 3 + 11);
-  const deathDay = deathDayForSlot(baseSeed, slot);
-  const replacementDelay = 18 + (Math.abs(baseSeed) % 12);
-
-  let generation = 0;
-  if (deathDay !== null && snapshot.gameDay > deathDay) {
-    generation = Math.floor((snapshot.gameDay - deathDay) / replacementDelay) + 1;
-  }
-
-  const joinedOnDay = Math.max(1, slot * 2 + generation * replacementDelay + (deathDay ?? 0));
-  const generationSeed = baseSeed + generation * 101;
-
-  const previousNpcDiedRecently = deathDay !== null && snapshot.gameDay > deathDay && snapshot.gameDay < deathDay + replacementDelay;
-  const status: NpcStatus = previousNpcDiedRecently
-    ? 'KIA'
-    : (() => {
-        const fatigue = Math.abs(generationSeed + snapshot.gameDay) % 100;
-        if (fatigue > 88) return 'INJURED';
-        if (fatigue > 72) return 'RESERVE';
-        return 'ACTIVE';
-      })();
-
+  const generation = 0;
+  const joinedOnDay = Math.max(1, slot * 2);
+  const generationSeed = baseSeed + 101;
+  const status: NpcStatus = 'ACTIVE';
   const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
   const relationScore = 38 + (Math.abs(generationSeed) % 58);
   const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75);
   const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4));
   const rank = universalRankFromScore(progressionScore * 0.35 + commandPower * 0.55);
-  const npcName = `${pick(FIRST_NAMES, generationSeed)} ${pick(LAST_NAMES, generationSeed * 3)}`;
+  const npcName = identity.name;
   const ceremonyAward = awardsByNpc.get(npcName);
   const ribbons = ceremonyAward ? [ribbonFromAwardName(ceremonyAward.ribbonName, slot)] : [];
 
@@ -209,15 +185,15 @@ function buildNpcForSlot(snapshot: GameSnapshot, slot: number, influenceRecord: 
     name: npcName,
     branch: toBranchLabel(snapshot.branch),
     rank,
-    role: roleFromUniversalRank(rank, slot),
-    division: pick(DIVISIONS, generationSeed),
-    subdivision: pick(SUBDIVISIONS, generationSeed * 2),
+    role: identity.position || roleFromUniversalRank(rank, slot),
+    division: identity.division || 'Infantry Division',
+    subdivision: identity.subdivision || 'Recon',
     medals: ceremonyAward ? [ceremonyAward.medalName] : [],
     ribbons,
     status,
     commandPower,
     joinedOnDay,
-    lastSeenOnDay: status === 'KIA' ? snapshot.gameDay : Math.max(joinedOnDay, snapshot.gameDay - 1),
+    lastSeenOnDay: Math.max(joinedOnDay, snapshot.gameDay - 1),
     relationScore,
     behaviorTag: behaviorTag(generationSeed),
     progressionScore
@@ -230,14 +206,15 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
   const awardsByNpc = new Map((snapshot.ceremonyRecentAwards ?? []).map((item) => [item.npcName, { medalName: item.medalName, ribbonName: item.ribbonName }]));
-  const roster = Array.from({ length: MAX_NPCS }, (_, slot) => buildNpcForSlot(snapshot, slot, influenceRecord, awardsByNpc));
-  const hierarchy = [...roster].filter((npc) => npc.status !== 'KIA').sort((a, b) => b.commandPower - a.commandPower).slice(0, 8);
+  const registry = buildNpcRegistry(snapshot.branch, MAX_NPCS);
+  const roster = registry.map((identity) => buildNpcForSlot(snapshot, identity, influenceRecord, awardsByNpc));
+  const hierarchy = [...roster].sort((a, b) => b.commandPower - a.commandPower).slice(0, MAX_NPCS);
 
   const stats = {
-    active: roster.filter((npc) => npc.status === 'ACTIVE').length,
-    injured: roster.filter((npc) => npc.status === 'INJURED').length,
-    reserve: roster.filter((npc) => npc.status === 'RESERVE').length,
-    kia: roster.filter((npc) => npc.status === 'KIA').length,
+    active: roster.length,
+    injured: 0,
+    reserve: 0,
+    kia: 0,
     replacementsThisCycle: roster.filter((npc) => npc.id.includes('-gen-') && !npc.id.endsWith('-gen-0')).length
   };
 
