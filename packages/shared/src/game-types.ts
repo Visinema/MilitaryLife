@@ -14,6 +14,13 @@ export interface PendingDecision {
   }>;
 }
 
+export interface DivisionAccessProfile {
+  division: 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER';
+  accessLevel: 'LIMITED' | 'STANDARD' | 'ADVANCED' | 'ELITE';
+  benefits: string[];
+  dangerousMissionUnlocked: boolean;
+}
+
 export interface AcademyCertificate {
   id: string;
   tier: 1 | 2;
@@ -52,6 +59,7 @@ export interface GameSnapshot {
   certificates?: AcademyCertificate[];
   divisionFreedomScore?: number;
   preferredDivision?: string | null;
+  divisionAccess?: DivisionAccessProfile | null;
   pendingDecision: PendingDecision | null;
 }
 

@@ -175,8 +175,16 @@ export function DashboardShell() {
     [loadSnapshot, profileForm, setError]
   );
 
+  const guardPendingDecisionAction = useCallback((actionLabel: string) => {
+    if (!snapshot?.pendingDecision) return false;
+    setError(`Selesaikan pending decision terlebih dahulu sebelum ${actionLabel}.`);
+    router.push('/dashboard/event-frame');
+    return true;
+  }, [router, setError, snapshot]);
+
   const runTravel = useCallback(
     async (place: TravelPlace) => {
+      if (guardPendingDecisionAction('melakukan travel')) return;
       setActionBusy(place);
       try {
         const response = await api.travel(place);
@@ -187,7 +195,7 @@ export function DashboardShell() {
         setActionBusy(null);
       }
     },
-    [setError, setSnapshot]
+    [guardPendingDecisionAction, setError, setSnapshot]
   );
 
   const runMilitaryAcademy = useCallback(async () => {
@@ -245,6 +253,7 @@ export function DashboardShell() {
 
 
   const runCareerReview = useCallback(async () => {
+    if (guardPendingDecisionAction('melakukan career review')) return;
     setActionBusy('CAREER_REVIEW');
     try {
       const response = await api.careerReview();
@@ -254,7 +263,7 @@ export function DashboardShell() {
     } finally {
       setActionBusy(null);
     }
-  }, [setError, setSnapshot]);
+  }, [guardPendingDecisionAction, setError, setSnapshot]);
 
   const restartWorld = useCallback(async () => {
     if (!confirm('Restart world from day 0? This will reset progression.')) return;
@@ -378,7 +387,7 @@ export function DashboardShell() {
             <button
               key={entry.place}
               onClick={() => runTravel(entry.place)}
-              disabled={Boolean(actionBusy)}
+              disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
               className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
             >
               {actionBusy === entry.place ? 'Traveling...' : `Travel: ${entry.label}`}
@@ -389,21 +398,21 @@ export function DashboardShell() {
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
           <button
             onClick={() => { setAcademyTierDraft(1); setAcademyOpen(true); }}
-            disabled={Boolean(actionBusy)}
+            disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
             {actionBusy === 'ACADEMY_T1' ? 'Processing...' : 'Military Academy Officer'}
           </button>
           <button
             onClick={() => { setAcademyTierDraft(2); setAcademyOpen(true); }}
-            disabled={Boolean(actionBusy)}
+            disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
             {actionBusy === 'ACADEMY_T2' ? 'Processing...' : 'Military Academy High Command'}
           </button>
           <button
             onClick={runCareerReview}
-            disabled={Boolean(actionBusy)}
+            disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
             {actionBusy === 'CAREER_REVIEW' ? 'Running...' : 'Career Review'}
@@ -432,6 +441,11 @@ export function DashboardShell() {
         <p className="text-[11px] text-muted">
           Academy tier: {snapshot.academyTier ?? 0} · Last travel: {snapshot.lastTravelPlace ?? 'None'} · Division freedom: {snapshot.divisionFreedomScore ?? 0}
         </p>
+        {snapshot.divisionAccess ? (
+          <p className="text-[11px] text-muted">
+            Division: {snapshot.divisionAccess.division} ({snapshot.divisionAccess.accessLevel}) · Dangerous mission: {snapshot.divisionAccess.dangerousMissionUnlocked ? 'Unlocked' : 'Locked'} · Benefits: {snapshot.divisionAccess.benefits.join(', ')}
+          </p>
+        ) : null}
       </div>
 
       {academyOpen ? (

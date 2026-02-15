@@ -233,7 +233,8 @@ export function advanceGameDays(state: DbGameStateRow, days: number): number {
 }
 
 function canPromote(state: DbGameStateRow): boolean {
-  if (state.rank_index >= 6) return false;
+  const maxRankIndex = BRANCH_CONFIG[state.branch].ranks.length - 1;
+  if (state.rank_index >= maxRankIndex) return false;
 
   const country = COUNTRY_CONFIG[state.country];
   const reqDays = country.promotionMinDays[state.rank_index] ?? 9999;
@@ -415,6 +416,30 @@ function normalizeCertificateInventory(rawValue: unknown): AcademyCertificate[] 
     .slice(0, 20);
 }
 
+function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['divisionAccess'] {
+  const division = state.preferred_division ?? 'INFANTRY';
+  const score = state.division_freedom_score;
+  const accessLevel: 'LIMITED' | 'STANDARD' | 'ADVANCED' | 'ELITE' =
+    score >= 80 ? 'ELITE' : score >= 60 ? 'ADVANCED' : score >= 40 ? 'STANDARD' : 'LIMITED';
+
+  const divisionBenefitsMap: Record<'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER', string[]> = {
+    INFANTRY: ['Combat stamina +8%', 'Assault mission reward +12%'],
+    INTEL: ['Intel quality +15%', 'Decision risk preview lebih akurat'],
+    LOGISTICS: ['Supply loss -18%', 'Biaya operasi harian -10%'],
+    CYBER: ['Recon digital +20%', 'Counter-disruption bonus +12%']
+  };
+
+  const safeDivision = (['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER'].includes(division) ? division : 'INFANTRY') as 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER';
+  const dangerousMissionUnlocked = state.academy_tier >= 2 && score >= 60 && state.rank_index >= 6;
+
+  return {
+    division: safeDivision,
+    accessLevel,
+    benefits: divisionBenefitsMap[safeDivision],
+    dangerousMissionUnlocked
+  };
+}
+
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
@@ -443,6 +468,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     certificates: normalizedCertificates,
     divisionFreedomScore: state.division_freedom_score,
     preferredDivision: state.preferred_division,
+    divisionAccess: getDivisionAccessProfile(state),
     pendingDecision: normalizePendingDecisionPayload(state)
   };
 }
