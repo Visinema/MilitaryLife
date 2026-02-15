@@ -30,7 +30,8 @@ import {
   runTravel,
   runCommandAction,
   runSocialInteraction,
-  completeCeremony
+  completeCeremony,
+  runRaiderDefense
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -118,6 +119,10 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/actions/ceremony-complete', async (request, reply) => {
     await completeCeremony(request, reply);
+  });
+
+  app.post('/actions/raider-defense', async (request, reply) => {
+    await runRaiderDefense(request, reply);
   });
 
   app.post('/actions/social-interaction', async (request, reply) => {

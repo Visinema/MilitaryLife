@@ -504,7 +504,10 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     ceremonyCompletedDay: state.ceremony_completed_day,
     ceremonyRecentAwards: state.ceremony_recent_awards,
     playerMedals: state.player_medals,
-    playerRibbons: state.player_ribbons
+    playerRibbons: state.player_ribbons,
+    playerPosition: state.player_position,
+    raiderLastAttackDay: state.raider_last_attack_day,
+    raiderCasualties: state.raider_casualties
   };
 }
 

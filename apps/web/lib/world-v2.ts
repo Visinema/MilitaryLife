@@ -46,6 +46,7 @@ export interface WorldV2State {
     ribbons: RibbonStyle[];
     commandAuthority: number;
     influenceRecord: number;
+    position: string;
   };
   roster: NpcV2Profile[];
   hierarchy: NpcV2Profile[];
@@ -167,13 +168,14 @@ function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): numbe
   return snapshot.gameDay * 0.28 + snapshot.morale * 0.3 + snapshot.health * 0.25 + influenceRecord * 2.2;
 }
 
-function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>): NpcV2Profile {
+function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>, casualtyBySlot: Map<number, { role: string }>): NpcV2Profile {
   const slot = identity.slot;
   const baseSeed = seeded(snapshot, slot * 3 + 11);
   const generation = 0;
   const joinedOnDay = Math.max(1, slot * 2);
   const generationSeed = baseSeed + 101;
-  const status: NpcStatus = 'ACTIVE';
+  const fallen = casualtyBySlot.get(slot);
+  const status: NpcStatus = fallen ? 'KIA' : 'ACTIVE';
   const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
   const relationScore = 38 + (Math.abs(generationSeed) % 58);
   const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75);
@@ -189,7 +191,7 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
     name: npcName,
     branch: toBranchLabel(snapshot.branch),
     rank,
-    role: identity.position || roleFromUniversalRank(rank, slot),
+    role: fallen ? `Fallen (${fallen.role})` : identity.position || roleFromUniversalRank(rank, slot),
     division: identity.division || 'Infantry Division',
     subdivision: identity.subdivision || 'Recon',
     unit: identity.unit || '1st Brigade',
@@ -256,15 +258,16 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
   const awardsByNpc = new Map((snapshot.ceremonyRecentAwards ?? []).map((item) => [item.npcName, { medalName: item.medalName, ribbonName: item.ribbonName }]));
+  const casualtyBySlot = new Map((snapshot.raiderCasualties ?? []).map((item) => [item.slot, { role: item.role }]));
   const registry = buildNpcRegistry(snapshot.branch, MAX_NPCS);
-  const roster = registry.map((identity) => buildNpcForSlot(snapshot, identity, influenceRecord, awardsByNpc));
-  const hierarchy = buildHierarchyWithQuota(roster);
+  const roster = registry.map((identity) => buildNpcForSlot(snapshot, identity, influenceRecord, awardsByNpc, casualtyBySlot));
+  const hierarchy = buildHierarchyWithQuota(roster.filter((npc) => npc.status !== 'KIA'));
 
   const stats = {
-    active: roster.length,
+    active: roster.filter((npc) => npc.status === 'ACTIVE').length,
     injured: 0,
     reserve: 0,
-    kia: 0,
+    kia: roster.filter((npc) => npc.status === 'KIA').length,
     replacementsThisCycle: 0
   };
   const raider = buildRaiderTeam(hierarchy, snapshot);
@@ -277,7 +280,8 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       medals: playerMedals,
       ribbons: playerRibbons.slice(0, 12),
       commandAuthority: Math.min(100, 40 + snapshot.gameDay / 5 + influenceRecord * 0.8),
-      influenceRecord
+      influenceRecord,
+      position: snapshot.playerPosition
     },
     roster,
     hierarchy,

@@ -52,6 +52,16 @@ export interface CeremonyRecipient {
   reason: string;
 }
 
+export interface RaiderCasualty {
+  slot: number;
+  npcName: string;
+  division: string;
+  unit: string;
+  role: string;
+  day: number;
+  cause: string;
+}
+
 export interface CeremonyReport {
   ceremonyDay: number;
   attendance: number;
@@ -95,6 +105,9 @@ export interface GameSnapshot {
   ceremonyRecentAwards: CeremonyRecipient[];
   playerMedals: string[];
   playerRibbons: string[];
+  playerPosition: string;
+  raiderLastAttackDay: number;
+  raiderCasualties: RaiderCasualty[];
 }
 
 export interface DecisionResult {

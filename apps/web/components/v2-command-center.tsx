@@ -80,6 +80,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
               shoulderRankCount={Math.min(4, Math.max(2, snapshot.rankCode.length % 5))}
               details={[
                 `Authority: ${Math.round(world.player.commandAuthority)}%`,
+                `Position: ${snapshot.playerPosition}`,
                 `Influence record buff: +${world.player.influenceRecord}`,
                 `Mission assignment: every ${world.missionBrief.mandatoryAssignmentEveryDays} days`,
                 `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`
@@ -176,6 +177,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 <Link href="/dashboard/decision-log" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Decision Log</Link>
                 <Link href="/dashboard/ceremony" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Upacara Medal</Link>
                 <Link href="/dashboard/recruitment" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Rekrutmen</Link>
+                <Link href="/dashboard/raider-attack" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Raider Alert</Link>
               </div>
             </div>
           </div>

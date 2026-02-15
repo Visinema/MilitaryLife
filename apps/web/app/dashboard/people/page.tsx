@@ -209,7 +209,7 @@ export default function PeoplePage() {
               {snapshot ? (
                 <div className="rounded border border-accent/50 bg-accent/10 px-3 py-2">
                   <p className="text-sm font-semibold text-text">{snapshot.playerName} (You)</p>
-                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch}</p>
+                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch} · {snapshot.playerPosition}</p>
                   <p className="text-xs text-muted">Terdaftar pada roster people aktif.</p>
                 </div>
               ) : null}

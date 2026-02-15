@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
-import type { ActionResult, DecisionResult } from '@mls/shared/game-types';
+import type { ActionResult, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
+import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
 import {
@@ -65,6 +66,9 @@ interface StateCheckpoint {
   ceremonyRecentAwards: DbGameStateRow['ceremony_recent_awards'];
   playerMedals: DbGameStateRow['player_medals'];
   playerRibbons: DbGameStateRow['player_ribbons'];
+  playerPosition: string;
+  raiderLastAttackDay: number;
+  raiderCasualties: DbGameStateRow['raider_casualties'];
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -95,6 +99,9 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     ceremonyRecentAwards: state.ceremony_recent_awards,
     playerMedals: state.player_medals,
     playerRibbons: state.player_ribbons,
+    playerPosition: state.player_position,
+    raiderLastAttackDay: state.raider_last_attack_day,
+    raiderCasualties: state.raider_casualties,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -126,6 +133,9 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.ceremony_recent_awards !== checkpoint.ceremonyRecentAwards ||
     state.player_medals !== checkpoint.playerMedals ||
     state.player_ribbons !== checkpoint.playerRibbons ||
+    state.player_position !== checkpoint.playerPosition ||
+    state.raider_last_attack_day !== checkpoint.raiderLastAttackDay ||
+    state.raider_casualties !== checkpoint.raiderCasualties ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -791,6 +801,9 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.ceremony_recent_awards = [];
     state.player_medals = [];
     state.player_ribbons = [];
+    state.player_position = 'Platoon Leader';
+    state.raider_last_attack_day = 0;
+    state.raider_casualties = [];
 
     await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
 
@@ -906,6 +919,66 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
   });
 }
 
+
+function randomFromSeed(seed: number, min: number, max: number): number {
+  const span = max - min + 1;
+  return min + (Math.abs(seed) % span);
+}
+
+export async function runRaiderDefense(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const pendingError = ensureNoPendingDecision(state);
+    if (pendingError) {
+      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    if (state.current_day - state.raider_last_attack_day < 6) {
+      return { statusCode: 409, payload: { error: 'Raider team belum siap menyerang lagi', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const registry = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS);
+    const seedBase = state.current_day * 31 + state.rank_index * 19 + state.morale * 7 + state.health * 3;
+    const casualtyCount = randomFromSeed(seedBase, 1, 4);
+    const casualties: RaiderCasualty[] = [];
+
+    for (let i = 0; i < casualtyCount; i += 1) {
+      const slot = randomFromSeed(seedBase + i * 13, 0, MAX_ACTIVE_NPCS - 1);
+      const identity = registry[slot];
+      if (!identity) continue;
+      if (state.raider_casualties.some((item) => item.slot === slot)) continue;
+
+      casualties.push({
+        slot,
+        npcName: identity.name,
+        division: identity.division,
+        unit: identity.unit,
+        role: identity.position,
+        day: state.current_day,
+        cause: i % 2 === 0 ? 'Base perimeter breach' : 'Close-quarter raid encounter'
+      });
+    }
+
+    state.raider_casualties = [...state.raider_casualties, ...casualties].slice(-120);
+    state.raider_last_attack_day = state.current_day;
+    state.morale = Math.max(0, state.morale - (casualties.length * 4));
+    state.health = Math.max(0, state.health - randomFromSeed(seedBase + 99, 2, 8));
+    state.promotion_points += Math.max(1, 6 - casualties.length);
+
+    const snapshot = buildSnapshot(state, nowMs);
+    return {
+      payload: {
+        type: 'COMMAND',
+        snapshot,
+        details: {
+          raiderAttack: true,
+          casualties,
+          summary: `Raider assault neutralized with ${casualties.length} personnel losses.`
+        }
+      } as ActionResult
+    };
+  });
+}
+
 export async function getDecisionLogs(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -956,12 +1029,14 @@ export async function getCurrentSnapshotForSubPage(request: FastifyRequest, repl
 export async function getNpcBackgroundActivity(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const snapshot = buildSnapshot(state, nowMs);
-    const activity = Array.from({ length: 30 }, (_, i) => {
+    const registry = buildNpcRegistry(snapshot.branch, MAX_ACTIVE_NPCS);
+    const activity = Array.from({ length: MAX_ACTIVE_NPCS }, (_, i) => {
       const cycleSeed = snapshot.gameDay * 37 + i * 11 + snapshot.age + snapshot.morale;
       const op = ['training', 'deployment', 'career-review', 'resupply', 'medical', 'intel'][cycleSeed % 6];
       const impact = ['morale+', 'health+', 'funds+', 'promotion+', 'coordination+', 'readiness+'][(cycleSeed + 3) % 6];
       return {
         npcId: `npc-${i + 1}`,
+        npcName: registry[i]?.name ?? `NPC-${i + 1}`,
         lastTickDay: Math.max(1, snapshot.gameDay - (i % 3)),
         operation: op,
         result: `${op} completed (${impact})`,

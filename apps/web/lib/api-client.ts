@@ -168,6 +168,9 @@ export const api = {
   ceremonyComplete() {
     return request<{ ok: boolean; awardedToPlayer?: boolean; snapshot: GameSnapshot; alreadyCompleted?: boolean }>('/game/actions/ceremony-complete', 'POST', {});
   },
+  raiderDefense() {
+    return request<ActionResult>('/game/actions/raider-defense', 'POST', {});
+  },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
   },

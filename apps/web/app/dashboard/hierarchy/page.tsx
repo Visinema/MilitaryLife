@@ -101,21 +101,21 @@ export default function HierarchyPage() {
 
       {world ? (
         <section className="cyber-panel p-3 text-xs space-y-1">
-          <h2 className="text-sm font-semibold text-text">Brainstorm: Saat Raider Menyerang Markas</h2>
-          <p className="text-muted">Jika threat {world.missionBrief.raiderThreatLevel}, raider team bisa memulai fase: infiltrasi perimeter → sabotase komunikasi → breach gudang amunisi.</p>
-          <p className="text-muted">Inovasi: aktifkan sistem counter-raider AI, alarm zonal, lockdown sektor otomatis, dan log taktis real-time per unit.</p>
-          <p className="text-muted">Inovasi lanjutan: evaluasi KPI anti-raid (waktu respon, korban, kerusakan aset) untuk rotasi jabatan komandan divisi/satuan.</p>
+          <h2 className="text-sm font-semibold text-text">Skenario Operasi Saat Raider Menyerang Markas</h2>
+          <p className="text-muted">Jika threat {world.missionBrief.raiderThreatLevel}, fase operasi: infiltrasi perimeter → sabotase komunikasi → breach gudang amunisi.</p>
+          <p className="text-muted">Countermeasure aktif: counter-raider AI, alarm zonal, lockdown sektor otomatis, dan log taktis real-time per unit.</p>
+          <p className="text-muted">KPI anti-raid: waktu respon, korban, kerusakan aset untuk rotasi jabatan komandan divisi/satuan.</p>
         </section>
       ) : null}
 
       <section className="cyber-panel space-y-2 p-3 text-xs">
-        <h2 className="text-sm font-semibold text-text">Brainstorm Expansi Divisi / Satuan / Unit / Jabatan</h2>
+        <h2 className="text-sm font-semibold text-text">Struktur Operasional Divisi / Satuan / Unit / Jabatan</h2>
         <ul className="list-disc space-y-1 pl-4 text-muted">
-          <li>Tambah struktur 4 level: Branch → Divisi → Satuan → Unit kecil (platoon/squad) dengan kapasitas personel dinamis.</li>
-          <li>Setiap Divisi memiliki slot jabatan (Commander, XO, Ops, Intel, Logistics, Medical) yang bisa diisi NPC/player.</li>
-          <li>Buat sistem rotasi jabatan berkala berbasis KPI: mission success, casualties, morale, budget efficiency.</li>
-          <li>Aktifkan mutasi lintas cabang Army/Navy untuk jabatan joint-task-force saat rank tinggi.</li>
-          <li>Tambahkan UI peta hierarki agar promosi dan penggantian jabatan terlihat real-time.</li>
+          <li>Struktur 4 level aktif: Branch → Divisi → Satuan → Unit kecil (platoon/squad) dengan kapasitas personel dinamis.</li>
+          <li>Setiap Divisi memiliki slot jabatan (Commander, XO, Ops, Intel, Logistics, Medical) untuk NPC/player.</li>
+          <li>Rotasi jabatan periodik berbasis KPI: mission success, casualties, morale, budget efficiency.</li>
+          <li>Mutasi lintas cabang Army/Navy untuk jabatan joint-task-force saat rank tinggi.</li>
+          <li>Peta hierarki menampilkan promosi dan penggantian jabatan secara real-time.</li>
         </ul>
       </section>
 

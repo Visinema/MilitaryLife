@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
-import type { AcademyCertificate, CeremonyRecipient } from '@mls/shared/game-types';
+import type { AcademyCertificate, CeremonyRecipient, RaiderCasualty } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -33,6 +33,9 @@ export interface DbGameStateRow {
   ceremony_recent_awards: CeremonyRecipient[];
   player_medals: string[];
   player_ribbons: string[];
+  player_position: string;
+  raider_last_attack_day: number;
+  raider_casualties: RaiderCasualty[];
   pending_event_payload: {
     title: string;
     description: string;
@@ -78,6 +81,19 @@ function parseJsonbStringArray(value: unknown): string[] {
     try {
       const parsed = JSON.parse(value);
       return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function parseRaiderCasualties(value: unknown): RaiderCasualty[] {
+  if (Array.isArray(value)) return value as RaiderCasualty[];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as RaiderCasualty[]) : [];
     } catch {
       return [];
     }
@@ -171,6 +187,9 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.ceremony_recent_awards,
         gs.player_medals,
         gs.player_ribbons,
+        gs.player_position,
+        gs.raider_last_attack_day,
+        gs.raider_casualties,
         gs.pending_event_payload,
         gs.version
       FROM profiles p
@@ -188,6 +207,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   row.ceremony_recent_awards = parseCeremonyRecipients(row.ceremony_recent_awards);
   row.player_medals = parseJsonbStringArray(row.player_medals);
   row.player_ribbons = parseJsonbStringArray(row.player_ribbons);
+  row.raider_casualties = parseRaiderCasualties(row.raider_casualties);
   return row;
 }
 
@@ -255,7 +275,10 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         ceremony_recent_awards = $24::jsonb,
         player_medals = $25::jsonb,
         player_ribbons = $26::jsonb,
-        pending_event_payload = $27::jsonb,
+        player_position = $27,
+        raider_last_attack_day = $28,
+        raider_casualties = $29::jsonb,
+        pending_event_payload = $30::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -287,6 +310,9 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       toJsonbParam(state.ceremony_recent_awards, []),
       toJsonbParam(state.player_medals, []),
       toJsonbParam(state.player_ribbons, []),
+      state.player_position,
+      state.raider_last_attack_day,
+      toJsonbParam(state.raider_casualties, []),
       toJsonbParam(state.pending_event_payload, null)
     ]
   );
