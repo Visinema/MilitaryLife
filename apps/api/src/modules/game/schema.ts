@@ -49,3 +49,13 @@ export const socialInteractionSchema = z.object({
   interaction: z.enum(['MENTOR', 'SUPPORT', 'BOND', 'DEBRIEF']),
   note: z.string().min(1).max(180).optional()
 });
+
+
+export const recruitmentApplySchema = z.object({
+  trackId: z.string().min(2).max(64),
+  answers: z.record(z.string(), z.string().min(1).max(120)).default({})
+});
+
+export const newsQuerySchema = z.object({
+  type: z.enum(['DISMISSAL', 'MISSION', 'PROMOTION', 'MEDAL']).optional()
+});

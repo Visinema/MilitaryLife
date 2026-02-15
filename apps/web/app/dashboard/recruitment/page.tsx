@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
@@ -180,6 +181,7 @@ function rotateChoices(choices: string[], seed: number): string[] {
 }
 
 export default function RecruitmentPage() {
+  const router = useRouter();
   const snapshot = useGameStore((s) => s.snapshot);
   const setSnapshot = useGameStore((s) => s.setSnapshot);
   const [selected, setSelected] = useState(TRACKS[0].id);
@@ -215,26 +217,20 @@ export default function RecruitmentPage() {
     });
   }, [track.id]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!snapshot) return;
-    const passQuiz = dynamicQuestions.every((item) => answers[item.id] === item.answer);
-    const rankOk = (snapshot.rankIndex ?? 0) >= track.minRankIndex;
-    const certOfficerOk = !track.needOfficerCert || Boolean(snapshot.academyCertifiedOfficer);
-    const certHighOk = !track.needHighCommandCert || Boolean(snapshot.academyCertifiedHighOfficer);
-
-    if (passQuiz && rankOk && certOfficerOk && certHighOk) {
-      setResult(`LULUS: ${snapshot.playerName} diterima ke ${track.name}.`);
-      return;
+    try {
+      const response = await api.recruitmentApply({
+        trackId: track.id,
+        answers
+      });
+      setSnapshot(response.snapshot);
+      setResult(`LULUS: ${snapshot.playerName} diterima ke ${track.name}. Sertifikasi + surat mutasi masuk inventori.`);
+      window.setTimeout(() => router.replace('/dashboard'), 450);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gagal memproses rekrutmen';
+      setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${message}).`);
     }
-
-    const reasons = [
-      !passQuiz ? 'nilai ujian pilihan ganda dinamis belum lulus' : null,
-      !rankOk ? `rank belum memenuhi (min ${track.minRankIndex})` : null,
-      !certOfficerOk ? 'butuh sertifikasi Academy Officer' : null,
-      !certHighOk ? 'butuh sertifikasi High Command' : null
-    ].filter(Boolean);
-
-    setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${reasons.join(', ')}).`);
   };
 
   return (
@@ -309,7 +305,7 @@ export default function RecruitmentPage() {
           ))}
         </div>
 
-        <button onClick={submit} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text">Submit Ujian Rekrutmen</button>
+        <button onClick={() => void submit()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text">Submit Ujian Rekrutmen</button>
         {result ? <p className="text-muted">{result}</p> : null}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, NewsItem, NewsType } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -170,6 +170,14 @@ export const api = {
   },
   raiderDefense() {
     return request<ActionResult>('/game/actions/raider-defense', 'POST', {});
+  },
+
+  recruitmentApply(payload: { trackId: string; answers: Record<string, string> }) {
+    return request<ActionResult>('/game/actions/recruitment-apply', 'POST', payload);
+  },
+  news(type?: NewsType) {
+    const query = type ? `?type=${type}` : '';
+    return request<{ items: NewsItem[]; generatedAt: number; rangeDays: number; filter: NewsType | null; snapshot: GameSnapshot }>(`/game/news${query}`, 'GET');
   },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });

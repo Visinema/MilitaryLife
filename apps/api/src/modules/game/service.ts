@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
-import type { ActionResult, CeremonyRecipient, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyRecipient, DecisionResult, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
@@ -40,6 +40,27 @@ interface LockedStateContext {
   nowMs: number;
   profileId: string;
 }
+
+
+type RecruitmentTrack = {
+  id: string;
+  division: string;
+  minRankIndex: number;
+  needOfficerCert: boolean;
+  needHighCommandCert: boolean;
+  rolePool: string[];
+  exam: Array<{ id: string; answer: string }>;
+};
+
+const RECRUITMENT_TRACKS: RecruitmentTrack[] = [
+  { id: 'special-forces', division: 'Special Operations Division', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Assault Lead', 'Deep Recon Officer', 'Breach Controller'], exam: [{ id: 'sf-1', answer: 'Noise discipline' }, { id: 'sf-2', answer: 'Pre-brief exfil corridor' }, { id: 'sf-3', answer: 'Recon → isolate → breach' }] },
+  { id: 'military-police-division', division: 'Military Police HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Provost Operations Officer', 'Base Law Commander', 'Escort Security Officer'], exam: [{ id: 'mp-1', answer: 'Secure scene and record' }, { id: 'mp-2', answer: 'Incident resolution quality' }, { id: 'mp-3', answer: 'Route security + custody protocol' }] },
+  { id: 'armored-division', division: 'Armored Command', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Armored Operations Officer', 'Tank Battalion XO', 'Mechanized Readiness Officer'], exam: [{ id: 'ar-1', answer: 'Maintain fuel + flank security' }, { id: 'ar-2', answer: 'When disabled armor blocks lane' }, { id: 'ar-3', answer: 'Operational tanks + repair time' }] },
+  { id: 'air-defense-division', division: 'Air Defense HQ', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Air Defense Controller', 'Radar Director', 'Counter-UAV Ops Officer'], exam: [{ id: 'ad-1', answer: 'Detect → classify → engage' }, { id: 'ad-2', answer: 'Intercept rate + false positive low' }, { id: 'ad-3', answer: 'Layered EW + missile discipline' }] },
+  { id: 'engineering-command', division: 'Engineer Command HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Combat Engineer Planner', 'Field Construction Officer', 'EOD Coordination Officer'], exam: [{ id: 'en-1', answer: 'Mobility corridor first' }, { id: 'en-2', answer: 'Build speed + safety compliance' }, { id: 'en-3', answer: 'Deploy secondary span protocol' }] },
+  { id: 'medical-support-division', division: 'Medical Command HQ', minRankIndex: 3, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Forward Medical Officer', 'Triage Command Officer', 'Recovery Planning Officer'], exam: [{ id: 'md-1', answer: 'Life-saving first by severity' }, { id: 'md-2', answer: 'Survival rate + evacuation speed' }, { id: 'md-3', answer: 'Activate surge protocol' }] },
+  { id: 'signal-cyber-corps', division: 'Signal Cyber HQ', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Cyber Incident Commander', 'Signal Security Officer', 'SOC Mission Coordinator'], exam: [{ id: 'cy-1', answer: 'Contain and isolate segment' }, { id: 'cy-2', answer: 'Uptime + breach containment time' }, { id: 'cy-3', answer: 'Primary comm compromised' }] }
+];
 
 interface StateCheckpoint {
   activeSessionId: string | null;
@@ -934,6 +955,58 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
 }
 
 
+
+
+function evaluateDivisionHead(state: DbGameStateRow, division: string): { name: string; score: number } {
+  const roster = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS);
+  const ranked = roster
+    .map((npc) => {
+      const base = npc.division === division ? 14 : 0;
+      const competence = base + ((npc.slot * 19 + state.current_day * 7 + state.morale + state.health) % 100);
+      return { name: npc.name, score: competence };
+    })
+    .sort((a, b) => b.score - a.score);
+  return ranked[0] ?? { name: 'Acting Division Head', score: 60 };
+}
+
+function buildNewsFeed(state: DbGameStateRow, decisionLogs: Array<{ id: number; game_day: number; selected_option: string; consequences: unknown }>, filterType?: NewsType): NewsItem[] {
+  const minDay = Math.max(0, state.current_day - 30);
+  const items: NewsItem[] = [];
+
+  for (const log of decisionLogs) {
+    if (log.game_day < minDay) continue;
+    const option = String(log.selected_option || '').toLowerCase();
+    const effect = (log.consequences && typeof log.consequences === 'object') ? log.consequences as Record<string, unknown> : {};
+
+    const missionHit = option.includes('mission') || (typeof effect.promotionPointDelta === 'number' && Number(effect.promotionPointDelta) >= 2);
+    const promotionHit = option.includes('promot') || (typeof effect.promotionPointDelta === 'number' && Number(effect.promotionPointDelta) >= 4);
+    const dismissalHit = option.includes('sanction') || option.includes('dismiss') || option.includes('terminate');
+
+    if (missionHit) {
+      items.push({ id: `m-${log.id}`, day: log.game_day, type: 'MISSION', title: 'News Misi', detail: `Operasi baru tercatat dari keputusan ${log.selected_option}.` });
+    }
+    if (promotionHit) {
+      items.push({ id: `p-${log.id}`, day: log.game_day, type: 'PROMOTION', title: 'News Promosi', detail: `Evaluasi karier menunjukkan kenaikan potensi promosi.` });
+    }
+    if (dismissalHit) {
+      items.push({ id: `d-${log.id}`, day: log.game_day, type: 'DISMISSAL', title: 'News Pemecatan/Sanksi', detail: `Tindakan disiplin atau pemecatan diproses pada rantai komando.` });
+    }
+  }
+
+  for (const award of state.ceremony_recent_awards) {
+    items.push({
+      id: `medal-${award.order}-${award.npcName}`,
+      day: state.ceremony_completed_day,
+      type: 'MEDAL',
+      title: 'News Upacara Medal',
+      detail: `${award.npcName} menerima ${award.medalName} / ${award.ribbonName} pada upacara terakhir.`
+    });
+  }
+
+  const filtered = filterType ? items.filter((item) => item.type === filterType) : items;
+  return filtered.sort((a, b) => b.day - a.day).slice(0, 120);
+}
+
 function randomFromSeed(seed: number, min: number, max: number): number {
   const span = max - min + 1;
   return min + (Math.abs(seed) % span);
@@ -1066,5 +1139,87 @@ export async function getNpcBackgroundActivity(request: FastifyRequest, reply: F
     });
 
     return { payload: { generatedAt: nowMs, items: activity } };
+  });
+}
+
+
+export async function runRecruitmentApply(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { trackId: string; answers: Record<string, string> }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const track = RECRUITMENT_TRACKS.find((item) => item.id === payload.trackId);
+    if (!track) {
+      return { statusCode: 400, payload: { error: 'Track rekrutmen tidak valid', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const rankOk = state.rank_index >= track.minRankIndex;
+    const officerOk = !track.needOfficerCert || state.academy_tier >= 1;
+    const highOk = !track.needHighCommandCert || state.academy_tier >= 2;
+    const examPass = track.exam.every((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase());
+
+    if (!(rankOk && officerOk && highOk && examPass)) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Syarat rekrutmen belum terpenuhi',
+          snapshot: buildSnapshot(state, nowMs),
+          details: {
+            rankOk,
+            officerOk,
+            highOk,
+            examPass
+          }
+        }
+      };
+    }
+
+    const divisionHead = evaluateDivisionHead(state, track.division);
+    const assignedRole = track.rolePool[(state.current_day + state.rank_index) % track.rolePool.length] ?? 'Division Staff Officer';
+    state.player_position = assignedRole;
+
+    const certificate = {
+      id: `${state.profile_id}-recruit-${Date.now()}`,
+      tier: state.academy_tier >= 2 ? 2 as const : 1 as const,
+      academyName: `Recruitment Board · ${track.name}`,
+      score: Math.max(80, Math.min(99, 80 + state.rank_index + Math.floor(state.morale / 10))),
+      grade: 'A' as const,
+      divisionFreedomLevel: 'ELITE' as const,
+      trainerName: divisionHead.name,
+      issuedAtDay: state.current_day,
+      message: `Surat mutasi resmi: penempatan awal di ${track.division} sebagai ${assignedRole}. Ditandatangani Kepala Divisi ${divisionHead.name} (score ${divisionHead.score}) hasil evaluasi Chief of Staff.`,
+      assignedDivision: track.division
+    };
+
+    state.certificate_inventory = [certificate, ...(state.certificate_inventory ?? [])].slice(0, 20);
+
+    return {
+      payload: {
+        type: 'RECRUITMENT',
+        snapshot: buildSnapshot(state, nowMs),
+        details: {
+          accepted: true,
+          certificate,
+          redirectTo: '/dashboard'
+        }
+      } as ActionResult
+    };
+  });
+}
+
+export async function getNews(request: FastifyRequest, reply: FastifyReply, filterType?: NewsType): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ client, profileId, state, nowMs }) => {
+    const logs = await listDecisionLogs(client, profileId, undefined, 200);
+    const items = buildNewsFeed(state, logs, filterType);
+    return {
+      payload: {
+        items,
+        generatedAt: nowMs,
+        rangeDays: 30,
+        filter: filterType ?? null,
+        snapshot: buildSnapshot(state, nowMs)
+      }
+    };
   });
 }

@@ -10,7 +10,9 @@ import {
   militaryAcademySchema,
   travelSchema,
   commandActionSchema,
-  socialInteractionSchema
+  socialInteractionSchema,
+  recruitmentApplySchema,
+  newsQuerySchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -31,7 +33,9 @@ import {
   runCommandAction,
   runSocialInteraction,
   completeCeremony,
-  runRaiderDefense
+  runRaiderDefense,
+  runRecruitmentApply,
+  getNews
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -125,6 +129,16 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     await runRaiderDefense(request, reply);
   });
 
+
+  app.post('/actions/recruitment-apply', async (request, reply) => {
+    try {
+      const body = parseOrThrow(recruitmentApplySchema, request.body ?? {});
+      await runRecruitmentApply(request, reply, body);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
   app.post('/actions/social-interaction', async (request, reply) => {
     try {
       const body = parseOrThrow(socialInteractionSchema, request.body ?? {});
@@ -168,6 +182,16 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/subpage-snapshot', async (request, reply) => {
     await getCurrentSnapshotForSubPage(request, reply);
+  });
+
+
+  app.get('/news', async (request, reply) => {
+    try {
+      const query = parseOrThrow(newsQuerySchema, request.query ?? {});
+      await getNews(request, reply, query.type);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
   });
 
   app.get('/npc-activity', async (request, reply) => {

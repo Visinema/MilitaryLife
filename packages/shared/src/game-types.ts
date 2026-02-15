@@ -64,6 +64,17 @@ export interface RaiderCasualty {
   cause: string;
 }
 
+
+export type NewsType = 'DISMISSAL' | 'MISSION' | 'PROMOTION' | 'MEDAL';
+
+export interface NewsItem {
+  id: string;
+  day: number;
+  type: NewsType;
+  title: string;
+  detail: string;
+}
+
 export interface CeremonyReport {
   ceremonyDay: number;
   attendance: number;
@@ -124,7 +135,7 @@ export interface DecisionResult {
 }
 
 export interface ActionResult {
-  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION';
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION' | 'RECRUITMENT';
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }
