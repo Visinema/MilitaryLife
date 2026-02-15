@@ -65,6 +65,41 @@ export interface DbCandidateEvent {
   last_seen_day: number;
 }
 
+
+function parseJsonbArray(value: unknown): AcademyCertificate[] {
+  if (Array.isArray(value)) {
+    return value as AcademyCertificate[];
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as AcademyCertificate[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function toJsonbParam(value: unknown, fallback: unknown): string {
+  if (value === null || value === undefined) {
+    return JSON.stringify(fallback);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      JSON.parse(value);
+      return value;
+    } catch {
+      return JSON.stringify(fallback);
+    }
+  }
+
+  return JSON.stringify(value);
+}
+
 export async function getProfileIdByUserId(client: PoolClient, userId: string): Promise<string | null> {
   const result = await client.query<{ id: string }>(`SELECT id FROM profiles WHERE user_id = $1`, [userId]);
   return result.rows[0]?.id ?? null;
@@ -109,7 +144,10 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
     [profileId]
   );
 
-  return result.rows[0] ?? null;
+  const row = result.rows[0] ?? null;
+  if (!row) return null;
+
+  return row;
 }
 
 export async function ensureSingleActiveSession(
@@ -168,11 +206,11 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         last_mission_day = $16,
         academy_tier = $17,
         last_travel_place = $18,
-        certificate_inventory = $19,
+        certificate_inventory = $19::jsonb,
         division_freedom_score = $20,
         preferred_division = $21,
         pending_event_id = $22,
-        pending_event_payload = $23,
+        pending_event_payload = $23::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -196,11 +234,11 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.last_mission_day,
       state.academy_tier,
       state.last_travel_place,
-      state.certificate_inventory,
+      toJsonbParam(parseJsonbArray(state.certificate_inventory), []),
       state.division_freedom_score,
       state.preferred_division,
       state.pending_event_id,
-      state.pending_event_payload
+      toJsonbParam(state.pending_event_payload, null)
     ]
   );
 }
@@ -248,7 +286,10 @@ export async function getEventById(client: PoolClient, eventId: number) {
     options: DbEventOption[];
   }>(`SELECT id, title, description, options FROM events WHERE id = $1`, [eventId]);
 
-  return result.rows[0] ?? null;
+  const row = result.rows[0] ?? null;
+  if (!row) return null;
+
+  return row;
 }
 
 export async function insertDecisionLog(

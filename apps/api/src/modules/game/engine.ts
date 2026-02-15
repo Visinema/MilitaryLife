@@ -278,6 +278,12 @@ function fallbackEffectPreview(option: {
   return `Δ$${Math.round((option.effects?.money ?? 0) / 100)} · M ${option.effects?.morale ?? 0} · H ${option.effects?.health ?? 0} · P ${option.effects?.promotionPoints ?? 0}`;
 }
 
+
+function eventRollChance(state: DbGameStateRow): number {
+  const baseChance = COUNTRY_CONFIG[state.country].dailyEventProbability * BRANCH_CONFIG[state.branch].eventChanceModifier;
+  return clamp(baseChance * 0.45, 0.02, 0.25);
+}
+
 export async function maybeQueueDecisionEvent(
   client: PoolClient,
   state: DbGameStateRow,
@@ -292,9 +298,7 @@ export async function maybeQueueDecisionEvent(
     return false;
   }
 
-  const countryChance = COUNTRY_CONFIG[state.country].dailyEventProbability;
-  const branchModifier = BRANCH_CONFIG[state.branch].eventChanceModifier;
-  const chance = clamp(countryChance * branchModifier, 0.05, 0.55);
+  const chance = eventRollChance(state);
 
   let shouldTrigger = false;
   for (let day = state.next_event_day; day <= state.current_day; day += 1) {
@@ -305,7 +309,7 @@ export async function maybeQueueDecisionEvent(
   }
 
   if (!shouldTrigger) {
-    state.next_event_day = state.current_day + 1;
+    state.next_event_day = state.current_day + sampleGeometricGap(chance, 3, 14);
     return false;
   }
 
@@ -313,14 +317,14 @@ export async function maybeQueueDecisionEvent(
   const eligible = candidates.filter((event) => state.current_day - event.last_seen_day >= event.cooldown_days);
 
   if (eligible.length === 0) {
-    state.next_event_day = state.current_day + sampleGeometricGap(chance, 2, 8);
+    state.next_event_day = state.current_day + sampleGeometricGap(chance, 3, 14);
     return false;
   }
 
   const picked = sampleWeighted<DbCandidateEvent>(eligible.map((event) => ({ item: event, weight: event.base_weight })));
 
   if (!picked) {
-    state.next_event_day = state.current_day + sampleGeometricGap(chance, 2, 8);
+    state.next_event_day = state.current_day + sampleGeometricGap(chance, 3, 14);
     return false;
   }
 
@@ -555,12 +559,8 @@ export function applyDecisionEffects(
 }
 
 export function scheduleNextEventDay(state: DbGameStateRow): void {
-  const chance = clamp(
-    COUNTRY_CONFIG[state.country].dailyEventProbability * BRANCH_CONFIG[state.branch].eventChanceModifier,
-    0.05,
-    0.55
-  );
-  state.next_event_day = state.current_day + sampleGeometricGap(chance, 2, 8);
+  const chance = eventRollChance(state);
+  state.next_event_day = state.current_day + sampleGeometricGap(chance, 3, 14);
 }
 
 export function snapshotStateForLog(state: DbGameStateRow): Record<string, unknown> {
