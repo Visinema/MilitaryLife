@@ -890,18 +890,21 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     const report = buildCeremonyReport(state);
     const awardedToPlayer = (state.rank_index + state.morale + state.health + state.current_day) % 2 === 0;
 
+    const playerMedalName = report.recipients[0]?.medalName ?? 'Distinguished Service Medal';
+    const playerRibbonName = report.recipients[0]?.ribbonName ?? 'Ceremony Ribbon';
+
     const playerMedals = awardedToPlayer ? [
       ...state.player_medals,
-      `Chief Citation Day ${report.ceremonyDay}`
+      playerMedalName
     ] : state.player_medals;
     const playerRibbons = awardedToPlayer ? [
       ...state.player_ribbons,
-      `Ceremony Ribbon Day ${report.ceremonyDay}`
+      playerRibbonName
     ] : state.player_ribbons;
 
     state.player_medals = Array.from(new Set(playerMedals)).slice(-24);
     state.player_ribbons = Array.from(new Set(playerRibbons)).slice(-24);
-    state.ceremony_recent_awards = report.recipients;
+    state.ceremony_recent_awards = [...state.ceremony_recent_awards, ...report.recipients].slice(-240);
     state.ceremony_completed_day = report.ceremonyDay;
 
     if (state.pause_reason === 'SUBPAGE' && state.paused_at_ms) {

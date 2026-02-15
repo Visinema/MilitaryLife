@@ -168,7 +168,7 @@ function playerRankScore(snapshot: GameSnapshot, influenceRecord: number): numbe
   return snapshot.gameDay * 0.28 + snapshot.morale * 0.3 + snapshot.health * 0.25 + influenceRecord * 2.2;
 }
 
-function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, { medalName: string; ribbonName: string }>, casualtyBySlot: Map<number, { role: string }>): NpcV2Profile {
+function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, Array<{ medalName: string; ribbonName: string }>>, casualtyBySlot: Map<number, { role: string }>): NpcV2Profile {
   const slot = identity.slot;
   const baseSeed = seeded(snapshot, slot * 3 + 11);
   const generation = 0;
@@ -182,8 +182,9 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
   const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4));
   const rank = universalRankFromScore(progressionScore * 0.35 + commandPower * 0.55);
   const npcName = identity.name;
-  const ceremonyAward = awardsByNpc.get(npcName);
-  const ribbons = ceremonyAward ? [ribbonFromAwardName(ceremonyAward.ribbonName, slot)] : [];
+  const ceremonyAwards = awardsByNpc.get(npcName) ?? [];
+  const medals = ceremonyAwards.map((award) => award.medalName).slice(-6);
+  const ribbons = ceremonyAwards.map((award, idx) => ribbonFromAwardName(award.ribbonName, slot * 10 + idx)).slice(-6);
 
   return {
     id: `npc-slot-${slot}-gen-${generation}`,
@@ -195,7 +196,7 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
     division: identity.division || 'Infantry Division',
     subdivision: identity.subdivision || 'Recon',
     unit: identity.unit || '1st Brigade',
-    medals: ceremonyAward ? [ceremonyAward.medalName] : [],
+    medals,
     ribbons,
     status,
     commandPower,
@@ -257,7 +258,12 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const playerMedals = Array.isArray(snapshot.playerMedals) ? snapshot.playerMedals.slice(-6) : [];
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
-  const awardsByNpc = new Map((snapshot.ceremonyRecentAwards ?? []).map((item) => [item.npcName, { medalName: item.medalName, ribbonName: item.ribbonName }]));
+  const awardsByNpc = new Map<string, Array<{ medalName: string; ribbonName: string }>>();
+  for (const item of snapshot.ceremonyRecentAwards ?? []) {
+    const row = awardsByNpc.get(item.npcName) ?? [];
+    row.push({ medalName: item.medalName, ribbonName: item.ribbonName });
+    awardsByNpc.set(item.npcName, row);
+  }
   const casualtyBySlot = new Map((snapshot.raiderCasualties ?? []).map((item) => [item.slot, { role: item.role }]));
   const registry = buildNpcRegistry(snapshot.branch, MAX_NPCS);
   const roster = registry.map((identity) => buildNpcForSlot(snapshot, identity, influenceRecord, awardsByNpc, casualtyBySlot));

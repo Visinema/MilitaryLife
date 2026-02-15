@@ -12,6 +12,7 @@ export default function HierarchyPage() {
   const setStoreSnapshot = useGameStore((state) => state.setSnapshot);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(storeSnapshot);
   const [error, setError] = useState<string | null>(null);
+  const [expandedDivisions, setExpandedDivisions] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (storeSnapshot) {
@@ -42,6 +43,23 @@ export default function HierarchyPage() {
     return Array.from(groups.entries()).map(([division, members]) => ({ division, members: members.slice(0, 8) }));
   }, [hierarchy]);
 
+  useEffect(() => {
+    if (internalHierarchy.length === 0) return;
+    setExpandedDivisions((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const group of internalHierarchy) {
+        next[group.division] = prev[group.division] ?? false;
+      }
+      if (!Object.values(next).some(Boolean)) {
+        next[internalHierarchy[0].division] = true;
+      }
+      return next;
+    });
+  }, [internalHierarchy]);
+
+  const toggleDivision = (division: string) => {
+    setExpandedDivisions((prev) => ({ ...prev, [division]: !prev[division] }));
+  };
 
   const refreshSnapshot = () => {
     api
@@ -123,18 +141,32 @@ export default function HierarchyPage() {
       {internalHierarchy.length > 0 ? (
         <section className="cyber-panel p-3 text-xs space-y-2">
           <h2 className="text-sm font-semibold text-text">Hierarki Internal Divisi / Satuan / Korps</h2>
-          {internalHierarchy.map((group) => (
-            <div key={group.division} className="rounded border border-border/60 bg-bg/60 p-2">
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted">{group.division}</p>
-              <div className="mt-1 space-y-1">
-                {group.members.map((member) => (
-                  <p key={`${group.division}-${member.name}`} className="text-muted">
-                    {member.rank} · {member.name} — {member.role} ({member.unit})
-                  </p>
-                ))}
-              </div>
-            </div>
-          ))}
+          <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+            {internalHierarchy.map((group) => {
+              const expanded = Boolean(expandedDivisions[group.division]);
+              return (
+                <div key={group.division} className="rounded border border-border/60 bg-bg/60">
+                  <button
+                    type="button"
+                    onClick={() => toggleDivision(group.division)}
+                    className="flex w-full items-center justify-between px-2 py-2 text-left"
+                  >
+                    <span className="text-[11px] uppercase tracking-[0.08em] text-muted">{group.division}</span>
+                    <span className="text-[10px] text-text">{expanded ? 'Collapse' : 'Expand'} · {group.members.length} personel</span>
+                  </button>
+                  {expanded ? (
+                    <div className="max-h-52 space-y-1 overflow-y-auto border-t border-border/40 px-2 py-2">
+                      {group.members.map((member) => (
+                        <p key={`${group.division}-${member.name}-${member.role}`} className="text-muted">
+                          {member.rank} · {member.name} — {member.role} ({member.unit})
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </section>
       ) : null}
 
