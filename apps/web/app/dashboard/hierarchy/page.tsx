@@ -62,6 +62,7 @@ export default function HierarchyPage() {
       {!snapshot && !error ? <p className="text-sm text-muted">Loading hierarchy...</p> : null}
 
       {world ? (
+        <>
         <div className="grid grid-cols-2 gap-2 cyber-panel p-3 text-xs text-muted sm:grid-cols-5">
           <p>
             Active: <span className="text-text">{world.stats.active}</span>
@@ -79,6 +80,10 @@ export default function HierarchyPage() {
             Replacements: <span className="text-text">{world.stats.replacementsThisCycle}</span>
           </p>
         </div>
+        <div className="cyber-panel p-3 text-xs text-muted">
+          Raider Threat: <span className="text-text">{world.missionBrief.raiderThreatLevel}</span> · Raider Team Ready: <span className="text-text">{world.missionBrief.raiderTeam.length}</span>
+        </div>
+        </>
       ) : null}
 
       <section className="cyber-panel space-y-2 p-3 text-xs">
@@ -102,7 +107,7 @@ export default function HierarchyPage() {
               {npc.rank} · {npc.branch}
             </p>
             <p className="text-xs text-muted">
-              {npc.division} / {npc.subdivision}
+              {npc.division} / {npc.subdivision} / {npc.unit}
             </p>
             <p className="mt-2 text-xs text-text">Medals: {npc.medals.join(' · ')}</p>
             <p className="text-xs text-text">Ribbons: {npc.ribbons.map((r) => r.name).join(' · ')}</p>

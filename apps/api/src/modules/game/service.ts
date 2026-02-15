@@ -787,6 +787,10 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.preferred_division = null;
     state.pending_event_id = null;
     state.pending_event_payload = null;
+    state.ceremony_completed_day = 0;
+    state.ceremony_recent_awards = [];
+    state.player_medals = [];
+    state.player_ribbons = [];
 
     await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
 
@@ -952,7 +956,7 @@ export async function getCurrentSnapshotForSubPage(request: FastifyRequest, repl
 export async function getNpcBackgroundActivity(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const snapshot = buildSnapshot(state, nowMs);
-    const activity = Array.from({ length: 18 }, (_, i) => {
+    const activity = Array.from({ length: 30 }, (_, i) => {
       const cycleSeed = snapshot.gameDay * 37 + i * 11 + snapshot.age + snapshot.morale;
       const op = ['training', 'deployment', 'career-review', 'resupply', 'medical', 'intel'][cycleSeed % 6];
       const impact = ['morale+', 'health+', 'funds+', 'promotion+', 'coordination+', 'readiness+'][(cycleSeed + 3) % 6];

@@ -14,12 +14,20 @@ export default function CeremonyPage() {
   const setSnapshot = useGameStore((state) => state.setSnapshot);
 
   useEffect(() => {
-    if (snapshot) return;
+    let cancelled = false;
     api
       .snapshot()
-      .then((response) => setSnapshot(response.snapshot))
-      .catch((err: Error) => setError(err.message));
-  }, [setSnapshot, snapshot]);
+      .then((response) => {
+        if (!cancelled) setSnapshot(response.snapshot);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setSnapshot]);
 
   const ceremonyDue = Boolean(snapshot?.ceremonyDue);
 

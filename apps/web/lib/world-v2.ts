@@ -25,6 +25,7 @@ export interface NpcV2Profile {
   role: string;
   division: string;
   subdivision: string;
+  unit: string;
   medals: string[];
   ribbons: RibbonStyle[];
   status: NpcStatus;
@@ -62,6 +63,8 @@ export interface WorldV2State {
     commandRule: string;
     recruitmentWindow: string;
     mandatoryAssignmentEveryDays: number;
+    raiderThreatLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    raiderTeam: Array<{ name: string; readiness: number; role: string; division: string; unit: string }>;
   };
 }
 
@@ -144,6 +147,7 @@ function ribbonFromAwardName(name: string, idx: number): RibbonStyle {
     ['#2f2038', '#b78ced', '#2f2038']
   ];
   const patterns: RibbonPattern[] = ['CENTER_STRIPE', 'TRI_BAND', 'CHEVRON', 'SOLID'];
+
   return {
     id: `ceremony-ribbon-${idx}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
     name,
@@ -188,6 +192,7 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
     role: identity.position || roleFromUniversalRank(rank, slot),
     division: identity.division || 'Infantry Division',
     subdivision: identity.subdivision || 'Recon',
+    unit: identity.unit || '1st Brigade',
     medals: ceremonyAward ? [ceremonyAward.medalName] : [],
     ribbons,
     status,
@@ -200,6 +205,51 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
   };
 }
 
+
+function buildHierarchyWithQuota(roster: NpcV2Profile[]): NpcV2Profile[] {
+  const sorted = [...roster].sort((a, b) => b.commandPower - a.commandPower);
+  const perDivision = new Map<string, number>();
+  const perUnit = new Map<string, number>();
+  const maxPerDivision = 8;
+  const maxPerUnit = 5;
+  const picked: NpcV2Profile[] = [];
+
+  for (const npc of sorted) {
+    const divisionCount = perDivision.get(npc.division) ?? 0;
+    const unitCount = perUnit.get(npc.unit) ?? 0;
+    if (divisionCount >= maxPerDivision || unitCount >= maxPerUnit) continue;
+
+    picked.push(npc);
+    perDivision.set(npc.division, divisionCount + 1);
+    perUnit.set(npc.unit, unitCount + 1);
+    if (picked.length >= MAX_NPCS) break;
+  }
+
+  if (picked.length < Math.min(MAX_NPCS, sorted.length)) {
+    for (const npc of sorted) {
+      if (picked.some((item) => item.id === npc.id)) continue;
+      picked.push(npc);
+      if (picked.length >= MAX_NPCS) break;
+    }
+  }
+
+  return picked;
+}
+
+function buildRaiderTeam(hierarchy: NpcV2Profile[], snapshot: GameSnapshot) {
+  const candidates = [...hierarchy].sort((a, b) => b.progressionScore - a.progressionScore).slice(0, 6);
+  const team = candidates.map((npc, idx) => ({
+    name: npc.name,
+    readiness: Math.min(100, npc.commandPower + (snapshot.gameDay % (idx + 3))),
+    role: idx === 0 ? 'Raider Lead' : idx < 3 ? 'Breach Team' : 'Support Raider',
+    division: npc.division,
+    unit: npc.unit
+  }));
+  const avg = team.length ? Math.round(team.reduce((sum, item) => sum + item.readiness, 0) / team.length) : 0;
+  const raiderThreatLevel: 'LOW' | 'MEDIUM' | 'HIGH' = avg >= 78 ? 'HIGH' : avg >= 56 ? 'MEDIUM' : 'LOW';
+  return { team, raiderThreatLevel };
+}
+
 export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const playerRibbons = buildPlayerRibbons(snapshot);
   const playerMedals = Array.isArray(snapshot.playerMedals) ? snapshot.playerMedals.slice(-6) : [];
@@ -208,15 +258,16 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const awardsByNpc = new Map((snapshot.ceremonyRecentAwards ?? []).map((item) => [item.npcName, { medalName: item.medalName, ribbonName: item.ribbonName }]));
   const registry = buildNpcRegistry(snapshot.branch, MAX_NPCS);
   const roster = registry.map((identity) => buildNpcForSlot(snapshot, identity, influenceRecord, awardsByNpc));
-  const hierarchy = [...roster].sort((a, b) => b.commandPower - a.commandPower).slice(0, MAX_NPCS);
+  const hierarchy = buildHierarchyWithQuota(roster);
 
   const stats = {
     active: roster.length,
     injured: 0,
     reserve: 0,
     kia: 0,
-    replacementsThisCycle: roster.filter((npc) => npc.id.includes('-gen-') && !npc.id.endsWith('-gen-0')).length
+    replacementsThisCycle: 0
   };
+  const raider = buildRaiderTeam(hierarchy, snapshot);
 
   return {
     player: {
@@ -237,7 +288,9 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       sanctions: 'Commanders can issue warning, duty restriction, and promotion hold for failed orders or insubordination.',
       commandRule: 'Hierarchy authority flows from theater to division/subdivision leads with morale impact on non-compliance.',
       recruitmentWindow: snapshot.morale > 72 ? 'Special recruitment open (Tier-1 & specialist tracks).' : 'Standard recruitment only.',
-      mandatoryAssignmentEveryDays: 10
+      mandatoryAssignmentEveryDays: 10,
+      raiderThreatLevel: raider.raiderThreatLevel,
+      raiderTeam: raider.team
     }
   };
 }

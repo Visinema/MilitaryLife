@@ -121,7 +121,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                     <div key={npc.id} className="grid grid-cols-[1.2fr,0.8fr,0.8fr] gap-1 rounded border border-border/60 px-1.5 py-1 text-[11px]">
                       <p className="truncate text-text">{npc.name}</p>
                       <p className="truncate text-muted">{npc.rank}</p>
-                      <p className="truncate text-muted">{npc.role}</p>
+                      <p className="truncate text-muted">{npc.role} · {npc.unit}</p>
                     </div>
                   ))}
                 </div>

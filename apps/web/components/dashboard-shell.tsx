@@ -304,7 +304,6 @@ export function DashboardShell() {
   useEffect(() => {
     if (!snapshot) return;
     if (!pageReady) return;
-    if (snapshot.paused) return;
     if (typeof window === 'undefined') return;
 
     const tick = () => {
@@ -314,13 +313,9 @@ export function DashboardShell() {
 
       if (liveDay < 12 || liveDay % 12 !== 0) return;
       const ceremonyCycleDay = liveDay;
-      const key = `ceremony-auto-cycle-${ceremonyCycleDay}`;
-      if (window.sessionStorage.getItem(key)) return;
-
       void loadSnapshot();
-      window.sessionStorage.setItem(key, '1');
       ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
-        router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
+        router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}&boundary=1`);
       });
     };
 
