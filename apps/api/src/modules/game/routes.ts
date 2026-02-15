@@ -6,7 +6,9 @@ import {
   deploymentSchema,
   pauseSchema,
   resumeSchema,
-  trainingSchema
+  trainingSchema,
+  militaryAcademySchema,
+  travelSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -20,7 +22,9 @@ import {
   runCareerReview,
   runDeployment,
   runTraining,
-  restartWorldFromZero
+  restartWorldFromZero,
+  runMilitaryAcademy,
+  runTravel
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -66,6 +70,24 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/actions/career-review', async (request, reply) => {
     await runCareerReview(request, reply);
+  });
+
+  app.post('/actions/military-academy', async (request, reply) => {
+    try {
+      const body = parseOrThrow(militaryAcademySchema, request.body ?? {});
+      await runMilitaryAcademy(request, reply, body.tier === 2 ? 2 : 1);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
+  app.post('/actions/travel', async (request, reply) => {
+    try {
+      const body = parseOrThrow(travelSchema, request.body);
+      await runTravel(request, reply, body.place);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
   });
 
 

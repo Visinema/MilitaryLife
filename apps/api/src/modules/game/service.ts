@@ -55,6 +55,8 @@ interface StateCheckpoint {
   daysInRank: number;
   nextEventDay: number;
   lastMissionDay: number;
+  academyTier: number;
+  lastTravelPlace: string | null;
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -76,6 +78,8 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     daysInRank: state.days_in_rank,
     nextEventDay: state.next_event_day,
     lastMissionDay: state.last_mission_day,
+    academyTier: state.academy_tier,
+    lastTravelPlace: state.last_travel_place,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -98,6 +102,8 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.days_in_rank !== checkpoint.daysInRank ||
     state.next_event_day !== checkpoint.nextEventDay ||
     state.last_mission_day !== checkpoint.lastMissionDay ||
+    state.academy_tier !== checkpoint.academyTier ||
+    state.last_travel_place !== checkpoint.lastTravelPlace ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -376,6 +382,103 @@ export async function runCareerReview(request: FastifyRequest, reply: FastifyRep
   });
 }
 
+export async function runMilitaryAcademy(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  tier: 1 | 2
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const pendingError = ensureNoPendingDecision(state);
+    if (pendingError) {
+      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    if (state.academy_tier >= tier) {
+      return {
+        payload: {
+          type: 'MILITARY_ACADEMY',
+          snapshot: buildSnapshot(state, nowMs),
+          details: {
+            academyTier: state.academy_tier,
+            alreadyCertified: true,
+            message: tier === 2 ? 'High Command certification already completed.' : 'Officer certification already completed.'
+          }
+        }
+      };
+    }
+
+    const fee = tier === 2 ? 2800 : 1600;
+    const moraleBoost = tier === 2 ? 4 : 2;
+    const healthBoost = tier === 2 ? 2 : 1;
+    const pointsBoost = tier === 2 ? 7 : 4;
+
+    state.money_cents = Math.max(0, state.money_cents - fee);
+    state.morale = Math.min(100, state.morale + moraleBoost);
+    state.health = Math.min(100, state.health + healthBoost);
+    state.promotion_points += pointsBoost;
+    state.academy_tier = tier;
+
+    const snapshot = buildSnapshot(state, nowMs);
+    const payload: ActionResult = {
+      type: 'MILITARY_ACADEMY',
+      snapshot,
+      details: {
+        academyTier: state.academy_tier,
+        fee,
+        moraleBoost,
+        healthBoost,
+        pointsBoost,
+        certification: tier === 2 ? 'HIGH_COMMAND' : 'OFFICER'
+      }
+    };
+
+    return { payload };
+  });
+}
+
+export async function runTravel(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  place: 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN'
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const pendingError = ensureNoPendingDecision(state);
+    if (pendingError) {
+      return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const effects = {
+      BASE_HQ: { cost: 300, morale: 2, health: 1, points: 1 },
+      BORDER_OUTPOST: { cost: 800, morale: 1, health: -1, points: 3 },
+      LOGISTICS_HUB: { cost: 450, morale: 1, health: 0, points: 2 },
+      TACTICAL_TOWN: { cost: 650, morale: 3, health: 1, points: 2 }
+    }[place];
+
+    state.money_cents = Math.max(0, state.money_cents - effects.cost);
+    state.morale = Math.max(0, Math.min(100, state.morale + effects.morale));
+    state.health = Math.max(0, Math.min(100, state.health + effects.health));
+    state.promotion_points += effects.points;
+    state.last_travel_place = place;
+    advanceGameDays(state, 1);
+
+    const snapshot = buildSnapshot(state, nowMs);
+    const payload: ActionResult = {
+      type: 'TRAVEL',
+      snapshot,
+      details: {
+        place,
+        travelCost: effects.cost,
+        moraleDelta: effects.morale,
+        healthDelta: effects.health,
+        promotionPointDelta: effects.points,
+        etaDays: 1
+      }
+    };
+
+    return { payload };
+  });
+}
+
 export async function chooseDecision(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -459,6 +562,8 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.days_in_rank = 0;
     state.next_event_day = 3;
     state.last_mission_day = -10;
+    state.academy_tier = 0;
+    state.last_travel_place = null;
     state.pending_event_id = null;
     state.pending_event_payload = null;
 

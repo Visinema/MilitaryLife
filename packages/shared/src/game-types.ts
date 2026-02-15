@@ -15,6 +15,7 @@ export interface PendingDecision {
 }
 
 export interface GameSnapshot {
+  rankIndex?: number;
   serverNowMs: number;
   serverReferenceTimeMs: number;
   gameDay: number;
@@ -31,6 +32,10 @@ export interface GameSnapshot {
   pauseToken: string | null;
   pauseExpiresAtMs: number | null;
   lastMissionDay: number;
+  academyTier?: number;
+  academyCertifiedOfficer?: boolean;
+  academyCertifiedHighOfficer?: boolean;
+  lastTravelPlace?: string | null;
   pendingDecision: PendingDecision | null;
 }
 
@@ -46,7 +51,7 @@ export interface DecisionResult {
 }
 
 export interface ActionResult {
-  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW';
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL';
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }

@@ -3,6 +3,8 @@ import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/gam
 
 type HttpMethod = 'GET' | 'POST';
 
+export type TravelPlace = 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN';
+
 type RequestOptions = {
   cache?: RequestCache;
 };
@@ -118,6 +120,12 @@ export const api = {
   },
   careerReview() {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});
+  },
+  militaryAcademy(tier: 1 | 2 = 1) {
+    return request<ActionResult>('/game/actions/military-academy', 'POST', { tier });
+  },
+  travel(place: TravelPlace) {
+    return request<ActionResult>('/game/actions/travel', 'POST', { place });
   },
   restartWorld() {
     return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {});

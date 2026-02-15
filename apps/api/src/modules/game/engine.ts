@@ -80,6 +80,11 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
 
   const serviceOk = serviceYears >= minimumServiceYears;
   const meritOk = meritPoints >= minimumMeritPoints;
+  const targetRankIndex = state.rank_index + 1;
+  const requiresOfficerAcademy = targetRankIndex >= 2;
+  const requiresHighCommandAcademy = targetRankIndex >= 4;
+  const officerAcademyOk = !requiresOfficerAcademy || state.academy_tier >= 1;
+  const highCommandAcademyOk = !requiresHighCommandAcademy || state.academy_tier >= 2;
 
   const vacancyChance = clamp(
     0.28 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015,
@@ -89,7 +94,7 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
   const vacancyAvailabilityPercent = Math.round(vacancyChance * 100);
   const vacancyPassed = roll(vacancyChance);
 
-  const approved = serviceOk && meritOk && vacancyPassed;
+  const approved = serviceOk && meritOk && vacancyPassed && officerAcademyOk && highCommandAcademyOk;
 
   const serviceRatio = serviceYears / Math.max(minimumServiceYears, 0.1);
   const meritRatio = meritPoints / Math.max(minimumMeritPoints, 1);
@@ -101,6 +106,8 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
   if (!serviceOk) rejectionReasons.push(`service years (${serviceYears}/${minimumServiceYears})`);
   if (!meritOk) rejectionReasons.push(`merit points (${meritPoints}/${minimumMeritPoints})`);
   if (!vacancyPassed) rejectionReasons.push(`vacancy availability (${vacancyAvailabilityPercent}%)`);
+  if (!officerAcademyOk) rejectionReasons.push('Military Academy Officer certification');
+  if (!highCommandAcademyOk) rejectionReasons.push('Military Academy High Command certification');
 
   const rejectionLetter = approved
     ? null
@@ -396,6 +403,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     country: state.country,
     branch: state.branch,
     rankCode: snapshotRankCode(state),
+    rankIndex: state.rank_index,
     moneyCents: state.money_cents,
     morale: state.morale,
     health: state.health,
@@ -404,6 +412,10 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     pauseToken: state.pause_token,
     pauseExpiresAtMs: state.pause_expires_at_ms,
     lastMissionDay: state.last_mission_day,
+    academyTier: state.academy_tier,
+    academyCertifiedOfficer: state.academy_tier >= 1,
+    academyCertifiedHighOfficer: state.academy_tier >= 2,
+    lastTravelPlace: state.last_travel_place,
     pendingDecision: normalizePendingDecisionPayload(state)
   };
 }
@@ -541,6 +553,8 @@ export function snapshotStateForLog(state: DbGameStateRow): Record<string, unkno
     nextEventDay: state.next_event_day,
     pendingEventId: state.pending_event_id,
     pauseReason: state.pause_reason,
-    lastMissionDay: state.last_mission_day
+    lastMissionDay: state.last_mission_day,
+    academyTier: state.academy_tier,
+    lastTravelPlace: state.last_travel_place
   };
 }

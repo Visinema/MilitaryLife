@@ -3,16 +3,22 @@
 import dynamic from 'next/dynamic';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, ApiError } from '@/lib/api-client';
+import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { useGameStore } from '@/store/game-store';
-import { ActionButtons } from './action-buttons';
 import { TopbarTime } from './topbar-time';
 import { V2CommandCenter } from './v2-command-center';
 
 const DecisionModal = dynamic(() => import('./decision-modal').then((mod) => mod.DecisionModal), {
   ssr: false
 });
+const TRAVEL_PLACES: Array<{ place: TravelPlace; label: string }> = [
+  { place: 'BASE_HQ', label: 'Base HQ' },
+  { place: 'BORDER_OUTPOST', label: 'Border Outpost' },
+  { place: 'LOGISTICS_HUB', label: 'Logistics Hub' },
+  { place: 'TACTICAL_TOWN', label: 'Tactical Town' }
+];
+
 
 export function DashboardShell() {
   const router = useRouter();
@@ -87,7 +93,7 @@ export function DashboardShell() {
 
     const intervalMs = snapshot.paused ? 60_000 : 20_000;
     const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible") {
+      if (document.visibilityState !== 'visible') {
         return;
       }
       void loadSnapshot();
@@ -130,25 +136,48 @@ export function DashboardShell() {
     [loadSnapshot, profileForm, setError]
   );
 
-  const runAction = useCallback(
-    async (action: 'training' | 'deployment' | 'career-review') => {
-      setActionBusy(action);
+  const runTravel = useCallback(
+    async (place: TravelPlace) => {
+      setActionBusy(place);
       try {
-        const response =
-          action === 'training'
-            ? await api.training('MEDIUM')
-            : action === 'deployment'
-              ? await api.deployment('SUPPORT')
-              : await api.careerReview();
+        const response = await api.travel(place);
         setSnapshot(response.snapshot);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Action failed');
+        setError(err instanceof Error ? err.message : 'Travel failed');
       } finally {
         setActionBusy(null);
       }
     },
     [setError, setSnapshot]
   );
+
+  const runMilitaryAcademy = useCallback(
+    async (tier: 1 | 2) => {
+      const key = tier === 2 ? 'ACADEMY_T2' : 'ACADEMY_T1';
+      setActionBusy(key);
+      try {
+        const response = await api.militaryAcademy(tier);
+        setSnapshot(response.snapshot);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Military academy action failed');
+      } finally {
+        setActionBusy(null);
+      }
+    },
+    [setError, setSnapshot]
+  );
+
+  const runCareerReview = useCallback(async () => {
+    setActionBusy('CAREER_REVIEW');
+    try {
+      const response = await api.careerReview();
+      setSnapshot(response.snapshot);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Career review failed');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [setError, setSnapshot]);
 
   const restartWorld = useCallback(async () => {
     if (!confirm('Restart world from day 0? This will reset progression.')) return;
@@ -259,41 +288,52 @@ export function DashboardShell() {
     <div className="space-y-1.5">
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
-      <ActionButtons />
-
-      <div className="grid grid-cols-1 gap-1 md:grid-cols-[1fr,auto] md:items-center">
-        <div className="grid grid-cols-1 gap-1 md:grid-cols-3">
-          <button
-            onClick={() => runAction('training')}
-            disabled={Boolean(actionBusy)}
-            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-          >
-            {actionBusy === 'training' ? 'Running...' : 'Quick Training'}
-          </button>
-          <button
-            onClick={() => runAction('deployment')}
-            disabled={Boolean(actionBusy)}
-            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-          >
-            {actionBusy === 'deployment' ? 'Running...' : 'Quick Deployment'}
-          </button>
-          <button
-            onClick={() => runAction('career-review')}
-            disabled={Boolean(actionBusy)}
-            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-          >
-            {actionBusy === 'career-review' ? 'Running...' : 'Career Review'}
-          </button>
+      <div className="cyber-panel space-y-1.5 p-2">
+        <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
+          {TRAVEL_PLACES.map((entry) => (
+            <button
+              key={entry.place}
+              onClick={() => runTravel(entry.place)}
+              disabled={Boolean(actionBusy)}
+              className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
+            >
+              {actionBusy === entry.place ? 'Traveling...' : `Travel: ${entry.label}`}
+            </button>
+          ))}
         </div>
 
-        <div className="flex items-center justify-end">
+        <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
+          <button
+            onClick={() => runMilitaryAcademy(1)}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'ACADEMY_T1' ? 'Processing...' : 'Military Academy Officer'}
+          </button>
+          <button
+            onClick={() => runMilitaryAcademy(2)}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'ACADEMY_T2' ? 'Processing...' : 'Military Academy High Command'}
+          </button>
+          <button
+            onClick={runCareerReview}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'CAREER_REVIEW' ? 'Running...' : 'Career Review'}
+          </button>
           <button
             onClick={() => setSettingsOpen((prev) => !prev)}
-            className="rounded border border-border bg-panel px-2.5 py-1 text-[11px] text-text hover:border-accent"
+            className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent"
           >
             {settingsOpen ? 'Close Settings' : 'Settings'}
           </button>
         </div>
+        <p className="text-[11px] text-muted">
+          Academy tier: {snapshot.academyTier ?? 0} · Last travel: {snapshot.lastTravelPlace ?? 'None'}
+        </p>
       </div>
 
       {settingsOpen ? (

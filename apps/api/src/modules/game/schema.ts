@@ -26,3 +26,11 @@ export const decisionLogQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20)
 });
+
+export const militaryAcademySchema = z.object({
+  tier: z.coerce.number().int().min(1).max(2).default(1)
+});
+
+export const travelSchema = z.object({
+  place: z.enum(['BASE_HQ', 'BORDER_OUTPOST', 'LOGISTICS_HUB', 'TACTICAL_TOWN'])
+});
