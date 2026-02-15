@@ -582,7 +582,7 @@ export function DashboardShell() {
             disabled={resetBusy}
             className="mt-1.5 rounded border border-danger/50 bg-danger/10 px-2.5 py-1.5 text-[11px] text-danger disabled:opacity-60"
           >
-            {resetBusy ? 'Restarting...' : 'Restart World from 0 (Universal)'}
+            {resetBusy ? 'Restarting...' : 'Restart World from 0 (Rank)'}
           </button>
         </div>
       ) : null}

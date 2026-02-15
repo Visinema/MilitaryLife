@@ -69,7 +69,7 @@ const FIRST_NAMES = ['Arif', 'Maya', 'Rizal', 'Nadia', 'Bima', 'Alya', 'Reno', '
 const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Halim', 'Nugroho', 'Putri', 'Saputra', 'Wardani', 'Kurniawan', 'Prameswari'];
 const DIVISIONS = ['Infantry', 'Engineering', 'Signals', 'Medical', 'Logistics', 'Special Ops'];
 const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
-const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier'] as const;
+const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'] as const;
 
 type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
 
@@ -118,8 +118,9 @@ function universalRankFromScore(score: number): UniversalRank {
 }
 
 function roleFromUniversalRank(rank: UniversalRank, slot: number): string {
-  if (rank === 'Brigadier' || rank === 'Colonel') return slot === 0 ? 'Theater Commander' : 'Deputy Commander';
-  if (rank === 'Major' || rank === 'Captain') return 'Division Commander';
+  if (rank === 'General' || rank === 'Lieutenant General') return slot === 0 ? 'Theater Commander' : 'Deputy Commander';
+  if (rank === 'Major General' || rank === 'Brigadier General' || rank === 'Colonel') return 'Division Commander';
+  if (rank === 'Major' || rank === 'Captain') return 'Task Group Commander';
   if (rank === 'Lieutenant' || rank === 'Warrant Officer') return 'Sector Leader';
   return 'Field Commander';
 }

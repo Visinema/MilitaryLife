@@ -36,7 +36,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
             <AvatarFrame
               name={`${world.player.branchLabel} · ${snapshot.rankCode}`}
-              subtitle={`Track: ${world.player.rankTrack} · Universal: ${world.player.universalRank}`}
+              subtitle={`Track: ${world.player.rankTrack} · Rank: ${world.player.universalRank}`}
               uniformTone={world.player.uniformTone}
               ribbons={world.player.ribbons}
               medals={world.player.medals}
@@ -48,15 +48,6 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`
               ]}
             />
-            <div className="mt-1.5">
-              <PersonalStatsPanel
-                title="Active Player"
-                seed={snapshot.gameDay + snapshot.age}
-                baseMorale={snapshot.morale}
-                baseHealth={snapshot.health}
-                baseReadiness={Math.round(world.player.commandAuthority)}
-              />
-            </div>
           </div>
 
           <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border border-border/70 bg-bg/70 p-2.5`}>
@@ -64,8 +55,17 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <h3 className="mt-2 text-sm font-semibold text-text">{world.missionBrief.title}</h3>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.objective}</p>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.commandRule}</p>
-            <div className="mt-2 rounded border border-border px-2.5 py-1.5 text-[11px] text-text">
-              Active: {world.stats.active} · Injured: {world.stats.injured} · Reserve: {world.stats.reserve}
+            <div className="mt-2 grid gap-1 sm:grid-cols-[1.2fr,1fr]">
+              <div className="rounded border border-border px-2 py-1.5 text-[11px] text-text">
+                Active: {world.stats.active} · Injured: {world.stats.injured} · Reserve: {world.stats.reserve}
+              </div>
+              <PersonalStatsPanel
+                title="Active Player"
+                seed={snapshot.gameDay + snapshot.age}
+                baseMorale={snapshot.morale}
+                baseHealth={snapshot.health}
+                baseReadiness={Math.round(world.player.commandAuthority)}
+              />
             </div>
 
             <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
