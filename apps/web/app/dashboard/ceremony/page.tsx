@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CeremonyReport } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
@@ -52,8 +52,6 @@ export default function CeremonyPage() {
       cancelled = true;
     };
   }, [ceremonyDue]);
-
-  const recentAwards = useMemo(() => snapshot?.ceremonyRecentAwards ?? [], [snapshot?.ceremonyRecentAwards]);
 
   useEffect(() => {
     if (!ceremonyDue) return;
@@ -153,20 +151,6 @@ export default function CeremonyPage() {
       ) : (
         <p className="text-sm text-muted">{ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari kelipatan 12 berikutnya.'}</p>
       )}
-
-      {!ceremonyDue && recentAwards.length > 0 ? (
-        <section className="cyber-panel p-3 text-xs">
-          <h2 className="text-sm font-semibold text-text">Riwayat Nominasi 12 Hari Terakhir</h2>
-          <div className="mt-2 space-y-1">
-            {recentAwards.map((recipient) => (
-              <p key={`${recipient.order}-${recipient.npcName}`} className="rounded border border-border/60 bg-bg/70 px-2 py-1 text-muted">
-                #{recipient.order} {recipient.npcName} · {recipient.medalName}
-              </p>
-            ))}
-          </div>
-          <p className="mt-2 text-[11px] text-muted">Riwayat nominasi direset permanen setiap siklus 12 hari untuk menjaga performa.</p>
-        </section>
-      ) : null}
     </div>
   );
 }
