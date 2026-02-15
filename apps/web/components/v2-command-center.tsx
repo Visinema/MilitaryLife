@@ -23,7 +23,15 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
   const normalizedRank = snapshot.rankCode.toLowerCase();
-  const commandUnlocked = (snapshot.rankIndex ?? 0) >= 9 || normalizedRank.includes('colonel') || normalizedRank.includes('kolonel') || normalizedRank.includes('general') || normalizedRank.includes('jendral');
+  const universalRank = world.player.universalRank.toLowerCase();
+  const commandUnlocked =
+    (snapshot.rankIndex ?? 0) >= 9 ||
+    normalizedRank.includes('colonel') ||
+    normalizedRank.includes('kolonel') ||
+    normalizedRank.includes('general') ||
+    normalizedRank.includes('jendral') ||
+    universalRank.includes('colonel') ||
+    universalRank.includes('general');
 
   const runCommandAction = async (action: CommandAction) => {
     if (!commandUnlocked) return;

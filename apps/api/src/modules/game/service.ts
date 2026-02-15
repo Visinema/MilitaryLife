@@ -479,6 +479,13 @@ export async function runMilitaryAcademy(
             ? ['INFANTRY', 'LOGISTICS']
             : ['INFANTRY'];
 
+    const divisionRoleUnlocks =
+      state.division_freedom_score >= 80
+        ? ['Division Commander Track', 'Joint Task Force Chief', 'Strategic Operations Staff']
+        : state.division_freedom_score >= 60
+          ? ['Brigade Operations Officer', 'Division Staff Planner']
+          : ['Company Ops Lead'];
+
     state.preferred_division = preferredDivision && allowedDivisions.includes(preferredDivision) ? preferredDivision : allowedDivisions[0];
 
     const grade: 'A' | 'B' | 'C' | 'D' = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
@@ -521,7 +528,11 @@ export async function runMilitaryAcademy(
         pointsBoost,
         divisionFreedomScore: state.division_freedom_score,
         allowedDivisions,
-        assessmentMode: hasInteractiveAnswers ? 'INTERACTIVE' : 'LEGACY_COMPAT'
+        assessmentMode: hasInteractiveAnswers ? 'INTERACTIVE' : 'LEGACY_COMPAT',
+        certificateBenefits: {
+          divisionRoleUnlocks,
+          promotionChanceBonusPercent: tier === 2 ? 12 : 7
+        }
       }
     };
 

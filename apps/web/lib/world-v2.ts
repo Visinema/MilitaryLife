@@ -117,6 +117,16 @@ function universalRankFromScore(score: number): UniversalRank {
   return UNIVERSAL_RANKS[idx] ?? 'Recruit';
 }
 
+function universalRankFromSnapshot(snapshot: GameSnapshot, influenceRecord: number): UniversalRank {
+  const rankIdx = typeof snapshot.rankIndex === 'number' ? snapshot.rankIndex : null;
+  if (rankIdx !== null) {
+    const mapped = UNIVERSAL_RANKS[Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, rankIdx))];
+    if (mapped) return mapped;
+  }
+
+  return universalRankFromScore(playerRankScore(snapshot, influenceRecord));
+}
+
 function roleFromUniversalRank(rank: UniversalRank, slot: number): string {
   if (rank === 'General' || rank === 'Lieutenant General') return slot === 0 ? 'Theater Commander' : 'Deputy Commander';
   if (rank === 'Major General' || rank === 'Brigadier General' || rank === 'Colonel') return 'Division Commander';
@@ -230,7 +240,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     player: {
       branchLabel: toBranchLabel(snapshot.branch),
       rankTrack: rankTrack(snapshot.rankCode),
-      universalRank: universalRankFromScore(playerRankScore(snapshot, influenceRecord)),
+      universalRank: universalRankFromSnapshot(snapshot, influenceRecord),
       uniformTone: uniformTone(snapshot.branch),
       medals: playerMedals,
       ribbons: playerRibbons.slice(0, 12),

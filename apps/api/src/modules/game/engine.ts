@@ -57,8 +57,29 @@ function rankInfluence(state: DbGameStateRow): number {
   return 1 + state.rank_index * 0.08;
 }
 
+
+function computeCertificatePromotionBoost(state: DbGameStateRow): { chanceBoost: number; roleUnlocks: string[] } {
+  const certificates = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
+  if (certificates.length === 0) {
+    return { chanceBoost: 0, roleUnlocks: [] };
+  }
+
+  const highestTier = certificates.reduce((max, cert) => Math.max(max, Number(cert?.tier ?? 0)), 0);
+  const hasEliteGrade = certificates.some((cert) => cert?.grade === 'A' || cert?.grade === 'B');
+  const chanceBoost = clamp((highestTier >= 2 ? 0.08 : 0.04) + (hasEliteGrade ? 0.04 : 0.01), 0.02, 0.14);
+
+  const roleUnlocks = [
+    'Division Staff Planner',
+    'Task Force Coordinator',
+    ...(highestTier >= 2 ? ['Strategic Command Staff', 'Joint Operations Controller'] : [])
+  ];
+
+  return { chanceBoost, roleUnlocks };
+}
+
 export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgorithmResult {
-  if (state.rank_index >= 6) {
+  const maxRankIndex = BRANCH_CONFIG[state.branch].ranks.length - 1;
+  if (state.rank_index >= maxRankIndex) {
     return {
       approved: false,
       serviceYears: Number((state.current_day / 365).toFixed(2)),
@@ -86,10 +107,11 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
   const officerAcademyOk = !requiresOfficerAcademy || state.academy_tier >= 1;
   const highCommandAcademyOk = !requiresHighCommandAcademy || state.academy_tier >= 2;
 
+  const certificateBoost = computeCertificatePromotionBoost(state);
   const vacancyChance = clamp(
-    0.28 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015,
+    0.28 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015 + certificateBoost.chanceBoost,
     0.12,
-    0.92
+    0.95
   );
   const vacancyAvailabilityPercent = Math.round(vacancyChance * 100);
   const vacancyPassed = roll(vacancyChance);
@@ -113,7 +135,7 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
     ? null
     : `Promotion Board Notice: Promotion request cannot be approved this cycle due to ${
         rejectionReasons.join(', ') || 'administrative restrictions'
-      }. Please continue service and re-apply in a future board session.`;
+      }. Certificate benefit bonus applied: +${Math.round(certificateBoost.chanceBoost * 100)}% vacancy chance. Please continue service and re-apply in a future board session.`;
 
   return {
     approved,
