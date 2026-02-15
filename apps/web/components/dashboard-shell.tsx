@@ -199,6 +199,19 @@ export function DashboardShell() {
     }
   }, [academyAnswers, academyTierDraft, divisionDraft, setError, setSnapshot]);
 
+
+  const runCareerReview = useCallback(async () => {
+    setActionBusy('CAREER_REVIEW');
+    try {
+      const response = await api.careerReview();
+      setSnapshot(response.snapshot);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Career review failed');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [setError, setSnapshot]);
+
   const restartWorld = useCallback(async () => {
     if (!confirm('Restart world from day 0? This will reset progression.')) return;
 

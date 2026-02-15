@@ -77,7 +77,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
       const body = parseOrThrow(militaryAcademySchema, request.body ?? {});
       await runMilitaryAcademy(request, reply, {
         tier: body.tier === 2 ? 2 : 1,
-        answers: body.answers,
+        answers: body.answers ?? null,
         preferredDivision: body.preferredDivision
       });
     } catch (err) {

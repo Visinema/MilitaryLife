@@ -29,7 +29,7 @@ export const decisionLogQuerySchema = z.object({
 
 export const militaryAcademySchema = z.object({
   tier: z.coerce.number().int().min(1).max(2).default(1),
-  answers: z.array(z.coerce.number().int().min(1).max(4)).length(5),
+  answers: z.array(z.coerce.number().int().min(1).max(4)).length(5).optional(),
   preferredDivision: z.enum(['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER']).optional()
 });
 

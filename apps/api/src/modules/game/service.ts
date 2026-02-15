@@ -396,7 +396,7 @@ export async function runMilitaryAcademy(
   reply: FastifyReply,
   payload: {
     tier: 1 | 2;
-    answers: number[];
+    answers: number[] | null;
     preferredDivision?: 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER';
   }
 ): Promise<void> {
@@ -408,17 +408,20 @@ export async function runMilitaryAcademy(
 
     const { tier, answers, preferredDivision } = payload;
 
-    const normalizedAnswers = answers.slice(0, 5);
-    if (normalizedAnswers.length !== 5) {
-      return { statusCode: 400, payload: { error: 'Academy assessment requires exactly 5 answers' } };
-    }
-
     const correctMap = tier === 2 ? [4, 2, 3, 1, 4] : [2, 3, 1, 4, 2];
+    const hasInteractiveAnswers = Array.isArray(answers) && answers.length === 5;
+
     let score = 0;
-    for (let i = 0; i < correctMap.length; i += 1) {
-      if (normalizedAnswers[i] === correctMap[i]) {
-        score += 20;
+    if (hasInteractiveAnswers) {
+      const normalizedAnswers = (answers as number[]).slice(0, 5);
+      for (let i = 0; i < correctMap.length; i += 1) {
+        if (normalizedAnswers[i] === correctMap[i]) {
+          score += 20;
+        }
       }
+    } else {
+      const legacyBase = Math.round((state.morale * 0.45 + state.health * 0.35 + Math.min(100, state.promotion_points * 2) * 0.2));
+      score = Math.max(40, Math.min(100, legacyBase));
     }
 
     const passThreshold = tier === 2 ? 80 : 60;
@@ -432,7 +435,9 @@ export async function runMilitaryAcademy(
             passed: false,
             score,
             passThreshold,
-            message: 'Assessment not passed. Repeat academy training phase.'
+            message: hasInteractiveAnswers
+              ? 'Assessment not passed. Repeat academy training phase.'
+              : 'Legacy academy check did not pass threshold. Open training phase for full assessment.'
           }
         }
       };
@@ -502,7 +507,8 @@ export async function runMilitaryAcademy(
         healthBoost,
         pointsBoost,
         divisionFreedomScore: state.division_freedom_score,
-        allowedDivisions
+        allowedDivisions,
+        assessmentMode: hasInteractiveAnswers ? 'INTERACTIVE' : 'LEGACY_COMPAT'
       }
     };
 
