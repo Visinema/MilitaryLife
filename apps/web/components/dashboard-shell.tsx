@@ -84,6 +84,7 @@ export function DashboardShell() {
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
+  const ceremonyRedirectFrameRef = useRef<number | null>(null);
 
   const loadSnapshot = useCallback(async () => {
     if (Date.now() < snapshotCooldownUntilRef.current) {
@@ -283,17 +284,42 @@ export function DashboardShell() {
   }, [setError, setSnapshot]);
 
   const branchOptions = useMemo(() => BRANCH_OPTIONS[profileForm.country], [profileForm.country]);
+  const [pageReady, setPageReady] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (document.readyState === 'complete') {
+      setPageReady(true);
+      return;
+    }
+
+    const onLoad = () => setPageReady(true);
+    window.addEventListener('load', onLoad, { once: true });
+    return () => window.removeEventListener('load', onLoad);
+  }, []);
+
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;
+    if (!pageReady) return;
     if (typeof window === 'undefined') return;
+    if (document.visibilityState !== 'visible') return;
 
     const ceremonyCycleDay = snapshot.gameDay < 12 ? 12 : snapshot.gameDay - (snapshot.gameDay % 12);
     const key = `ceremony-auto-cycle-${ceremonyCycleDay}`;
     if (window.sessionStorage.getItem(key)) return;
 
     window.sessionStorage.setItem(key, '1');
-    router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
-  }, [router, snapshot]);
+    ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
+      router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
+    });
+
+    return () => {
+      if (ceremonyRedirectFrameRef.current !== null) {
+        window.cancelAnimationFrame(ceremonyRedirectFrameRef.current);
+        ceremonyRedirectFrameRef.current = null;
+      }
+    };
+  }, [pageReady, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
 
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 

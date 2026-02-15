@@ -12,11 +12,25 @@ export default function CeremonyPage() {
   const snapshot = useGameStore((state) => state.snapshot);
 
   useEffect(() => {
+    if (!snapshot?.ceremonyDue) {
+      setCeremony(null);
+      return;
+    }
+
+    let cancelled = false;
     api
       .ceremony()
-      .then((response) => setCeremony(response.ceremony))
-      .catch((err: Error) => setError(err.message));
-  }, []);
+      .then((response) => {
+        if (!cancelled) setCeremony(response.ceremony);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot?.ceremonyDue]);
 
   return (
     <div className="space-y-4">
@@ -84,7 +98,7 @@ export default function CeremonyPage() {
           </section>
         </>
       ) : (
-        <p className="text-sm text-muted">Loading upacara data...</p>
+        <p className="text-sm text-muted">{snapshot?.ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari upacara aktif.'}</p>
       )}
     </div>
   );
