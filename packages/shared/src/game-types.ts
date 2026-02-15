@@ -14,6 +14,19 @@ export interface PendingDecision {
   }>;
 }
 
+export interface AcademyCertificate {
+  id: string;
+  tier: 1 | 2;
+  academyName: string;
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D';
+  divisionFreedomLevel: 'LIMITED' | 'STANDARD' | 'ADVANCED' | 'ELITE';
+  trainerName: string;
+  issuedAtDay: number;
+  message: string;
+  assignedDivision: string;
+}
+
 export interface GameSnapshot {
   rankIndex?: number;
   serverNowMs: number;
@@ -36,6 +49,9 @@ export interface GameSnapshot {
   academyCertifiedOfficer?: boolean;
   academyCertifiedHighOfficer?: boolean;
   lastTravelPlace?: string | null;
+  certificates?: AcademyCertificate[];
+  divisionFreedomScore?: number;
+  preferredDivision?: string | null;
   pendingDecision: PendingDecision | null;
 }
 

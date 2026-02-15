@@ -57,6 +57,9 @@ interface StateCheckpoint {
   lastMissionDay: number;
   academyTier: number;
   lastTravelPlace: string | null;
+  certificateInventory: DbGameStateRow['certificate_inventory'];
+  divisionFreedomScore: number;
+  preferredDivision: string | null;
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -80,6 +83,9 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     lastMissionDay: state.last_mission_day,
     academyTier: state.academy_tier,
     lastTravelPlace: state.last_travel_place,
+    certificateInventory: state.certificate_inventory,
+    divisionFreedomScore: state.division_freedom_score,
+    preferredDivision: state.preferred_division,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -104,6 +110,9 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.last_mission_day !== checkpoint.lastMissionDay ||
     state.academy_tier !== checkpoint.academyTier ||
     state.last_travel_place !== checkpoint.lastTravelPlace ||
+    state.certificate_inventory !== checkpoint.certificateInventory ||
+    state.division_freedom_score !== checkpoint.divisionFreedomScore ||
+    state.preferred_division !== checkpoint.preferredDivision ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -385,7 +394,11 @@ export async function runCareerReview(request: FastifyRequest, reply: FastifyRep
 export async function runMilitaryAcademy(
   request: FastifyRequest,
   reply: FastifyReply,
-  tier: 1 | 2
+  payload: {
+    tier: 1 | 2;
+    answers: number[];
+    preferredDivision?: 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER';
+  }
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     const pendingError = ensureNoPendingDecision(state);
@@ -393,46 +406,107 @@ export async function runMilitaryAcademy(
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
     }
 
-    if (state.academy_tier >= tier) {
+    const { tier, answers, preferredDivision } = payload;
+
+    const normalizedAnswers = answers.slice(0, 5);
+    if (normalizedAnswers.length !== 5) {
+      return { statusCode: 400, payload: { error: 'Academy assessment requires exactly 5 answers' } };
+    }
+
+    const correctMap = tier === 2 ? [4, 2, 3, 1, 4] : [2, 3, 1, 4, 2];
+    let score = 0;
+    for (let i = 0; i < correctMap.length; i += 1) {
+      if (normalizedAnswers[i] === correctMap[i]) {
+        score += 20;
+      }
+    }
+
+    const passThreshold = tier === 2 ? 80 : 60;
+    if (score < passThreshold) {
+      state.morale = Math.max(0, state.morale - 2);
       return {
         payload: {
           type: 'MILITARY_ACADEMY',
           snapshot: buildSnapshot(state, nowMs),
           details: {
-            academyTier: state.academy_tier,
-            alreadyCertified: true,
-            message: tier === 2 ? 'High Command certification already completed.' : 'Officer certification already completed.'
+            passed: false,
+            score,
+            passThreshold,
+            message: 'Assessment not passed. Repeat academy training phase.'
           }
         }
       };
     }
 
-    const fee = tier === 2 ? 2800 : 1600;
-    const moraleBoost = tier === 2 ? 4 : 2;
+    const fee = tier === 2 ? 3200 : 1800;
+    const moraleBoost = tier === 2 ? 5 : 3;
     const healthBoost = tier === 2 ? 2 : 1;
-    const pointsBoost = tier === 2 ? 7 : 4;
+    const pointsBoost = tier === 2 ? 8 : 5;
 
     state.money_cents = Math.max(0, state.money_cents - fee);
     state.morale = Math.min(100, state.morale + moraleBoost);
     state.health = Math.min(100, state.health + healthBoost);
     state.promotion_points += pointsBoost;
-    state.academy_tier = tier;
+    state.academy_tier = Math.max(state.academy_tier, tier);
+
+    const freedomIncrement = Math.max(10, Math.floor(score / 2));
+    state.division_freedom_score = Math.min(100, state.division_freedom_score + freedomIncrement);
+
+    const allowedDivisions =
+      state.division_freedom_score >= 80
+        ? ['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER']
+        : state.division_freedom_score >= 60
+          ? ['INFANTRY', 'INTEL', 'LOGISTICS']
+          : state.division_freedom_score >= 40
+            ? ['INFANTRY', 'LOGISTICS']
+            : ['INFANTRY'];
+
+    state.preferred_division = preferredDivision && allowedDivisions.includes(preferredDivision) ? preferredDivision : allowedDivisions[0];
+
+    const grade: 'A' | 'B' | 'C' | 'D' = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
+    const freedomLevel: 'LIMITED' | 'STANDARD' | 'ADVANCED' | 'ELITE' =
+      state.division_freedom_score >= 80
+        ? 'ELITE'
+        : state.division_freedom_score >= 60
+          ? 'ADVANCED'
+          : state.division_freedom_score >= 40
+            ? 'STANDARD'
+            : 'LIMITED';
+
+    const certificate = {
+      id: `${state.profile_id}-${Date.now()}-${tier}`,
+      tier,
+      academyName: tier === 2 ? 'Grand Staff Military Academy' : 'Officer Foundation Military Academy',
+      score,
+      grade,
+      divisionFreedomLevel: freedomLevel,
+      trainerName: tier === 2 ? 'Lt. Gen. Arman Wibisono' : 'Col. Andi Pratama',
+      issuedAtDay: state.current_day,
+      message: 'Congratulations on your successful completion of the academy assessment phase.',
+      assignedDivision: state.preferred_division ?? "INFANTRY"
+    };
+
+    const existing = state.certificate_inventory ?? [];
+    state.certificate_inventory = [certificate, ...existing].slice(0, 20);
 
     const snapshot = buildSnapshot(state, nowMs);
-    const payload: ActionResult = {
+    const actionPayload: ActionResult = {
       type: 'MILITARY_ACADEMY',
       snapshot,
       details: {
+        passed: true,
+        certificate,
         academyTier: state.academy_tier,
         fee,
         moraleBoost,
         healthBoost,
         pointsBoost,
-        certification: tier === 2 ? 'HIGH_COMMAND' : 'OFFICER'
+        divisionFreedomScore: state.division_freedom_score,
+        allowedDivisions
       }
     };
 
-    return { payload };
+    return { payload: actionPayload };
   });
 }
 
@@ -564,6 +638,9 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.last_mission_day = -10;
     state.academy_tier = 0;
     state.last_travel_place = null;
+    state.certificate_inventory = [];
+    state.division_freedom_score = 0;
+    state.preferred_division = null;
     state.pending_event_id = null;
     state.pending_event_payload = null;
 

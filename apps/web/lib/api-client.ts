@@ -121,8 +121,8 @@ export const api = {
   careerReview() {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});
   },
-  militaryAcademy(tier: 1 | 2 = 1) {
-    return request<ActionResult>('/game/actions/military-academy', 'POST', { tier });
+  militaryAcademy(payload: { tier: 1 | 2; answers: number[]; preferredDivision?: 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER' }) {
+    return request<ActionResult>('/game/actions/military-academy', 'POST', payload);
   },
   travel(place: TravelPlace) {
     return request<ActionResult>('/game/actions/travel', 'POST', { place });

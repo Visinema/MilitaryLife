@@ -75,7 +75,11 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/military-academy', async (request, reply) => {
     try {
       const body = parseOrThrow(militaryAcademySchema, request.body ?? {});
-      await runMilitaryAcademy(request, reply, body.tier === 2 ? 2 : 1);
+      await runMilitaryAcademy(request, reply, {
+        tier: body.tier === 2 ? 2 : 1,
+        answers: body.answers,
+        preferredDivision: body.preferredDivision
+      });
     } catch (err) {
       sendValidationError(reply, err);
     }

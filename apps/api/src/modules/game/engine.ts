@@ -416,6 +416,9 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     academyCertifiedOfficer: state.academy_tier >= 1,
     academyCertifiedHighOfficer: state.academy_tier >= 2,
     lastTravelPlace: state.last_travel_place,
+    certificates: state.certificate_inventory,
+    divisionFreedomScore: state.division_freedom_score,
+    preferredDivision: state.preferred_division,
     pendingDecision: normalizePendingDecisionPayload(state)
   };
 }
@@ -555,6 +558,8 @@ export function snapshotStateForLog(state: DbGameStateRow): Record<string, unkno
     pauseReason: state.pause_reason,
     lastMissionDay: state.last_mission_day,
     academyTier: state.academy_tier,
-    lastTravelPlace: state.last_travel_place
+    lastTravelPlace: state.last_travel_place,
+    divisionFreedomScore: state.division_freedom_score,
+    preferredDivision: state.preferred_division
   };
 }

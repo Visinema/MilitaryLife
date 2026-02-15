@@ -19,6 +19,30 @@ const TRAVEL_PLACES: Array<{ place: TravelPlace; label: string }> = [
   { place: 'TACTICAL_TOWN', label: 'Tactical Town' }
 ];
 
+const ACADEMY_QUESTIONS: Array<{ prompt: string; options: string[] }> = [
+  {
+    prompt: 'Saat operasi gabungan lintas divisi, prioritas komando awal adalah?',
+    options: ['Menunggu instruksi akhir', 'Samakan objective dan chain-of-command', 'Langsung eksekusi cepat', 'Fokus logistic dulu']
+  },
+  {
+    prompt: 'Saat moral unit turun drastis, langkah paling efektif adalah?',
+    options: ['Tambah jam latihan', 'Kurangi patroli tanpa briefing', 'Leadership briefing + rotasi terukur', 'Tunda semua operasi']
+  },
+  {
+    prompt: 'Indikator readiness terbaik untuk phase tempur adalah?',
+    options: ['Gabungan kesehatan, disiplin, dan supply', 'Jumlah personel saja', 'Lamanya dinas', 'Saldo kas']
+  },
+  {
+    prompt: 'Saat informasi intel ambigu, keputusan komandan yang benar?',
+    options: ['Abaikan intel', 'Retreat total', 'Pecah unit kecil', 'Verifikasi intel + siapkan fallback plan']
+  },
+  {
+    prompt: 'Untuk operasi urban, distribusi unit paling stabil adalah?',
+    options: ['Full assault center', 'Balanced assault-support-reserve', 'Hanya sniper line', 'Reserve penuh tanpa assault']
+  }
+];
+
+const DIVISION_OPTIONS = ['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER'] as const;
 
 export function DashboardShell() {
   const router = useRouter();
@@ -42,6 +66,12 @@ export function DashboardShell() {
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [academyOpen, setAcademyOpen] = useState(false);
+  const [academyTierDraft, setAcademyTierDraft] = useState<1 | 2>(1);
+  const [academyAnswers, setAcademyAnswers] = useState<number[]>([1, 1, 1, 1, 1]);
+  const [divisionDraft, setDivisionDraft] = useState<(typeof DIVISION_OPTIONS)[number]>('INFANTRY');
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
 
@@ -151,33 +181,23 @@ export function DashboardShell() {
     [setError, setSnapshot]
   );
 
-  const runMilitaryAcademy = useCallback(
-    async (tier: 1 | 2) => {
-      const key = tier === 2 ? 'ACADEMY_T2' : 'ACADEMY_T1';
-      setActionBusy(key);
-      try {
-        const response = await api.militaryAcademy(tier);
-        setSnapshot(response.snapshot);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Military academy action failed');
-      } finally {
-        setActionBusy(null);
-      }
-    },
-    [setError, setSnapshot]
-  );
-
-  const runCareerReview = useCallback(async () => {
-    setActionBusy('CAREER_REVIEW');
+  const runMilitaryAcademy = useCallback(async () => {
+    const key = academyTierDraft === 2 ? 'ACADEMY_T2' : 'ACADEMY_T1';
+    setActionBusy(key);
     try {
-      const response = await api.careerReview();
+      const response = await api.militaryAcademy({
+        tier: academyTierDraft,
+        answers: academyAnswers,
+        preferredDivision: divisionDraft
+      });
       setSnapshot(response.snapshot);
+      setAcademyOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Career review failed');
+      setError(err instanceof Error ? err.message : 'Military academy action failed');
     } finally {
       setActionBusy(null);
     }
-  }, [setError, setSnapshot]);
+  }, [academyAnswers, academyTierDraft, divisionDraft, setError, setSnapshot]);
 
   const restartWorld = useCallback(async () => {
     if (!confirm('Restart world from day 0? This will reset progression.')) return;
@@ -289,7 +309,7 @@ export function DashboardShell() {
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
       <div className="cyber-panel space-y-1.5 p-2">
-        <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-1 lg:grid-cols-5">
           {TRAVEL_PLACES.map((entry) => (
             <button
               key={entry.place}
@@ -304,14 +324,14 @@ export function DashboardShell() {
 
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
           <button
-            onClick={() => runMilitaryAcademy(1)}
+            onClick={() => { setAcademyTierDraft(1); setAcademyOpen(true); }}
             disabled={Boolean(actionBusy)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
             {actionBusy === 'ACADEMY_T1' ? 'Processing...' : 'Military Academy Officer'}
           </button>
           <button
-            onClick={() => runMilitaryAcademy(2)}
+            onClick={() => { setAcademyTierDraft(2); setAcademyOpen(true); }}
             disabled={Boolean(actionBusy)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
@@ -325,6 +345,12 @@ export function DashboardShell() {
             {actionBusy === 'CAREER_REVIEW' ? 'Running...' : 'Career Review'}
           </button>
           <button
+            onClick={() => setInventoryOpen((prev) => !prev)}
+            className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent"
+          >
+            {inventoryOpen ? 'Close Inventory' : 'Inventory'}
+          </button>
+          <button
             onClick={() => setSettingsOpen((prev) => !prev)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent"
           >
@@ -332,9 +358,107 @@ export function DashboardShell() {
           </button>
         </div>
         <p className="text-[11px] text-muted">
-          Academy tier: {snapshot.academyTier ?? 0} · Last travel: {snapshot.lastTravelPlace ?? 'None'}
+          Academy tier: {snapshot.academyTier ?? 0} · Last travel: {snapshot.lastTravelPlace ?? 'None'} · Division freedom: {snapshot.divisionFreedomScore ?? 0}
         </p>
       </div>
+
+      {academyOpen ? (
+        <div className="cyber-panel space-y-2 p-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase tracking-[0.1em] text-muted">Military Academy Training Phase</p>
+            <button className="rounded border border-border px-2 py-1 text-[11px] text-text" onClick={() => setAcademyOpen(false)}>Close</button>
+          </div>
+          <div className="grid grid-cols-1 gap-1 md:grid-cols-3">
+            <label className="text-[11px] text-muted">Tier
+              <select className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-[11px] text-text" value={academyTierDraft} onChange={(e) => setAcademyTierDraft(Number(e.target.value) === 2 ? 2 : 1)}>
+                <option value={1}>Officer Academy</option>
+                <option value={2}>High Command Academy</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-muted md:col-span-2">Preferred Division
+              <select className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-[11px] text-text" value={divisionDraft} onChange={(e) => setDivisionDraft(e.target.value as (typeof DIVISION_OPTIONS)[number])}>
+                {DIVISION_OPTIONS.map((division) => (
+                  <option key={division} value={division}>{division}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid gap-1 md:grid-cols-2">
+            {ACADEMY_QUESTIONS.map((question, index) => (
+              <label key={question.prompt} className="rounded border border-border bg-bg/60 p-1.5 text-[11px] text-muted">
+                <p className="mb-1 text-text">Q{index + 1}. {question.prompt}</p>
+                <select
+                  className="w-full rounded border border-border bg-bg px-2 py-1 text-[11px] text-text"
+                  value={academyAnswers[index] ?? 1}
+                  onChange={(e) => {
+                    const selected = Number(e.target.value);
+                    setAcademyAnswers((prev) => {
+                      const next = [...prev];
+                      next[index] = selected;
+                      return next;
+                    });
+                  }}
+                >
+                  {question.options.map((option, optionIndex) => (
+                    <option key={option} value={optionIndex + 1}>{option}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <button onClick={runMilitaryAcademy} disabled={Boolean(actionBusy)} className="rounded border border-accent bg-accent/20 px-2.5 py-1.5 text-[11px] text-text disabled:opacity-60">
+            {actionBusy === 'ACADEMY_T2' || actionBusy === 'ACADEMY_T1' ? 'Assessing...' : 'Submit Academy Assessment'}
+          </button>
+        </div>
+      ) : null}
+
+      {inventoryOpen ? (
+        <div className="cyber-panel space-y-1.5 p-2">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Inventory · Certificates</p>
+          <div className="grid gap-1 md:grid-cols-2">
+            {(snapshot.certificates ?? []).length === 0 ? (
+              <p className="rounded border border-border bg-bg/60 px-2 py-1.5 text-[11px] text-muted">No certificate stored yet.</p>
+            ) : (
+              (snapshot.certificates ?? []).map((cert) => (
+                <button key={cert.id} onClick={() => setOpenedCertificateId(cert.id)} className="rounded border border-border bg-bg/60 px-2 py-1.5 text-left text-[11px] text-text hover:border-accent">
+                  {cert.academyName} · Grade {cert.grade} · Score {cert.score} · Open Certificate
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {openedCertificateId ? (
+        <div className="cyber-panel p-2.5">
+          {(() => {
+            const cert = (snapshot.certificates ?? []).find((item) => item.id === openedCertificateId);
+            if (!cert) return <p className="text-[11px] text-muted">Certificate not found.</p>;
+            return (
+              <div className="rounded-md border-2 border-amber-300/70 bg-gradient-to-br from-amber-50 via-[#f8f0d6] to-amber-100 p-4 text-[#2f2412] shadow-panel">
+                <p className="text-center text-xs uppercase tracking-[0.18em]">Military Academy Distinguished Certificate</p>
+                <h3 className="mt-2 text-center text-xl font-semibold">{cert.academyName}</h3>
+                <p className="mt-3 text-center text-sm">Congratulations on successfully completing the training phase and competency assessment.</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <p><span className="font-semibold">Score:</span> {cert.score}</p>
+                  <p><span className="font-semibold">Grade:</span> {cert.grade}</p>
+                  <p><span className="font-semibold">Division Freedom:</span> {cert.divisionFreedomLevel}</p>
+                  <p><span className="font-semibold">Assigned Division:</span> {cert.assignedDivision}</p>
+                  <p><span className="font-semibold">Issued Day:</span> {cert.issuedAtDay}</p>
+                </div>
+                <p className="mt-3 text-sm italic">{cert.message}</p>
+                <div className="mt-4 flex items-end justify-between">
+                  <p className="text-xs">Authorized Signature</p>
+                  <p className="text-sm font-semibold">{cert.trainerName}</p>
+                </div>
+                <div className="mt-2 text-right">
+                  <button onClick={() => setOpenedCertificateId(null)} className="rounded border border-[#4a3a1f] px-2 py-1 text-[11px]">Close Certificate</button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="rounded-md border border-border bg-panel p-2.5">

@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
+import type { AcademyCertificate } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -23,6 +24,9 @@ export interface DbGameStateRow {
   last_mission_day: number;
   academy_tier: number;
   last_travel_place: string | null;
+  certificate_inventory: AcademyCertificate[];
+  division_freedom_score: number;
+  preferred_division: string | null;
   pending_event_id: number | null;
   pending_event_payload: {
     title: string;
@@ -91,6 +95,9 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.last_mission_day,
         gs.academy_tier,
         gs.last_travel_place,
+        gs.certificate_inventory,
+        gs.division_freedom_score,
+        gs.preferred_division,
         gs.pending_event_id,
         gs.pending_event_payload,
         gs.version
@@ -161,8 +168,11 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         last_mission_day = $16,
         academy_tier = $17,
         last_travel_place = $18,
-        pending_event_id = $19,
-        pending_event_payload = $20,
+        certificate_inventory = $19,
+        division_freedom_score = $20,
+        preferred_division = $21,
+        pending_event_id = $22,
+        pending_event_payload = $23,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -186,6 +196,9 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.last_mission_day,
       state.academy_tier,
       state.last_travel_place,
+      state.certificate_inventory,
+      state.division_freedom_score,
+      state.preferred_division,
       state.pending_event_id,
       state.pending_event_payload
     ]
