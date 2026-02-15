@@ -13,12 +13,12 @@ export const DASHBOARD_LINKS: ReadonlyArray<{ href: string; label: string }> = [
 
 export function ActionButtons() {
   return (
-    <nav aria-label="Dashboard quick navigation" className="cyber-panel grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 lg:grid-cols-8">
+    <nav aria-label="Dashboard quick navigation" className="cyber-panel grid grid-cols-2 gap-1.5 p-1.5 sm:grid-cols-4 lg:grid-cols-8">
       {DASHBOARD_LINKS.map((link) => (
         <Link
           key={link.href}
           href={link.href}
-          className="rounded border border-border bg-bg/70 px-3 py-2 text-center text-xs font-medium text-text transition hover:border-accent sm:text-sm"
+          className="rounded border border-border/80 bg-bg/70 px-2.5 py-1.5 text-center text-[11px] font-medium text-text transition hover:border-accent sm:text-xs"
         >
           {link.label}
         </Link>

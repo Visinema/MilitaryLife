@@ -43,7 +43,9 @@ export function DashboardShell() {
       return;
     }
 
-    setLoading(true);
+    if (!snapshot) {
+      setLoading(true);
+    }
     try {
       const response = await api.snapshot();
       setSnapshot(response.snapshot);
@@ -71,7 +73,7 @@ export function DashboardShell() {
       snapshotCooldownUntilRef.current = Date.now() + 15_000;
       setError('Unable to load game snapshot');
     }
-  }, [router, setError, setLoading, setSnapshot]);
+  }, [router, setError, setLoading, setSnapshot, snapshot]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -81,7 +83,7 @@ export function DashboardShell() {
     if (noProfile) return;
     if (!snapshot) return;
 
-    const intervalMs = snapshot.paused ? 30_000 : 10_000;
+    const intervalMs = snapshot.paused ? 45_000 : 15_000;
     const timer = window.setInterval(() => {
       void loadSnapshot();
     }, intervalMs);
@@ -249,52 +251,52 @@ export function DashboardShell() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
       <ActionButtons />
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end pt-0.5">
         <button
           onClick={() => setSettingsOpen((prev) => !prev)}
-          className="rounded border border-border bg-panel px-3 py-1.5 text-xs text-text hover:border-accent"
+          className="rounded border border-border bg-panel px-2.5 py-1 text-[11px] text-text hover:border-accent"
         >
           {settingsOpen ? 'Close Settings' : 'Settings'}
         </button>
       </div>
 
       {settingsOpen ? (
-        <div className="rounded-md border border-border bg-panel p-3">
+        <div className="rounded-md border border-border bg-panel p-2.5">
           <p className="text-xs uppercase tracking-[0.1em] text-muted">World Settings</p>
           <button
             onClick={restartWorld}
             disabled={resetBusy}
-            className="mt-2 rounded border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger disabled:opacity-60"
+            className="mt-1.5 rounded border border-danger/50 bg-danger/10 px-2.5 py-1.5 text-[11px] text-danger disabled:opacity-60"
           >
             {resetBusy ? 'Restarting...' : 'Restart World from 0 (Universal)'}
           </button>
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-3">
         <button
           onClick={() => runAction('training')}
           disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-3 py-2 text-sm text-text hover:border-accent disabled:opacity-60"
+          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
         >
           {actionBusy === 'training' ? 'Running...' : 'Quick Training'}
         </button>
         <button
           onClick={() => runAction('deployment')}
           disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-3 py-2 text-sm text-text hover:border-accent disabled:opacity-60"
+          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
         >
           {actionBusy === 'deployment' ? 'Running...' : 'Quick Deployment'}
         </button>
         <button
           onClick={() => runAction('career-review')}
           disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-3 py-2 text-sm text-text hover:border-accent disabled:opacity-60"
+          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
         >
           {actionBusy === 'career-review' ? 'Running...' : 'Career Review'}
         </button>

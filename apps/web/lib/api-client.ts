@@ -3,6 +3,10 @@ import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/gam
 
 type HttpMethod = 'GET' | 'POST';
 
+type RequestOptions = {
+  cache?: RequestCache;
+};
+
 class ApiError extends Error {
   status: number;
   details?: unknown;
@@ -19,15 +23,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api/v1';
 let snapshotBackoffUntilMs = 0;
 let snapshotInFlight: Promise<{ snapshot: GameSnapshot }> | null = null;
 
-async function request<T>(path: string, method: HttpMethod, body?: unknown): Promise<T> {
+async function request<T>(path: string, method: HttpMethod, body?: unknown, options?: RequestOptions): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
     credentials: 'include',
-    headers: {
-      'content-type': 'application/json'
-    },
+    headers: body
+      ? {
+          'content-type': 'application/json'
+        }
+      : undefined,
     body: body ? JSON.stringify(body) : undefined,
-    cache: 'no-store'
+    cache: options?.cache ?? 'no-store',
+    keepalive: method !== 'GET'
   });
 
   if (response.status === 204) {
@@ -137,10 +144,10 @@ export const api = {
     }>(`/game/decision-logs?${query.toString()}`, 'GET');
   },
   config() {
-    return request<{ branches: Record<string, unknown>; generatedAt: number }>('/game/config', 'GET');
+    return request<{ branches: Record<string, unknown>; generatedAt: number }>('/game/config', 'GET', undefined, { cache: 'force-cache' });
   },
   pool(limit = 20) {
-    return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET');
+    return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
   },
   npcActivity() {
     return request<{

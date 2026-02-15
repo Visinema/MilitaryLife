@@ -39,6 +39,28 @@ interface LockedStateContext {
   profileId: string;
 }
 
+function captureStateSignature(state: DbGameStateRow): string {
+  return JSON.stringify([
+    state.active_session_id,
+    state.server_reference_time_ms,
+    state.current_day,
+    state.paused_at_ms,
+    state.pause_reason,
+    state.pause_token,
+    state.pause_expires_at_ms,
+    state.rank_index,
+    state.money_cents,
+    state.morale,
+    state.health,
+    state.promotion_points,
+    state.days_in_rank,
+    state.next_event_day,
+    state.last_mission_day,
+    state.pending_event_id,
+    state.pending_event_payload
+  ]);
+}
+
 async function getProfileIdOrNull(client: PoolClient, request: FastifyRequest): Promise<string | null> {
   if (request.auth?.profileId) {
     return request.auth.profileId;
@@ -96,6 +118,7 @@ async function withLockedState(
     }
 
     const nowMs = Date.now();
+    const initialStateSignature = captureStateSignature(state);
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
 
@@ -105,7 +128,9 @@ async function withLockedState(
 
     const result = await execute({ client, state, nowMs, profileId });
 
-    await updateGameState(client, state);
+    if (captureStateSignature(state) !== initialStateSignature) {
+      await updateGameState(client, state);
+    }
     await client.query('COMMIT');
 
     reply.code(result.statusCode ?? 200).send(result.payload);
