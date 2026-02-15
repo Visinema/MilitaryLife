@@ -267,11 +267,11 @@ export default function PeoplePage() {
                 ))}
               </div>
               <div className="mt-2 grid grid-cols-2 gap-1.5 md:grid-cols-4">
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentor Uniting session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Mentor
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentor session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Mentor Unit
                 </button>
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Support Log package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Support
+                <button disabled={interactionBusy} onClick={() => void sendCommand('Support package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
+                  Support Log
                 </button>
                 <button disabled={interactionBusy} onClick={() => void sendCommand('Trust-building sync: align goals and clarify personal concerns.', 'BOND')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
                   Build Trust
