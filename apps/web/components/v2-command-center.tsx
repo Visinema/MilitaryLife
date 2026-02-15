@@ -31,7 +31,6 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
 
       <section className="cyber-panel p-2.5">
         <p className="text-xs uppercase tracking-[0.14em] text-muted">UI V2 · Cybernetic Theater</p>
-        <p className="mt-1 text-[11px] text-muted">Conflict-safe layout: avatar frame and mission cards are isolated to reduce frequent merge collisions.</p>
         <div className="mt-2 grid gap-2.5 xl:grid-cols-[1.25fr,1fr]">
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
@@ -64,18 +63,19 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <p className="text-xs uppercase tracking-[0.12em] text-muted">Mission Protocol & Command AI</p>
             <h3 className="mt-2 text-sm font-semibold text-text">{world.missionBrief.title}</h3>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.objective}</p>
-            <p className="mt-2 text-xs text-muted">{world.missionBrief.commandRule}</p>
-            <p className="mt-2 text-xs text-muted">Sanctions: {world.missionBrief.sanctions}</p>
+            <p className="mt-1 text-xs text-muted">{world.missionBrief.commandRule}</p>
             <div className="mt-2 rounded border border-border px-2.5 py-1.5 text-[11px] text-text">
               Active: {world.stats.active} · Injured: {world.stats.injured} · Reserve: {world.stats.reserve}
             </div>
 
             <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
               <p className="text-xs uppercase tracking-[0.1em] text-muted">People & Interaction Hub</p>
-              <p className="mt-1 text-xs text-muted">NPC list dipindah ke halaman terpisah dengan scroll-box dan profile frame real-time untuk menghemat layar utama.</p>
-              <Link href="/dashboard/people" className="mt-2 inline-flex rounded border border-accent bg-accent/20 px-2.5 py-1.5 text-[11px] font-medium text-text shadow-neon">
-                Open NPC / People Console
-              </Link>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
+                <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
+                <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>
+                <Link href="/dashboard/decision-log" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Decision Log</Link>
+              </div>
             </div>
           </div>
         </div>
