@@ -253,6 +253,19 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
   });
 }
 
+
+function hasCommandAccess(state: DbGameStateRow): boolean {
+  const ranks = BRANCH_CONFIG[state.branch].ranks;
+  const currentRank = (ranks[state.rank_index] ?? '').toLowerCase();
+  const colonelIndex = ranks.findIndex((rank) => rank.toLowerCase().includes('colonel') || rank.toLowerCase().includes('kolonel'));
+
+  if (colonelIndex >= 0) {
+    return state.rank_index >= colonelIndex;
+  }
+
+  return currentRank.includes('general') || state.rank_index >= 9;
+}
+
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
   if (!state.pending_event_id) return null;
   return 'Resolve pending decision before taking actions';
@@ -638,7 +651,7 @@ export async function runCommandAction(
       return { statusCode: 409, payload: { error: pendingError, snapshot: buildSnapshot(state, nowMs) } };
     }
 
-    const canAccessCommand = state.rank_index >= 9;
+    const canAccessCommand = hasCommandAccess(state);
     if (!canAccessCommand) {
       return { statusCode: 403, payload: { error: 'Command access requires Colonel rank or higher', snapshot: buildSnapshot(state, nowMs) } };
     }

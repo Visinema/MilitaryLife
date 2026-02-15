@@ -16,12 +16,14 @@ interface V2CommandCenterProps {
 export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const [mobileTab, setMobileTab] = useState<'overview' | 'mission'>('overview');
   const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
+  const [showHierarchy, setShowHierarchy] = useState(false);
   const [commandNote, setCommandNote] = useState('');
   const [targetNpcId, setTargetNpcId] = useState<string>('');
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
-  const commandUnlocked = (snapshot.rankIndex ?? 0) >= 9;
+  const normalizedRank = snapshot.rankCode.toLowerCase();
+  const commandUnlocked = (snapshot.rankIndex ?? 0) >= 9 || normalizedRank.includes('colonel') || normalizedRank.includes('kolonel') || normalizedRank.includes('general') || normalizedRank.includes('jendral');
 
   const runCommandAction = async (action: CommandAction) => {
     if (!commandUnlocked) return;
@@ -96,16 +98,28 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             </div>
 
             <div className="mt-2 rounded border border-border/70 bg-bg/60 p-2">
-              <p className="text-xs uppercase tracking-[0.1em] text-muted">Command Hierarchy</p>
-              <div className="mt-1 grid gap-1">
-                {world.hierarchy.slice(0, 6).map((npc) => (
-                  <div key={npc.id} className="grid grid-cols-[1.2fr,0.8fr,0.8fr] gap-1 rounded border border-border/60 px-1.5 py-1 text-[11px]">
-                    <p className="truncate text-text">{npc.name}</p>
-                    <p className="truncate text-muted">{npc.rank}</p>
-                    <p className="truncate text-muted">{npc.role}</p>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.1em] text-muted">Command Hierarchy</p>
+                <button
+                  onClick={() => setShowHierarchy((prev) => !prev)}
+                  className="rounded border border-border px-1.5 py-0.5 text-[10px] text-text hover:border-accent"
+                >
+                  {showHierarchy ? 'Hide' : 'Show'}
+                </button>
               </div>
+              {showHierarchy ? (
+                <div className="mt-1 grid gap-1">
+                  {world.hierarchy.slice(0, 6).map((npc) => (
+                    <div key={npc.id} className="grid grid-cols-[1.2fr,0.8fr,0.8fr] gap-1 rounded border border-border/60 px-1.5 py-1 text-[11px]">
+                      <p className="truncate text-text">{npc.name}</p>
+                      <p className="truncate text-muted">{npc.rank}</p>
+                      <p className="truncate text-muted">{npc.role}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-[11px] text-muted">Hierarchy disembunyikan untuk menjaga dashboard tetap ringkas.</p>
+              )}
             </div>
 
             <div className="mt-2 rounded border border-border/70 bg-bg/60 p-2">
