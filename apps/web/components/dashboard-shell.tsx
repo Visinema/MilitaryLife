@@ -286,10 +286,13 @@ export function DashboardShell() {
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;
     if (typeof window === 'undefined') return;
-    const key = `ceremony-auto-${snapshot.gameDay}`;
+
+    const ceremonyCycleDay = snapshot.gameDay < 12 ? 12 : snapshot.gameDay - (snapshot.gameDay % 12);
+    const key = `ceremony-auto-cycle-${ceremonyCycleDay}`;
     if (window.sessionStorage.getItem(key)) return;
+
     window.sessionStorage.setItem(key, '1');
-    router.push(`/dashboard/ceremony?auto=1&day=${snapshot.gameDay}`);
+    router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
   }, [router, snapshot]);
 
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);

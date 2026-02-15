@@ -464,6 +464,9 @@ function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['division
 
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
+  const currentCeremonyDay = gameDay < 12 ? 12 : Math.floor(gameDay / 12) * 12;
+  const ceremonyWindowDays = 2;
+  const ceremonyDue = gameDay >= 12 && gameDay - currentCeremonyDay <= ceremonyWindowDays;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
   return {
     serverNowMs: nowMs,
@@ -492,8 +495,8 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     preferredDivision: state.preferred_division,
     divisionAccess: getDivisionAccessProfile(state),
     pendingDecision: normalizePendingDecisionPayload(state),
-    ceremonyDue: gameDay > 0 && gameDay % 12 === 0,
-    nextCeremonyDay: gameDay % 12 === 0 ? gameDay : gameDay + (12 - (gameDay % 12))
+    ceremonyDue,
+    nextCeremonyDay: gameDay % 12 === 0 ? gameDay + 12 : gameDay + (12 - (gameDay % 12))
   };
 }
 
