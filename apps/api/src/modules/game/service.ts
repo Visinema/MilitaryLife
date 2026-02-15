@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { ActionResult, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
-import { buildCeremonyReport, getPlayerCeremonyAward, isPlayerAwardedOnCeremony } from './ceremony.js';
+import { buildCeremonyReport } from './ceremony.js';
 import {
   advanceGameDays,
   applyDecisionEffects,
@@ -888,24 +888,19 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     }
 
     const report = buildCeremonyReport(state);
-    const awardedToPlayer = isPlayerAwardedOnCeremony(state);
-    const playerAward = getPlayerCeremonyAward(state, report.recipients);
+    const playerRecipient = report.recipients.find((item) => item.npcName === state.player_name && item.position === state.player_position) ?? null;
+    const awardedToPlayer = Boolean(playerRecipient);
 
-    const playerMedalName = playerAward?.medalName ?? 'Distinguished Service Medal';
-    const playerRibbonName = playerAward?.ribbonName ?? 'Ceremony Ribbon';
-
-    const playerMedals = awardedToPlayer ? [
-      ...state.player_medals,
-      playerMedalName
-    ] : state.player_medals;
-    const playerRibbons = awardedToPlayer ? [
-      ...state.player_ribbons,
-      playerRibbonName
-    ] : state.player_ribbons;
+    const playerMedals = awardedToPlayer
+      ? [...state.player_medals, playerRecipient!.medalName]
+      : state.player_medals;
+    const playerRibbons = awardedToPlayer
+      ? [...state.player_ribbons, playerRecipient!.ribbonName]
+      : state.player_ribbons;
 
     state.player_medals = Array.from(new Set(playerMedals)).slice(-24);
     state.player_ribbons = Array.from(new Set(playerRibbons)).slice(-24);
-    state.ceremony_recent_awards = [...state.ceremony_recent_awards, ...report.recipients].slice(-240);
+    state.ceremony_recent_awards = report.recipients;
     state.ceremony_completed_day = report.ceremonyDay;
 
     if (state.pause_reason === 'SUBPAGE' && state.paused_at_ms) {

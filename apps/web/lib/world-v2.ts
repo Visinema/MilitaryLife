@@ -260,6 +260,9 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
 
   const awardsByNpc = new Map<string, Array<{ medalName: string; ribbonName: string }>>();
   for (const item of snapshot.ceremonyRecentAwards ?? []) {
+    const isPlayerAward = item.npcName === snapshot.playerName && item.position === snapshot.playerPosition;
+    if (isPlayerAward) continue;
+
     const row = awardsByNpc.get(item.npcName) ?? [];
     row.push({ medalName: item.medalName, ribbonName: item.ribbonName });
     awardsByNpc.set(item.npcName, row);

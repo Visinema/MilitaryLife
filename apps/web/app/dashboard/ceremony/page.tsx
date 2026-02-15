@@ -167,7 +167,7 @@ export default function CeremonyPage() {
 
       {!ceremonyDue && recentAwards.length > 0 ? (
         <section className="cyber-panel p-3 text-xs">
-          <h2 className="text-sm font-semibold text-text">Riwayat Nominasi Upacara Terakhir</h2>
+          <h2 className="text-sm font-semibold text-text">Riwayat Nominasi 12 Hari Terakhir</h2>
           <div className="mt-2 space-y-1">
             {recentAwards.map((recipient) => (
               <p key={`${recipient.order}-${recipient.npcName}`} className="rounded border border-border/60 bg-bg/70 px-2 py-1 text-muted">
@@ -175,6 +175,7 @@ export default function CeremonyPage() {
               </p>
             ))}
           </div>
+          <p className="mt-2 text-[11px] text-muted">Riwayat nominasi direset permanen setiap siklus 12 hari untuk menjaga performa.</p>
         </section>
       ) : null}
     </div>

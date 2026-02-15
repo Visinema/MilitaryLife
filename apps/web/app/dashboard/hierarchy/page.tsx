@@ -182,6 +182,17 @@ export default function HierarchyPage() {
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {snapshot ? (
+          <article key="player-command-slot" className="cyber-panel p-3 border-accent/60">
+            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Player Command</p>
+            <h2 className="text-sm font-semibold text-text">{snapshot.playerName}</h2>
+            <p className="mt-1 text-xs text-muted">{snapshot.playerPosition}</p>
+            <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch}</p>
+            <p className="text-xs text-muted">Player Command Division / HQ / Strategic Unit</p>
+            <p className="mt-2 text-xs text-text">Medals: {(snapshot.playerMedals ?? []).join(' · ') || '-'}</p>
+            <p className="text-xs text-text">Ribbons: {(snapshot.playerRibbons ?? []).join(' · ') || '-'}</p>
+          </article>
+        ) : null}
         {hierarchy.map((npc, idx) => (
           <article key={npc.id} className="cyber-panel p-3">
             <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Tier {idx + 1} Command</p>
