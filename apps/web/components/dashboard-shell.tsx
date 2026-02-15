@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import type { CountryCode } from '@mls/shared/constants';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
+import { deriveLiveGameDay } from '@/lib/clock';
 import { useGameStore } from '@/store/game-store';
 import { TopbarTime } from './topbar-time';
 import { V2CommandCenter } from './v2-command-center';
@@ -85,6 +86,7 @@ export function DashboardShell() {
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
+  const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
 
   const loadSnapshot = useCallback(async () => {
     if (Date.now() < snapshotCooldownUntilRef.current) {
@@ -297,6 +299,37 @@ export function DashboardShell() {
     window.addEventListener('load', onLoad, { once: true });
     return () => window.removeEventListener('load', onLoad);
   }, []);
+
+
+  useEffect(() => {
+    if (!snapshot) return;
+    if (!pageReady) return;
+    if (snapshot.paused) return;
+    if (typeof window === 'undefined') return;
+
+    const tick = () => {
+      const liveDay = deriveLiveGameDay(snapshot, clockOffsetMs);
+      if (liveDay === lastLiveCeremonyCheckDayRef.current) return;
+      lastLiveCeremonyCheckDayRef.current = liveDay;
+
+      if (liveDay < 12 || liveDay % 12 !== 0) return;
+      const ceremonyCycleDay = liveDay;
+      const key = `ceremony-auto-cycle-${ceremonyCycleDay}`;
+      if (window.sessionStorage.getItem(key)) return;
+
+      void loadSnapshot();
+      window.sessionStorage.setItem(key, '1');
+      ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
+        router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
+      });
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 900);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [clockOffsetMs, loadSnapshot, pageReady, router, snapshot]);
 
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;

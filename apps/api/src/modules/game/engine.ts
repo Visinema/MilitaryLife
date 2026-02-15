@@ -469,7 +469,7 @@ function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['division
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
   const currentCeremonyDay = gameDay >= 12 ? Math.floor(gameDay / 12) * 12 : 0;
-  const ceremonyDue = currentCeremonyDay >= 12 && gameDay % 12 === 0 && state.ceremony_completed_day < currentCeremonyDay;
+  const ceremonyDue = currentCeremonyDay >= 12 && state.ceremony_completed_day < currentCeremonyDay;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
   return {
     serverNowMs: nowMs,
