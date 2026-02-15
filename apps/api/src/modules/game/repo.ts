@@ -34,6 +34,7 @@ export interface DbGameStateRow {
   player_medals: string[];
   player_ribbons: string[];
   player_position: string;
+  npc_award_history: Record<string, { medals: string[]; ribbons: string[] }>;
   raider_last_attack_day: number;
   raider_casualties: RaiderCasualty[];
   pending_event_payload: {
@@ -114,6 +115,31 @@ function parseCeremonyRecipients(value: unknown): CeremonyRecipient[] {
   return [];
 }
 
+
+function parseNpcAwardHistory(value: unknown): Record<string, { medals: string[]; ribbons: string[] }> {
+  const source = typeof value === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return {};
+        }
+      })()
+    : value;
+
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+  const entries = Object.entries(source as Record<string, unknown>);
+  return entries.reduce<Record<string, { medals: string[]; ribbons: string[] }>>((acc, [name, payload]) => {
+    const row = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+    acc[name] = {
+      medals: Array.isArray(row.medals) ? row.medals.filter((x): x is string => typeof x === 'string') : [],
+      ribbons: Array.isArray(row.ribbons) ? row.ribbons.filter((x): x is string => typeof x === 'string') : []
+    };
+    return acc;
+  }, {});
+}
+
 function parseJsonbArray(value: unknown): AcademyCertificate[] {
   if (Array.isArray(value)) {
     return value as AcademyCertificate[];
@@ -188,6 +214,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.player_medals,
         gs.player_ribbons,
         gs.player_position,
+        gs.npc_award_history,
         gs.raider_last_attack_day,
         gs.raider_casualties,
         gs.pending_event_payload,
@@ -207,6 +234,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   row.ceremony_recent_awards = parseCeremonyRecipients(row.ceremony_recent_awards);
   row.player_medals = parseJsonbStringArray(row.player_medals);
   row.player_ribbons = parseJsonbStringArray(row.player_ribbons);
+  row.npc_award_history = parseNpcAwardHistory(row.npc_award_history);
   row.raider_casualties = parseRaiderCasualties(row.raider_casualties);
   return row;
 }
@@ -276,9 +304,10 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         player_medals = $25::jsonb,
         player_ribbons = $26::jsonb,
         player_position = $27,
-        raider_last_attack_day = $28,
-        raider_casualties = $29::jsonb,
-        pending_event_payload = $30::jsonb,
+        npc_award_history = $28::jsonb,
+        raider_last_attack_day = $29,
+        raider_casualties = $30::jsonb,
+        pending_event_payload = $31::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -311,6 +340,7 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       toJsonbParam(state.player_medals, []),
       toJsonbParam(state.player_ribbons, []),
       state.player_position,
+      toJsonbParam(state.npc_award_history, {}),
       state.raider_last_attack_day,
       toJsonbParam(state.raider_casualties, []),
       toJsonbParam(state.pending_event_payload, null)

@@ -24,33 +24,51 @@ function scoreNpc(ceremonyDayValue: number, slot: number, morale: number, health
 }
 
 function scorePlayer(state: DbGameStateRow): number {
-  return 40 + state.rank_index * 6 + Math.floor((state.morale + state.health) / 3) + Math.floor(state.current_day / 4);
+  const base = 40 + state.rank_index * 5;
+  const readiness = Math.floor((state.morale + state.health) / 3);
+  const service = Math.floor(state.current_day / 4);
+  return base + readiness + service;
 }
 
-function findOwnedAwards(state: DbGameStateRow, personName: string): { medals: Set<string>; ribbons: Set<string> } {
-  if (personName === state.player_name) {
+function readOwnership(state: DbGameStateRow, name: string): { medals: Set<string>; ribbons: Set<string> } {
+  if (name === state.player_name) {
     return {
       medals: new Set(state.player_medals),
       ribbons: new Set(state.player_ribbons)
     };
   }
 
-  const owned = state.ceremony_recent_awards.filter((item) => item.npcName === personName);
+  const history = state.npc_award_history[name] ?? { medals: [], ribbons: [] };
   return {
-    medals: new Set(owned.map((item) => item.medalName)),
-    ribbons: new Set(owned.map((item) => item.ribbonName))
+    medals: new Set(Array.isArray(history.medals) ? history.medals : []),
+    ribbons: new Set(Array.isArray(history.ribbons) ? history.ribbons : [])
   };
 }
 
-function pickUniqueAward(state: DbGameStateRow, recipientName: string, orderSeed: number): { medalName: string; ribbonName: string } | null {
-  const owned = findOwnedAwards(state, recipientName);
-  const medalName = MEDALS.find((medal, idx) => !owned.medals.has(medal) && (idx + orderSeed) % MEDALS.length >= 0) ?? null;
-  const ribbonName = RIBBONS.find((ribbon, idx) => !owned.ribbons.has(ribbon) && (idx + orderSeed) % RIBBONS.length >= 0) ?? null;
+function pickUniqueAward(state: DbGameStateRow, candidateName: string, seed: number): { medalName: string; ribbonName: string } | null {
+  const owned = readOwnership(state, candidateName);
+  const medalStart = seed % MEDALS.length;
+  const ribbonStart = seed % RIBBONS.length;
 
-  if (!medalName || !ribbonName) {
-    return null;
+  let medalName: string | null = null;
+  for (let i = 0; i < MEDALS.length; i += 1) {
+    const value = MEDALS[(medalStart + i) % MEDALS.length];
+    if (!owned.medals.has(value)) {
+      medalName = value;
+      break;
+    }
   }
 
+  let ribbonName: string | null = null;
+  for (let i = 0; i < RIBBONS.length; i += 1) {
+    const value = RIBBONS[(ribbonStart + i) % RIBBONS.length];
+    if (!owned.ribbons.has(value)) {
+      ribbonName = value;
+      break;
+    }
+  }
+
+  if (!medalName || !ribbonName) return null;
   return { medalName, ribbonName };
 }
 
@@ -60,34 +78,23 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const registry = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS);
 
   const ranked = registry
-    .map((npc) => ({
+    .map((npc: { slot: number; name: string; division: string; unit: string; position: string }) => ({
       ...npc,
       competenceScore: scoreNpc(currentCeremonyDay, npc.slot, state.morale, state.health)
     }))
-    .sort((a, b) => b.competenceScore - a.competenceScore);
+    .sort((a: { competenceScore: number }, b: { competenceScore: number }) => b.competenceScore - a.competenceScore);
 
   const previousRanked = registry
-    .map((npc) => ({
+    .map((npc: { slot: number; name: string; division: string; unit: string; position: string }) => ({
       ...npc,
       competenceScore: scoreNpc(previousCeremonyDay, npc.slot, state.morale, state.health)
     }))
-    .sort((a, b) => b.competenceScore - a.competenceScore);
+    .sort((a: { competenceScore: number }, b: { competenceScore: number }) => b.competenceScore - a.competenceScore);
 
   const chief = ranked[0];
   const previousChief = previousRanked[0];
 
-  const highPerformers = ranked.filter((npc) => npc.competenceScore >= chief.competenceScore - 8).length + (scorePlayer(state) >= chief.competenceScore - 6 ? 1 : 0);
-  const recentAwardSaturation = Math.min(6, Math.floor((state.ceremony_recent_awards.length + state.player_medals.length) / 3));
-  const baseQuota = Math.round(chief.competenceScore / 24 + state.morale / 35);
-  const quota = Math.max(2, Math.min(10, baseQuota + Math.floor(highPerformers / 5) - recentAwardSaturation));
-
-  const candidatePool: Array<{
-    name: string;
-    division: string;
-    unit: string;
-    position: string;
-    competenceScore: number;
-  }> = [
+  const candidatePool = [
     ...ranked.slice(1).map((npc) => ({
       name: npc.name,
       division: npc.division,
@@ -97,18 +104,25 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     })),
     {
       name: state.player_name,
-      division: 'Player Command Division',
-      unit: state.branch,
+      division: ranked[1]?.division ?? 'Infantry Division',
+      unit: ranked[1]?.unit ?? '1st Brigade',
       position: state.player_position,
       competenceScore: scorePlayer(state)
     }
-  ].sort((a, b) => b.competenceScore - a.competenceScore);
+  ].sort((a: { competenceScore: number }, b: { competenceScore: number }) => b.competenceScore - a.competenceScore);
+
+  const highPerformers = candidatePool.filter((x) => x.competenceScore >= chief.competenceScore - 6).length;
+  const awardSaturation = Math.min(8, Math.floor((Object.keys(state.npc_award_history).length + state.player_medals.length) / 2));
+  const strictnessPenalty = state.morale < 68 ? 1 : 0;
+  const baseQuota = Math.floor(chief.competenceScore / 28);
+  const quota = Math.max(1, Math.min(8, baseQuota + Math.floor(highPerformers / 6) - awardSaturation - strictnessPenalty));
 
   const recipients: CeremonyRecipient[] = [];
   for (const candidate of candidatePool) {
     if (recipients.length >= quota) break;
-    const award = pickUniqueAward(state, candidate.name, recipients.length + 1);
+    const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
     if (!award) continue;
+    if (candidate.competenceScore < chief.competenceScore - 16) continue;
 
     recipients.push({
       order: recipients.length + 1,
@@ -118,19 +132,15 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
       position: candidate.position,
       medalName: award.medalName,
       ribbonName: award.ribbonName,
-      reason: `Performance score ${candidate.competenceScore} selected by Chief-of-Staff AI quota optimizer.`
+      reason: `Performance score ${candidate.competenceScore} lolos ambang seleksi ketat Chief-of-Staff AI.`
     });
   }
 
-  const playerAward = recipients.find((item) => item.npcName === state.player_name && item.position === state.player_position) ?? null;
-
   const logs = [
     `Ceremony starts on Day ${currentCeremonyDay}. All ${MAX_ACTIVE_NPCS + 1} personnel are assembled for formation and readiness brief.`,
-    `Chief of Staff ${chief.name} opens ceremony. Quota AI calculated ${quota} slots from competence, saturation, and active achievements.`,
-    'Medal ribbon session is executed sequentially, one recipient at a time, with live command log updates.',
-    playerAward
-      ? `Player ${playerAward.npcName} enters recipient queue and receives ${playerAward.medalName} with ${playerAward.ribbonName}.`
-      : `Player ${state.player_name} is not selected this cycle due to ranking and quota dynamics.`,
+    `Chief of Staff ${chief.name} sets dynamic quota ${quota} from competence, saturation, and excellence threshold.`,
+    'Award session runs sequentially for one unified category of personnel (player and NPC progression share the same board).',
+    `Recipients selected: ${recipients.length}. Non-selected personnel remain on progression evaluation for next 12-day cycle.`,
     'Ceremony closes with branch-wide directives for next 12-day operational cycle.'
   ];
 
@@ -145,14 +155,6 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
       replacedPreviousChief: Boolean(previousChief && previousChief.name !== chief.name)
     },
     logs,
-    recipients,
-    playerAward: playerAward
-      ? {
-          playerName: playerAward.npcName,
-          medalName: playerAward.medalName,
-          ribbonName: playerAward.ribbonName,
-          reason: playerAward.reason
-        }
-      : null
+    recipients
   };
 }

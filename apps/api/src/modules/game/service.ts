@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
-import type { ActionResult, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyRecipient, DecisionResult, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
@@ -67,6 +67,7 @@ interface StateCheckpoint {
   playerMedals: DbGameStateRow['player_medals'];
   playerRibbons: DbGameStateRow['player_ribbons'];
   playerPosition: string;
+  npcAwardHistory: DbGameStateRow['npc_award_history'];
   raiderLastAttackDay: number;
   raiderCasualties: DbGameStateRow['raider_casualties'];
   pendingEventId: number | null;
@@ -100,6 +101,7 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     playerMedals: state.player_medals,
     playerRibbons: state.player_ribbons,
     playerPosition: state.player_position,
+    npcAwardHistory: state.npc_award_history,
     raiderLastAttackDay: state.raider_last_attack_day,
     raiderCasualties: state.raider_casualties,
     pendingEventId: state.pending_event_id,
@@ -134,6 +136,7 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.player_medals !== checkpoint.playerMedals ||
     state.player_ribbons !== checkpoint.playerRibbons ||
     state.player_position !== checkpoint.playerPosition ||
+    state.npc_award_history !== checkpoint.npcAwardHistory ||
     state.raider_last_attack_day !== checkpoint.raiderLastAttackDay ||
     state.raider_casualties !== checkpoint.raiderCasualties ||
     state.pending_event_id !== checkpoint.pendingEventId ||
@@ -802,6 +805,7 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.player_medals = [];
     state.player_ribbons = [];
     state.player_position = 'Platoon Leader';
+    state.npc_award_history = {};
     state.raider_last_attack_day = 0;
     state.raider_casualties = [];
 
@@ -888,7 +892,7 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     }
 
     const report = buildCeremonyReport(state);
-    const playerRecipient = report.recipients.find((item) => item.npcName === state.player_name && item.position === state.player_position) ?? null;
+    const playerRecipient = report.recipients.find((item: CeremonyRecipient) => item.npcName === state.player_name && item.position === state.player_position) ?? null;
     const awardedToPlayer = Boolean(playerRecipient);
 
     const playerMedals = awardedToPlayer
@@ -900,6 +904,17 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
 
     state.player_medals = Array.from(new Set(playerMedals)).slice(-24);
     state.player_ribbons = Array.from(new Set(playerRibbons)).slice(-24);
+
+    const nextHistory = { ...state.npc_award_history };
+    for (const recipient of report.recipients) {
+      if (recipient.npcName === state.player_name) continue;
+      const row = nextHistory[recipient.npcName] ?? { medals: [], ribbons: [] };
+      row.medals = Array.from(new Set([...row.medals, recipient.medalName])).slice(-12);
+      row.ribbons = Array.from(new Set([...row.ribbons, recipient.ribbonName])).slice(-12);
+      nextHistory[recipient.npcName] = row;
+    }
+
+    state.npc_award_history = nextHistory;
     state.ceremony_recent_awards = report.recipients;
     state.ceremony_completed_day = report.ceremonyDay;
 
