@@ -10,8 +10,7 @@ export const createProfileSchema = z
   })
   .superRefine((value, ctx) => {
     const valid =
-      (value.country === 'US' && (value.branch === 'US_ARMY' || value.branch === 'US_NAVY')) ||
-      (value.country === 'ID' && (value.branch === 'ID_TNI_AD' || value.branch === 'ID_TNI_AL'));
+      value.country === 'US' && (value.branch === 'US_ARMY' || value.branch === 'US_NAVY');
 
     if (!valid) {
       ctx.addIssue({

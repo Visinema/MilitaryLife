@@ -491,7 +491,9 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     divisionFreedomScore: state.division_freedom_score,
     preferredDivision: state.preferred_division,
     divisionAccess: getDivisionAccessProfile(state),
-    pendingDecision: normalizePendingDecisionPayload(state)
+    pendingDecision: normalizePendingDecisionPayload(state),
+    ceremonyDue: gameDay > 0 && gameDay % 12 === 0,
+    nextCeremonyDay: gameDay % 12 === 0 ? gameDay : gameDay + (12 - (gameDay % 12))
   };
 }
 

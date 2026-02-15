@@ -75,53 +75,5 @@ export const BRANCH_CONFIG: Record<BranchCode, BranchConfig> = {
         promotionPoints: [1, 4]
       }
     }
-  },
-  ID_TNI_AD: {
-    branch: 'ID_TNI_AD',
-    ranks: ['Prada', 'Pratu', 'Praka', 'Kopda', 'Koptu', 'Serda', 'Sertu', 'Letnan', 'Kapten', 'Brigadier General', 'Major General', 'Letnan Jendral', 'General'],
-    salaryPerDayCents: [1200, 1300, 1450, 1600, 1800, 2050, 2300, 2600, 2850, 3000, 3800, 4700, 5600],
-    eventChanceModifier: 1.05,
-    deployment: {
-      patrol: {
-        successChance: 0.58,
-        injuryChance: 0.24,
-        rewardCents: [1300, 5200],
-        healthLoss: [5, 18],
-        moraleLoss: [3, 10],
-        promotionPoints: [2, 7]
-      },
-      support: {
-        successChance: 0.74,
-        injuryChance: 0.13,
-        rewardCents: [900, 3500],
-        healthLoss: [2, 9],
-        moraleLoss: [1, 6],
-        promotionPoints: [1, 4]
-      }
-    }
-  },
-  ID_TNI_AL: {
-    branch: 'ID_TNI_AL',
-    ranks: ['KLD', 'KLS', 'KLK', 'Kopda', 'Koptu', 'Serda', 'Sertu', 'Letnan', 'Kapten', 'Brigadier General', 'Major General', 'Letnan Jendral', 'General'],
-    salaryPerDayCents: [1250, 1360, 1500, 1670, 1880, 2140, 2400, 2750, 2950, 3150, 3950, 4850, 5750],
-    eventChanceModifier: 0.96,
-    deployment: {
-      patrol: {
-        successChance: 0.63,
-        injuryChance: 0.18,
-        rewardCents: [1200, 4700],
-        healthLoss: [4, 14],
-        moraleLoss: [2, 8],
-        promotionPoints: [2, 6]
-      },
-      support: {
-        successChance: 0.79,
-        injuryChance: 0.1,
-        rewardCents: [950, 3600],
-        healthLoss: [2, 8],
-        moraleLoss: [1, 5],
-        promotionPoints: [1, 4]
-      }
-    }
   }
 };

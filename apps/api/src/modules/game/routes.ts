@@ -19,6 +19,7 @@ import {
   getDecisionLogs,
   getGameConfig,
   getSnapshot,
+  getCeremonyReport,
   pauseGame,
   resumeGame,
   runCareerReview,
@@ -149,6 +150,10 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/config', async (request, reply) => {
     await getGameConfig(request, reply);
+  });
+
+  app.get('/ceremony', async (request, reply) => {
+    await getCeremonyReport(request, reply);
   });
 
   app.get('/subpage-snapshot', async (request, reply) => {

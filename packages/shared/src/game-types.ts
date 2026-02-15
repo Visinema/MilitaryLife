@@ -34,6 +34,33 @@ export interface AcademyCertificate {
   assignedDivision: string;
 }
 
+export interface CeremonyChiefOfStaff {
+  name: string;
+  competenceScore: number;
+  previousChiefName: string | null;
+  replacedPreviousChief: boolean;
+}
+
+export interface CeremonyRecipient {
+  order: number;
+  npcName: string;
+  division: string;
+  unit: string;
+  position: string;
+  medalName: string;
+  ribbonName: string;
+  reason: string;
+}
+
+export interface CeremonyReport {
+  ceremonyDay: number;
+  attendance: number;
+  medalQuota: number;
+  chiefOfStaff: CeremonyChiefOfStaff;
+  logs: string[];
+  recipients: CeremonyRecipient[];
+}
+
 export interface GameSnapshot {
   rankIndex?: number;
   serverNowMs: number;
@@ -61,6 +88,8 @@ export interface GameSnapshot {
   preferredDivision?: string | null;
   divisionAccess?: DivisionAccessProfile | null;
   pendingDecision: PendingDecision | null;
+  ceremonyDue: boolean;
+  nextCeremonyDay: number;
 }
 
 export interface DecisionResult {

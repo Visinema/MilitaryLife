@@ -1,5 +1,5 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -96,7 +96,7 @@ export const api = {
   me() {
     return request<AuthMeResponse>('/auth/me', 'GET');
   },
-  createProfile(payload: { name: string; startAge: number; country: 'US' | 'ID'; branch: string }) {
+  createProfile(payload: { name: string; startAge: number; country: 'US'; branch: string }) {
     return request<{ profileId: string }>('/profile/create', 'POST', payload);
   },
   snapshot() {
@@ -161,6 +161,9 @@ export const api = {
   },
   config() {
     return request<{ branches: Record<string, unknown>; generatedAt: number }>('/game/config', 'GET', undefined, { cache: 'force-cache' });
+  },
+  ceremony() {
+    return request<{ ceremony: CeremonyReport }>('/game/ceremony', 'GET');
   },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import type { ActionResult, DecisionResult } from '@mls/shared/game-types';
 import { BRANCH_CONFIG } from './branch-config.js';
+import { buildCeremonyReport } from './ceremony.js';
 import {
   advanceGameDays,
   applyDecisionEffects,
@@ -853,6 +854,12 @@ export async function getGameConfig(request: FastifyRequest, reply: FastifyReply
         generatedAt: Date.now()
       }
     };
+  });
+}
+
+export async function getCeremonyReport(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state }) => {
+    return { payload: { ceremony: buildCeremonyReport(state) } };
   });
 }
 

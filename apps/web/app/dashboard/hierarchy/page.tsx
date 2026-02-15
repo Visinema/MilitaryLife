@@ -81,6 +81,17 @@ export default function HierarchyPage() {
         </div>
       ) : null}
 
+      <section className="cyber-panel space-y-2 p-3 text-xs">
+        <h2 className="text-sm font-semibold text-text">Brainstorm Expansi Divisi / Satuan / Unit / Jabatan</h2>
+        <ul className="list-disc space-y-1 pl-4 text-muted">
+          <li>Tambah struktur 4 level: Branch → Divisi → Satuan → Unit kecil (platoon/squad) dengan kapasitas personel dinamis.</li>
+          <li>Setiap Divisi memiliki slot jabatan (Commander, XO, Ops, Intel, Logistics, Medical) yang bisa diisi NPC/player.</li>
+          <li>Buat sistem rotasi jabatan berkala berbasis KPI: mission success, casualties, morale, budget efficiency.</li>
+          <li>Aktifkan mutasi lintas cabang Army/Navy untuk jabatan joint-task-force saat rank tinggi.</li>
+          <li>Tambahkan UI peta hierarki agar promosi dan penggantian jabatan terlihat real-time.</li>
+        </ul>
+      </section>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {hierarchy.map((npc, idx) => (
           <article key={npc.id} className="cyber-panel p-3">

@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
+import type { CountryCode } from '@mls/shared/constants';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { useGameStore } from '@/store/game-store';
 import { TopbarTime } from './topbar-time';
@@ -67,7 +68,7 @@ export function DashboardShell() {
   const [profileForm, setProfileForm] = useState({
     name: '',
     startAge: 17,
-    country: 'US' as 'US' | 'ID',
+    country: 'US' as CountryCode,
     branch: 'US_ARMY'
   });
 
@@ -282,6 +283,15 @@ export function DashboardShell() {
   }, [setError, setSnapshot]);
 
   const branchOptions = useMemo(() => BRANCH_OPTIONS[profileForm.country], [profileForm.country]);
+  useEffect(() => {
+    if (!snapshot?.ceremonyDue) return;
+    if (typeof window === 'undefined') return;
+    const key = `ceremony-auto-${snapshot.gameDay}`;
+    if (window.sessionStorage.getItem(key)) return;
+    window.sessionStorage.setItem(key, '1');
+    router.push(`/dashboard/ceremony?auto=1&day=${snapshot.gameDay}`);
+  }, [router, snapshot]);
+
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 
   useEffect(() => {
@@ -329,7 +339,7 @@ export function DashboardShell() {
               className="w-full rounded border border-border bg-bg px-3 py-2 text-sm text-text"
               value={profileForm.country}
               onChange={(e) => {
-                const country = e.target.value as 'US' | 'ID';
+                const country = e.target.value as CountryCode;
                 setProfileForm((prev) => ({
                   ...prev,
                   country,
