@@ -39,26 +39,68 @@ interface LockedStateContext {
   profileId: string;
 }
 
-function captureStateSignature(state: DbGameStateRow): string {
-  return JSON.stringify([
-    state.active_session_id,
-    state.server_reference_time_ms,
-    state.current_day,
-    state.paused_at_ms,
-    state.pause_reason,
-    state.pause_token,
-    state.pause_expires_at_ms,
-    state.rank_index,
-    state.money_cents,
-    state.morale,
-    state.health,
-    state.promotion_points,
-    state.days_in_rank,
-    state.next_event_day,
-    state.last_mission_day,
-    state.pending_event_id,
-    state.pending_event_payload
-  ]);
+interface StateCheckpoint {
+  activeSessionId: string | null;
+  serverReferenceTimeMs: number;
+  currentDay: number;
+  pausedAtMs: number | null;
+  pauseReason: DbGameStateRow['pause_reason'];
+  pauseToken: string | null;
+  pauseExpiresAtMs: number | null;
+  rankIndex: number;
+  moneyCents: number;
+  morale: number;
+  health: number;
+  promotionPoints: number;
+  daysInRank: number;
+  nextEventDay: number;
+  lastMissionDay: number;
+  pendingEventId: number | null;
+  pendingEventPayload: DbGameStateRow['pending_event_payload'];
+}
+
+function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
+  return {
+    activeSessionId: state.active_session_id,
+    serverReferenceTimeMs: state.server_reference_time_ms,
+    currentDay: state.current_day,
+    pausedAtMs: state.paused_at_ms,
+    pauseReason: state.pause_reason,
+    pauseToken: state.pause_token,
+    pauseExpiresAtMs: state.pause_expires_at_ms,
+    rankIndex: state.rank_index,
+    moneyCents: state.money_cents,
+    morale: state.morale,
+    health: state.health,
+    promotionPoints: state.promotion_points,
+    daysInRank: state.days_in_rank,
+    nextEventDay: state.next_event_day,
+    lastMissionDay: state.last_mission_day,
+    pendingEventId: state.pending_event_id,
+    pendingEventPayload: state.pending_event_payload
+  };
+}
+
+function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): boolean {
+  return (
+    state.active_session_id !== checkpoint.activeSessionId ||
+    state.server_reference_time_ms !== checkpoint.serverReferenceTimeMs ||
+    state.current_day !== checkpoint.currentDay ||
+    state.paused_at_ms !== checkpoint.pausedAtMs ||
+    state.pause_reason !== checkpoint.pauseReason ||
+    state.pause_token !== checkpoint.pauseToken ||
+    state.pause_expires_at_ms !== checkpoint.pauseExpiresAtMs ||
+    state.rank_index !== checkpoint.rankIndex ||
+    state.money_cents !== checkpoint.moneyCents ||
+    state.morale !== checkpoint.morale ||
+    state.health !== checkpoint.health ||
+    state.promotion_points !== checkpoint.promotionPoints ||
+    state.days_in_rank !== checkpoint.daysInRank ||
+    state.next_event_day !== checkpoint.nextEventDay ||
+    state.last_mission_day !== checkpoint.lastMissionDay ||
+    state.pending_event_id !== checkpoint.pendingEventId ||
+    state.pending_event_payload !== checkpoint.pendingEventPayload
+  );
 }
 
 async function getProfileIdOrNull(client: PoolClient, request: FastifyRequest): Promise<string | null> {
@@ -118,7 +160,7 @@ async function withLockedState(
     }
 
     const nowMs = Date.now();
-    const initialStateSignature = captureStateSignature(state);
+    const initialStateCheckpoint = createStateCheckpoint(state);
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
 
@@ -128,7 +170,7 @@ async function withLockedState(
 
     const result = await execute({ client, state, nowMs, profileId });
 
-    if (captureStateSignature(state) !== initialStateSignature) {
+    if (hasStateChanged(state, initialStateCheckpoint)) {
       await updateGameState(client, state);
     }
     await client.query('COMMIT');

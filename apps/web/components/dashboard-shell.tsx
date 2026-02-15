@@ -37,18 +37,20 @@ export function DashboardShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const snapshotCooldownUntilRef = useRef(0);
+  const hasInitialSnapshotRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
     if (Date.now() < snapshotCooldownUntilRef.current) {
       return;
     }
 
-    if (!snapshot) {
+    if (!hasInitialSnapshotRef.current) {
       setLoading(true);
     }
     try {
       const response = await api.snapshot();
       setSnapshot(response.snapshot);
+      hasInitialSnapshotRef.current = true;
       setNoProfile(false);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -73,7 +75,7 @@ export function DashboardShell() {
       snapshotCooldownUntilRef.current = Date.now() + 15_000;
       setError('Unable to load game snapshot');
     }
-  }, [router, setError, setLoading, setSnapshot, snapshot]);
+  }, [router, setError, setLoading, setSnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
