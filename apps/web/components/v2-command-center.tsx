@@ -73,7 +73,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
             <AvatarFrame
               name={`${world.player.branchLabel} · ${snapshot.rankCode}`}
-              subtitle={`Track: ${world.player.rankTrack} · Rank: ${world.player.universalRank}`}
+              subtitle={`Rank: ${world.player.rankLabel}`}
               uniformTone={world.player.uniformTone}
               ribbons={world.player.ribbons}
               medals={world.player.medals}

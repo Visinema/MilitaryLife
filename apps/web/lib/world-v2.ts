@@ -38,8 +38,7 @@ export interface NpcV2Profile {
 export interface WorldV2State {
   player: {
     branchLabel: string;
-    rankTrack: 'ENLISTED' | 'WARRANT' | 'OFFICER';
-    universalRank: string;
+    rankLabel: string;
     uniformTone: string;
     medals: string[];
     ribbons: RibbonStyle[];
@@ -105,26 +104,9 @@ function toBranchLabel(branch: string) {
   return branch.replace('US_', 'US ').replace('ID_', 'ID ').replaceAll('_', ' ');
 }
 
-function rankTrack(rankCode: string): WorldV2State['player']['rankTrack'] {
-  const normalized = rankCode.toUpperCase();
-  if (normalized.startsWith('O') || normalized.includes('COL') || normalized.includes('MAJ') || normalized.includes('LT')) return 'OFFICER';
-  if (normalized.startsWith('WO') || normalized.includes('WARRANT')) return 'WARRANT';
-  return 'ENLISTED';
-}
-
 function universalRankFromScore(score: number): UniversalRank {
   const idx = Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, Math.floor(score / 10)));
   return UNIVERSAL_RANKS[idx] ?? 'Recruit';
-}
-
-function universalRankFromSnapshot(snapshot: GameSnapshot, influenceRecord: number): UniversalRank {
-  const rankIdx = typeof snapshot.rankIndex === 'number' ? snapshot.rankIndex : null;
-  if (rankIdx !== null) {
-    const mapped = UNIVERSAL_RANKS[Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, rankIdx))];
-    if (mapped) return mapped;
-  }
-
-  return universalRankFromScore(playerRankScore(snapshot, influenceRecord));
 }
 
 function roleFromUniversalRank(rank: UniversalRank, slot: number): string {
@@ -239,8 +221,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   return {
     player: {
       branchLabel: toBranchLabel(snapshot.branch),
-      rankTrack: rankTrack(snapshot.rankCode),
-      universalRank: universalRankFromSnapshot(snapshot, influenceRecord),
+      rankLabel: snapshot.rankCode,
       uniformTone: uniformTone(snapshot.branch),
       medals: playerMedals,
       ribbons: playerRibbons.slice(0, 12),
