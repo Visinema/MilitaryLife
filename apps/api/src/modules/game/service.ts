@@ -164,7 +164,7 @@ async function withLockedState(
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
 
-    if (options.queueEvents) {
+    if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
       await maybeQueueDecisionEvent(client, state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
     }
 

@@ -85,8 +85,11 @@ export function DashboardShell() {
     if (noProfile) return;
     if (!snapshot) return;
 
-    const intervalMs = snapshot.paused ? 45_000 : 15_000;
+    const intervalMs = snapshot.paused ? 60_000 : 20_000;
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
       void loadSnapshot();
     }, intervalMs);
 
@@ -253,18 +256,44 @@ export function DashboardShell() {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <TopbarTime snapshot={snapshot} clockOffsetMs={clockOffsetMs} />
       <V2CommandCenter snapshot={snapshot} />
       <ActionButtons />
 
-      <div className="flex items-center justify-end pt-0.5">
-        <button
-          onClick={() => setSettingsOpen((prev) => !prev)}
-          className="rounded border border-border bg-panel px-2.5 py-1 text-[11px] text-text hover:border-accent"
-        >
-          {settingsOpen ? 'Close Settings' : 'Settings'}
-        </button>
+      <div className="grid grid-cols-1 gap-1 md:grid-cols-[1fr,auto] md:items-center">
+        <div className="grid grid-cols-1 gap-1 md:grid-cols-3">
+          <button
+            onClick={() => runAction('training')}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'training' ? 'Running...' : 'Quick Training'}
+          </button>
+          <button
+            onClick={() => runAction('deployment')}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'deployment' ? 'Running...' : 'Quick Deployment'}
+          </button>
+          <button
+            onClick={() => runAction('career-review')}
+            disabled={Boolean(actionBusy)}
+            className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
+          >
+            {actionBusy === 'career-review' ? 'Running...' : 'Career Review'}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-end">
+          <button
+            onClick={() => setSettingsOpen((prev) => !prev)}
+            className="rounded border border-border bg-panel px-2.5 py-1 text-[11px] text-text hover:border-accent"
+          >
+            {settingsOpen ? 'Close Settings' : 'Settings'}
+          </button>
+        </div>
       </div>
 
       {settingsOpen ? (
@@ -280,29 +309,6 @@ export function DashboardShell() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-3">
-        <button
-          onClick={() => runAction('training')}
-          disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-        >
-          {actionBusy === 'training' ? 'Running...' : 'Quick Training'}
-        </button>
-        <button
-          onClick={() => runAction('deployment')}
-          disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-        >
-          {actionBusy === 'deployment' ? 'Running...' : 'Quick Deployment'}
-        </button>
-        <button
-          onClick={() => runAction('career-review')}
-          disabled={Boolean(actionBusy)}
-          className="rounded border border-border bg-panel px-2.5 py-1.5 text-xs text-text hover:border-accent disabled:opacity-60"
-        >
-          {actionBusy === 'career-review' ? 'Running...' : 'Career Review'}
-        </button>
-      </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
