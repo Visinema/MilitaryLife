@@ -677,7 +677,14 @@ export async function runCommandAction(
 
     const canAccessCommand = hasCommandAccess(state);
     if (!canAccessCommand) {
-      return { statusCode: 403, payload: { error: 'Command access requires Captain rank or higher', snapshot: buildSnapshot(state, nowMs) } };
+      const currentRank = BRANCH_CONFIG[state.branch].ranks[state.rank_index] ?? 'UNKNOWN';
+      return {
+        statusCode: 403,
+        payload: {
+          error: `Command access requires Captain/Kapten rank or higher. Current rank: ${currentRank}` ,
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
     }
 
     const { action, targetNpcId, note } = payload;

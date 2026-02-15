@@ -23,20 +23,15 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
   const normalizedRank = snapshot.rankCode.toLowerCase();
-  const universalRank = world.player.universalRank.toLowerCase();
   const commandUnlocked =
-    (snapshot.rankIndex ?? 0) >= 7 ||
+    (snapshot.rankIndex ?? 0) >= 8 ||
     normalizedRank.includes('captain') ||
     normalizedRank.includes('kapten') ||
     normalizedRank.includes('major') ||
     normalizedRank.includes('colonel') ||
     normalizedRank.includes('kolonel') ||
     normalizedRank.includes('general') ||
-    normalizedRank.includes('jendral') ||
-    universalRank.includes('captain') ||
-    universalRank.includes('major') ||
-    universalRank.includes('colonel') ||
-    universalRank.includes('general');
+    normalizedRank.includes('jendral');
 
   const runCommandAction = async (action: CommandAction) => {
     if (!commandUnlocked) return;
@@ -168,7 +163,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                   <p className="mt-1 text-[10px] text-muted">Captain++ command unlocked: plan mission, command subordinates, issue sanction/promotion.</p>
                 </>
               ) : (
-                <p className="mt-1 text-[11px] text-muted">Locked. Reach Captain or higher to unlock Commands.</p>
+                <p className="mt-1 text-[11px] text-muted">Locked. Current rank: {snapshot.rankCode}. Reach Captain/Kapten or higher to unlock Commands.</p>
               )}
             </div>
 
