@@ -467,6 +467,16 @@ export async function runMilitaryAcademy(
     state.promotion_points += pointsBoost;
     state.academy_tier = Math.max(state.academy_tier, tier);
 
+    const lieutenantIndex = BRANCH_CONFIG[state.branch].ranks.findIndex((rank) => {
+      const lowered = rank.toLowerCase();
+      return (lowered.includes('lieutenant') || lowered.includes('letnan')) && !lowered.includes('jendral') && !lowered.includes('general');
+    });
+
+    if (lieutenantIndex >= 0 && state.rank_index < lieutenantIndex) {
+      state.rank_index = lieutenantIndex;
+      state.days_in_rank = 0;
+    }
+
     const freedomIncrement = Math.max(10, Math.floor(score / 2));
     state.division_freedom_score = Math.min(100, state.division_freedom_score + freedomIncrement);
 

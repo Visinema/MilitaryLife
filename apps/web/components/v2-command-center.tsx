@@ -53,7 +53,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="grid grid-cols-2 gap-1.5 md:hidden">
         {(['overview', 'mission'] as const).map((tab) => (
           <button
@@ -66,9 +66,9 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
         ))}
       </div>
 
-      <section className="cyber-panel p-2.5">
+      <section className="cyber-panel p-2">
         <p className="text-xs uppercase tracking-[0.14em] text-muted">UI V2 · Cybernetic Theater</p>
-        <div className="mt-2 grid gap-2.5 xl:grid-cols-[1.25fr,1fr]">
+        <div className="mt-1.5 grid gap-1.5 xl:grid-cols-[1.3fr,1fr]">
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
             <AvatarFrame
@@ -87,7 +87,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             />
           </div>
 
-          <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border border-border/70 bg-bg/70 p-2.5`}>
+          <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border border-border/70 bg-bg/70 p-2`}>
             <p className="text-xs uppercase tracking-[0.12em] text-muted">Mission Protocol & Command AI</p>
             <h3 className="mt-2 text-sm font-semibold text-text">{world.missionBrief.title}</h3>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.objective}</p>
