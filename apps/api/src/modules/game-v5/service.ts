@@ -1,6 +1,7 @@
 ﻿import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type {
+  AcademyCertificate,
   AcademyBatchState,
   AcademyBatchStanding,
   CertificationRecordV5,
@@ -159,8 +160,19 @@ function gradeFromScore(score: number): 'A' | 'B' | 'C' | 'D' {
   return 'D';
 }
 
+function tierFromCertCode(certCode: string): 1 | 2 | 3 {
+  const match = certCode.toUpperCase().match(/(?:^|_)T([123])(?:_|$)/);
+  if (!match) return 1;
+  const value = Number(match[1]);
+  if (value >= 3) return 3;
+  if (value <= 1) return 1;
+  return 2;
+}
+
 function certTierFromCode(code: string): 1 | 2 | 3 {
   const normalized = code.toUpperCase();
+  const parsedTier = tierFromCertCode(normalized);
+  if (parsedTier !== 1) return parsedTier;
   if (normalized.includes('ELITE') || normalized.includes('STRATEGIC')) return 3;
   if (normalized.includes('HIGH') || normalized.includes('COMMAND') || normalized.includes('CYBER') || normalized.includes('TRIBUNAL')) return 2;
   return 1;
@@ -543,7 +555,7 @@ async function finalizeAcademyBatchGraduation(
   }
 
   const passed = playerRanked.finalScore >= ACADEMY_PASS_SCORE;
-  const baseCertCode = resolveBaseCertCode(batch.track);
+  const baseCertCode = resolveBaseCertCode(batch.track, batch.tier);
   const certCodes: string[] = [];
 
   if (passed) {
@@ -555,7 +567,7 @@ async function finalizeAcademyBatchGraduation(
       npcId: null,
       certCode: baseCertCode,
       track: batch.track,
-      tier: certTierFromCode(baseCertCode),
+      tier: batch.tier >= 3 ? 3 : batch.tier <= 1 ? 1 : 2,
       grade: gradeFromScore(playerRanked.finalScore),
       issuedDay: worldDay,
       expiresDay: worldDay + 540,
@@ -564,7 +576,7 @@ async function finalizeAcademyBatchGraduation(
     });
 
     for (let i = 0; i < playerRanked.extraCertCount; i += 1) {
-      const code = `${batch.track}_EXTRA_CERT_${i + 1}`;
+      const code = `${batch.track}_ADV_CERT_T${batch.tier}_${i + 1}`;
       certCodes.push(code);
       await upsertCertification(client, {
         profileId,
@@ -573,7 +585,7 @@ async function finalizeAcademyBatchGraduation(
         npcId: null,
         certCode: code,
         track: batch.track,
-        tier: 1,
+        tier: batch.tier >= 3 ? 3 : batch.tier <= 1 ? 1 : 2,
         grade: gradeFromScore(Math.max(70, playerRanked.finalScore - i * 4)),
         issuedDay: worldDay,
         expiresDay: worldDay + 420,
@@ -1446,15 +1458,23 @@ export async function submitCertificationExamV5(
 
 function isBaseDiplomaCertCode(certCode: string): boolean {
   const token = certCode.toUpperCase();
-  return token.includes('FOUNDATION') || token.includes('OFFICER') || token.includes('HIGH_COMMAND');
+  if (token.includes('DIPLOMA')) return true;
+  return (
+    token === 'OFFICER_FOUNDATION' ||
+    token === 'HIGH_COMMAND_STRATEGY' ||
+    token === 'SPECIALIST_CYBER_OPS' ||
+    token === 'TRIBUNAL_RULES_OF_ENGAGEMENT'
+  );
 }
 
-function resolveBaseCertCode(track: string): string {
+function resolveBaseCertCode(track: string, tier: number): string {
   const normalized = track.toUpperCase();
-  if (normalized === 'HIGH_COMMAND') return 'HIGH_COMMAND_STRATEGY';
-  if (normalized === 'CYBER') return 'SPECIALIST_CYBER_OPS';
-  if (normalized === 'TRIBUNAL') return 'TRIBUNAL_RULES_OF_ENGAGEMENT';
-  return 'OFFICER_FOUNDATION';
+  const normalizedTier = tier >= 3 ? 3 : tier <= 1 ? 1 : 2;
+  if (normalized === 'HIGH_COMMAND') return `HIGH_COMMAND_DIPLOMA_T${normalizedTier}`;
+  if (normalized === 'CYBER') return `CYBER_DIPLOMA_T${normalizedTier}`;
+  if (normalized === 'TRIBUNAL') return `TRIBUNAL_DIPLOMA_T${normalizedTier}`;
+  if (normalized === 'SPECIALIST') return `SPECIALIST_DIPLOMA_T${normalizedTier}`;
+  return `OFFICER_DIPLOMA_T${normalizedTier}`;
 }
 
 function gradeBonus(grade: 'A' | 'B' | 'C' | 'D'): number {
@@ -1462,6 +1482,73 @@ function gradeBonus(grade: 'A' | 'B' | 'C' | 'D'): number {
   if (grade === 'B') return 14;
   if (grade === 'C') return 8;
   return 3;
+}
+
+function scoreFromGrade(grade: 'A' | 'B' | 'C' | 'D', certTier: 1 | 2 | 3): number {
+  const base = grade === 'A' ? 94 : grade === 'B' ? 86 : grade === 'C' ? 77 : 66;
+  return clamp(base + (certTier - 1) * 2, 0, 100);
+}
+
+function resolveTrackLabel(track: string): string {
+  const normalized = track.toUpperCase();
+  if (normalized === 'HIGH_COMMAND') return 'High Command';
+  if (normalized === 'SPECIALIST') return 'Specialist';
+  if (normalized === 'TRIBUNAL') return 'Tribunal';
+  if (normalized === 'CYBER') return 'Cyber';
+  return 'Officer';
+}
+
+function divisionFreedomFromCertification(cert: CertificationRecordV5): AcademyCertificate['divisionFreedomLevel'] {
+  if (!cert.valid) return 'LIMITED';
+  if (cert.tier >= 3) return cert.grade === 'A' ? 'ELITE' : 'ADVANCED';
+  if (cert.tier === 2) return cert.grade === 'A' || cert.grade === 'B' ? 'ADVANCED' : 'STANDARD';
+  return cert.grade === 'A' ? 'STANDARD' : 'LIMITED';
+}
+
+function academyNameFromCertification(cert: CertificationRecordV5): string {
+  const trackLabel = resolveTrackLabel(cert.track);
+  const code = cert.certCode.toUpperCase();
+  if (code.includes('DIPLOMA')) return `Diploma Academy ${trackLabel} T${cert.tier}`;
+  if (code.includes('ADV_CERT') || code.includes('EXTRA_CERT')) return `Sertifikasi Lanjutan ${trackLabel} T${cert.tier}`;
+  return `Sertifikasi ${trackLabel} T${cert.tier}`;
+}
+
+function mapCertificationToInventoryCertificate(cert: CertificationRecordV5): AcademyCertificate {
+  const trackLabel = resolveTrackLabel(cert.track);
+  return {
+    id: cert.certId,
+    tier: cert.tier,
+    academyName: academyNameFromCertification(cert),
+    score: scoreFromGrade(cert.grade, cert.tier),
+    grade: cert.grade,
+    divisionFreedomLevel: divisionFreedomFromCertification(cert),
+    trainerName: 'Military Academy Board V5',
+    issuedAtDay: cert.issuedDay,
+    message: cert.valid
+      ? `${cert.certCode} valid hingga day ${cert.expiresDay}.`
+      : `${cert.certCode} tidak valid karena skor di bawah ambang lulus.`,
+    assignedDivision: `${trackLabel} Corps`
+  };
+}
+
+function listPlayerInventoryCertificates(certifications: CertificationRecordV5[]): AcademyCertificate[] {
+  return certifications
+    .filter((item) => item.valid && item.holderType === 'PLAYER')
+    .slice()
+    .sort((a, b) => {
+      if (b.issuedDay !== a.issuedDay) return b.issuedDay - a.issuedDay;
+      if (b.tier !== a.tier) return b.tier - a.tier;
+      return b.certCode.localeCompare(a.certCode);
+    })
+    .map((item) => mapCertificationToInventoryCertificate(item));
+}
+
+function hasEducationPrefix(baseName: string): boolean {
+  return baseName.trim().toUpperCase().startsWith('DR.');
+}
+
+function hasEducationSuffix(baseName: string): boolean {
+  return baseName.trim().toUpperCase().endsWith('S.ML');
 }
 
 type ExpansionStateCacheEntry = {
@@ -1586,6 +1673,12 @@ function decorateNameWithEducationTitles(
   titles: EducationTitle[]
 ): string {
   const validCerts = certifications.filter((item) => item.valid);
+  const diplomaTierSet = new Set<number>(
+    validCerts.filter((item) => isBaseDiplomaCertCode(item.certCode)).map((item) => item.tier)
+  );
+  const completedThreeAcademyTiers = diplomaTierSet.has(1) && diplomaTierSet.has(2) && diplomaTierSet.has(3);
+  const hasAnyDiploma = diplomaTierSet.size > 0;
+
   const matched = titles.filter((title) =>
     validCerts.some(
       (cert) =>
@@ -1594,15 +1687,14 @@ function decorateNameWithEducationTitles(
         (cert.certCode.toUpperCase() === title.titleCode.toUpperCase() || cert.track.toUpperCase() === title.sourceTrack.toUpperCase())
     )
   );
-  const prefix = matched
-    .filter((item) => item.mode === 'PREFIX')
-    .sort((a, b) => b.minTier - a.minTier)[0];
-  const suffix = matched
+  const catalogSuffix = matched
     .filter((item) => item.mode === 'SUFFIX')
     .sort((a, b) => b.minTier - a.minTier)[0];
 
-  const left = prefix ? `${prefix.label} ` : '';
-  const right = suffix ? ` ${suffix.label}` : '';
+  const selectedPrefix = completedThreeAcademyTiers ? 'Dr.' : '';
+  const selectedSuffix = hasAnyDiploma ? 'S.Ml' : catalogSuffix?.label ?? '';
+  const left = selectedPrefix && !hasEducationPrefix(baseName) ? `${selectedPrefix} ` : '';
+  const right = selectedSuffix && !hasEducationSuffix(baseName) ? ` ${selectedSuffix}` : '';
   return `${left}${baseName}${right}`.trim();
 }
 
@@ -2861,6 +2953,25 @@ export async function getAcademyTitlesV5(request: FastifyRequest, reply: Fastify
     return {
       payload: {
         titles,
+        playerDisplayName,
+        snapshot
+      }
+    };
+  });
+}
+
+export async function getAcademyCertificationsV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const titles = await listEducationTitles(client);
+    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+    const world = await lockV5World(client, profileId);
+    const playerDisplayName = world ? decorateNameWithEducationTitles(world.playerName, playerCerts, titles) : null;
+    const items = listPlayerInventoryCertificates(playerCerts);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        items,
+        certifications: playerCerts,
         playerDisplayName,
         snapshot
       }

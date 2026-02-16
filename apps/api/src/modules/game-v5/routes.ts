@@ -31,6 +31,7 @@ import {
   executeDomSessionV5,
   finalizeDivisionApplicationV5,
   getAcademyProgramsV5,
+  getAcademyCertificationsV5,
   getAcademyTitlesV5,
   getAcademyBatchCurrentV51,
   getDivisionsCatalogV5,
@@ -245,6 +246,10 @@ export async function gameV5Routes(app: FastifyInstance): Promise<void> {
 
   app.get('/academy/titles', async (request, reply) => {
     await getAcademyTitlesV5(request, reply);
+  });
+
+  app.get('/academy/certifications', async (request, reply) => {
+    await getAcademyCertificationsV5(request, reply);
   });
 
   app.get('/dom/cycle/current', async (request, reply) => {

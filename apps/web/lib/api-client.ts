@@ -1,6 +1,7 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
 import type {
+  AcademyCertificate,
   AcademyBatchState,
   ActionResult,
   CeremonyCycleV5,
@@ -315,7 +316,12 @@ export const api = {
     });
   },
   v5SessionStart(payload?: { resetWorld?: boolean }) {
-    return request<{ started: boolean; resetApplied: boolean; snapshot: GameSnapshotV5 | null }>('/game/v5/session/start', 'POST', payload ?? {});
+    return request<{ started: boolean; resetApplied: boolean; snapshot: GameSnapshotV5 | null }>(
+      '/game/v5/session/start',
+      'POST',
+      payload ?? {},
+      payload?.resetWorld ? { timeoutMs: 30_000 } : undefined
+    );
   },
   v5SessionHeartbeat(payload?: { sessionTtlMs?: number }) {
     return request<{ ok: boolean; snapshot: GameSnapshotV5 | null }>('/game/v5/session/heartbeat', 'POST', payload ?? {});
@@ -576,6 +582,14 @@ export const api = {
       playerDisplayName: string | null;
       snapshot: GameSnapshotV5 | null;
     }>('/game/v5/academy/titles', 'GET');
+  },
+  v5AcademyCertifications() {
+    return request<{
+      items: AcademyCertificate[];
+      certifications: CertificationRecordV5[];
+      playerDisplayName: string | null;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/certifications', 'GET');
   },
   v5DomCycleCurrent() {
     return request<{

@@ -32,7 +32,7 @@ export interface EducationTitle {
 
 export interface AcademyCertificate {
   id: string;
-  tier: 1 | 2;
+  tier: 1 | 2 | 3;
   academyName: string;
   score: number;
   grade: 'A' | 'B' | 'C' | 'D';

@@ -5,7 +5,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { usePathname, useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import type { CountryCode } from '@mls/shared/constants';
-import type { ExpansionStateV51 } from '@mls/shared/game-types';
+import type { AcademyCertificate, ExpansionStateV51 } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { deriveLiveGameDay } from '@/lib/clock';
@@ -89,6 +89,7 @@ export function DashboardShell() {
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
+  const [v5InventoryCertificates, setV5InventoryCertificates] = useState<AcademyCertificate[]>([]);
   const [snapshotHydrated, setSnapshotHydrated] = useState(false);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
@@ -110,13 +111,26 @@ export function DashboardShell() {
       setLoading(true);
     }
     try {
-      const [snapshotResult, expansionResult] = await Promise.allSettled([api.snapshot(), api.v5ExpansionState()]);
+      const [snapshotResult, expansionResult] = await Promise.allSettled([
+        api.snapshot(),
+        api.v5ExpansionState()
+      ]);
       if (snapshotResult.status !== 'fulfilled') {
         throw snapshotResult.reason;
       }
 
       setSnapshot(snapshotResult.value.snapshot);
       setSnapshotHydrated(true);
+      if (inventoryOpen || !hasInitialSnapshotRef.current || options?.force) {
+        try {
+          const certificationResult = await api.v5AcademyCertifications();
+          setV5InventoryCertificates(certificationResult.items);
+        } catch {
+          if (!resetBusy && options?.force) {
+            setV5InventoryCertificates([]);
+          }
+        }
+      }
       if (expansionResult.status === 'fulfilled') {
         setExpansionState(expansionResult.value.state);
         expansionEndpointErrorShownRef.current = false;
@@ -164,7 +178,7 @@ export function DashboardShell() {
     } finally {
       snapshotLoadInFlightRef.current = false;
     }
-  }, [resetBusy, router, setError, setLoading, setSnapshot]);
+  }, [inventoryOpen, resetBusy, router, setError, setLoading, setSnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -379,8 +393,20 @@ export function DashboardShell() {
     setResetBusy(true);
     try {
       const response = await api.restartWorld();
+      await api.v5SessionStart({ resetWorld: true });
       setSnapshot(response.snapshot);
+      setV5InventoryCertificates([]);
       setSnapshotHydrated(true);
+      try {
+        for (let i = window.sessionStorage.length - 1; i >= 0; i -= 1) {
+          const key = window.sessionStorage.key(i);
+          if (key && key.startsWith('academy-graduation-announcement:')) {
+            window.sessionStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // Ignore storage access errors (private mode/blocked storage).
+      }
       await loadSnapshot({ force: true });
       setError(null);
       setSettingsOpen(false);
@@ -514,13 +540,29 @@ export function DashboardShell() {
     };
   }, [pageReady, pathname, resetBusy, router, snapshot?.ceremonyDue, snapshot?.gameDay, snapshotHydrated]);
 
-  const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
+  const safeCertificates = useMemo(
+    () =>
+      v5InventoryCertificates.length > 0
+        ? v5InventoryCertificates
+        : (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []),
+    [snapshot, v5InventoryCertificates]
+  );
 
   useEffect(() => {
     if (!openedCertificateId) return;
     if (safeCertificates.some((item) => item.id === openedCertificateId)) return;
     setOpenedCertificateId(safeCertificates[0]?.id ?? null);
   }, [openedCertificateId, safeCertificates]);
+
+  useEffect(() => {
+    if (!inventoryOpen) return;
+    void api
+      .v5AcademyCertifications()
+      .then((response) => {
+        setV5InventoryCertificates(response.items);
+      })
+      .catch(() => null);
+  }, [inventoryOpen]);
 
   if (loading && !snapshot && !noProfile) {
     return <div className="rounded-md border border-border bg-panel p-6 text-sm text-muted">Loading game data...</div>;

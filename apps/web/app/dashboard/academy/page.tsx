@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AcademyBatchState, ExpansionStateV51 } from '@mls/shared/game-types';
+import type { AcademyBatchState, AcademyCertificate, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api, ApiError } from '@/lib/api-client';
 
 type AcademyQuestionSet = {
@@ -17,6 +17,8 @@ type AcademyCurrentPayload = {
   questionSet: AcademyQuestionSet | null;
   worldCurrentDay: number | null;
   state: ExpansionStateV51;
+  inventoryCertificates: AcademyCertificate[];
+  playerDisplayName: string | null;
 };
 
 const TRACK_OPTIONS: Array<{ value: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 'TRIBUNAL' | 'CYBER'; label: string }> = [
@@ -60,16 +62,23 @@ function AcademyPageContent() {
   const [current, setCurrent] = useState<AcademyCurrentPayload | null>(null);
   const [answers, setAnswers] = useState<number[]>([1, 1, 1]);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<string | null>(null);
   const announcedBatchRef = useRef<string | null>(null);
+  const previousBatchStatusRef = useRef<AcademyBatchState['status'] | null>(null);
 
   const loadCurrent = useCallback(async () => {
-    const response = await api.v5AcademyBatchCurrent();
+    const [response, certificationResponse] = await Promise.all([
+      api.v5AcademyBatchCurrent(),
+      api.v5AcademyCertifications()
+    ]);
     setCurrent({
       academyLockActive: response.academyLockActive,
       academyBatch: response.academyBatch,
       questionSet: response.questionSet,
       worldCurrentDay: response.snapshot?.world.currentDay ?? null,
-      state: response.state
+      state: response.state,
+      inventoryCertificates: certificationResponse.items,
+      playerDisplayName: certificationResponse.playerDisplayName
     });
   }, []);
 
@@ -86,6 +95,16 @@ function AcademyPageContent() {
     if (!questionSetId || questionCount <= 0) return;
     setAnswers(new Array(questionCount).fill(1));
   }, [questionCount, questionSetId]);
+
+  useEffect(() => {
+    const certs = current?.inventoryCertificates ?? [];
+    if (certs.length === 0) {
+      setSelectedCertificateId(null);
+      return;
+    }
+    if (selectedCertificateId && certs.some((item) => item.id === selectedCertificateId)) return;
+    setSelectedCertificateId(certs[0]?.id ?? null);
+  }, [current?.inventoryCertificates, selectedCertificateId]);
 
   useEffect(() => {
     if (!current) return;
@@ -151,30 +170,32 @@ function AcademyPageContent() {
   };
 
   const batch = current?.academyBatch ?? null;
+  const activeBatch = batch && batch.status === 'ACTIVE' ? batch : null;
   const worldCurrentDay = current?.worldCurrentDay ?? null;
   const lockActive = Boolean(current?.academyLockActive);
-  const canSubmit = Boolean(batch && batch.status === 'ACTIVE' && batch.canSubmitToday && current?.questionSet);
+  const canSubmit = Boolean(activeBatch && activeBatch.canSubmitToday && current?.questionSet);
   const canGraduate = Boolean(
-    batch &&
-      batch.status === 'ACTIVE' &&
-      batch.playerDayProgress >= batch.totalDays &&
-      (worldCurrentDay === null || worldCurrentDay >= batch.endDay)
+    activeBatch &&
+      activeBatch.playerDayProgress >= activeBatch.totalDays &&
+      (worldCurrentDay === null || worldCurrentDay >= activeBatch.endDay)
   );
 
   useEffect(() => {
+    const previousStatus = previousBatchStatusRef.current;
+    previousBatchStatusRef.current = batch?.status ?? null;
+
     if (!batch?.graduation) return;
     if (batch.status !== 'GRADUATED' && batch.status !== 'FAILED') return;
+    const justCompleted = previousStatus === 'ACTIVE' && (batch.status === 'GRADUATED' || batch.status === 'FAILED');
+    if (!justCompleted) return;
     if (announcedBatchRef.current === batch.batchId) return;
 
     announcedBatchRef.current = batch.batchId;
     try {
-      if (window.sessionStorage.getItem(graduationAnnouncementStorageKey(batch.batchId)) === '1') {
-        return;
-      }
+      if (window.sessionStorage.getItem(graduationAnnouncementStorageKey(batch.batchId)) === '1') return;
     } catch {
       // Ignore storage access errors (private mode/blocked storage).
     }
-
     setAnnouncementOpen(true);
   }, [batch?.batchId, batch?.graduation, batch?.status]);
 
@@ -195,6 +216,9 @@ function AcademyPageContent() {
         <p className="text-xs uppercase tracking-[0.14em] text-muted">Military Academy Expansion v5.1</p>
         <h1 className="text-lg font-semibold text-text">Academy Tier Program (4/5/6 Hari)</h1>
         <p className="text-xs text-muted">Mode lock aktif selama batch berjalan. Progress tersimpan otomatis dan dapat dilanjutkan setelah refresh/disconnect.</p>
+        {current?.playerDisplayName ? (
+          <p className="mt-1 text-xs text-muted">Nama pendidikan aktif: <span className="text-text">{current.playerDisplayName}</span></p>
+        ) : null}
         <div className="mt-2 flex gap-2">
           {lockActive ? (
             <span className="rounded border border-accent/70 bg-accent/15 px-2 py-1 text-xs text-text">Academy Lock Active</span>
@@ -209,9 +233,13 @@ function AcademyPageContent() {
         </div>
       </div>
 
-      {!batch ? (
+      {!activeBatch ? (
         <div className="cyber-panel p-3 space-y-3 text-xs">
-          <p className="text-muted">Belum ada batch aktif. Mulai batch academy untuk membuka jalur rekrutmen kompetitif.</p>
+          <p className="text-muted">
+            {batch
+              ? `Batch terakhir (${batch.batchId}) sudah ${batch.status}. Anda bisa lanjut batch baru untuk tier lebih tinggi atau sertifikasi tambahan.`
+              : 'Belum ada batch aktif. Mulai batch academy untuk membuka jalur rekrutmen kompetitif.'}
+          </p>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-muted">Track
               <select value={track} onChange={(e) => setTrack(e.target.value as typeof track)} className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-text">
@@ -235,16 +263,16 @@ function AcademyPageContent() {
       ) : (
         <>
           <div className="cyber-panel p-3 text-xs space-y-2">
-            <p className="text-muted">Batch: <span className="text-text">{batch.batchId}</span></p>
-            <p className="text-muted">Track/Tier: <span className="text-text">{batch.track} / {batch.tier}</span> | Status: <span className="text-text">{batch.status}</span></p>
+            <p className="text-muted">Batch: <span className="text-text">{activeBatch.batchId}</span></p>
+            <p className="text-muted">Track/Tier: <span className="text-text">{activeBatch.track} / {activeBatch.tier}</span> | Status: <span className="text-text">{activeBatch.status}</span></p>
             <p className="text-muted">
-              Progress player: <span className="text-text">{batch.playerDayProgress}/{batch.totalDays}</span> | Expected world day: <span className="text-text">{batch.expectedWorldDay}</span> | Current world day: <span className="text-text">{worldCurrentDay ?? '-'}</span>
+              Progress player: <span className="text-text">{activeBatch.playerDayProgress}/{activeBatch.totalDays}</span> | Expected world day: <span className="text-text">{activeBatch.expectedWorldDay}</span> | Current world day: <span className="text-text">{worldCurrentDay ?? '-'}</span>
             </p>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
-              {Array.from({ length: batch.totalDays }, (_, idx) => {
+              {Array.from({ length: activeBatch.totalDays }, (_, idx) => {
                 const day = idx + 1;
-                const completed = day <= batch.playerDayProgress;
-                const currentDay = day === batch.playerDayProgress + 1 && batch.status === 'ACTIVE';
+                const completed = day <= activeBatch.playerDayProgress;
+                const currentDay = day === activeBatch.playerDayProgress + 1 && activeBatch.status === 'ACTIVE';
                 return (
                   <div key={day} className={`rounded border px-2 py-1 ${completed ? 'border-emerald-400/70 bg-emerald-500/10 text-emerald-100' : currentDay ? 'border-accent/70 bg-accent/10 text-text' : 'border-border/60 bg-bg/60 text-muted'}`}>
                     <p className="text-[10px] uppercase tracking-[0.06em]">Day {day}</p>
@@ -253,7 +281,7 @@ function AcademyPageContent() {
                 );
               })}
             </div>
-            {batch.status === 'ACTIVE' && current?.questionSet ? (
+            {current?.questionSet ? (
               <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Daily Assessment - {current.questionSet.setId}</p>
                 {current.questionSet.questions.map((question, qIdx) => (
@@ -284,60 +312,109 @@ function AcademyPageContent() {
                 ))}
               </div>
             ) : null}
-            {batch.status === 'ACTIVE' ? (
-              <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
-                <div className="flex gap-2">
-                  <button disabled={!canSubmit || busy !== null || !current?.questionSet} onClick={() => void submitDay()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text disabled:opacity-60">
-                    {busy === 'submit' ? 'Submitting...' : 'Submit Day Assessment'}
-                  </button>
-                  <button disabled={!canGraduate || busy !== null} onClick={() => void graduate()} className="rounded border border-border bg-bg px-3 py-1 text-text disabled:opacity-60">
-                    {busy === 'graduate' ? 'Graduating...' : 'Run Graduation'}
-                  </button>
-                </div>
-                {!batch.canSubmitToday && batch.playerDayProgress < batch.totalDays ? (
-                  <p className="text-[11px] text-muted">
-                    Submit day berikutnya dibuka saat world day mencapai <span className="text-text">{batch.expectedWorldDay}</span>.
-                  </p>
-                ) : null}
-                {batch.playerDayProgress >= batch.totalDays && worldCurrentDay !== null && worldCurrentDay < batch.endDay ? (
-                  <p className="text-[11px] text-muted">
-                    Graduation baru tersedia saat world day mencapai <span className="text-text">{batch.endDay}</span>.
-                  </p>
-                ) : null}
+            <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
+              <div className="flex gap-2">
+                <button disabled={!canSubmit || busy !== null || !current?.questionSet} onClick={() => void submitDay()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text disabled:opacity-60">
+                  {busy === 'submit' ? 'Submitting...' : 'Submit Day Assessment'}
+                </button>
+                <button disabled={!canGraduate || busy !== null} onClick={() => void graduate()} className="rounded border border-border bg-bg px-3 py-1 text-text disabled:opacity-60">
+                  {busy === 'graduate' ? 'Graduating...' : 'Run Graduation'}
+                </button>
               </div>
-            ) : null}
-            {batch.graduation ? (
-              <div className={`rounded border p-2 ${batch.graduation.passed ? 'border-emerald-400/60 bg-emerald-500/10' : 'border-danger/60 bg-danger/10'}`}>
-                <p className="text-text">Graduation: {batch.graduation.passed ? 'LULUS' : 'BELUM LULUS'} | Rank #{batch.graduation.playerRank}/{batch.graduation.totalCadets}</p>
-                <p className="text-muted text-[11px]">{batch.graduation.message}</p>
-                {batch.graduation.certificateCodes.length > 0 ? (
-                  <p className="text-muted text-[11px]">Certificates: {batch.graduation.certificateCodes.join(' | ')}</p>
-                ) : null}
-              </div>
-            ) : null}
+              {!activeBatch.canSubmitToday && activeBatch.playerDayProgress < activeBatch.totalDays ? (
+                <p className="text-[11px] text-muted">
+                  Submit day berikutnya dibuka saat world day mencapai <span className="text-text">{activeBatch.expectedWorldDay}</span>.
+                </p>
+              ) : null}
+              {activeBatch.playerDayProgress >= activeBatch.totalDays && worldCurrentDay !== null && worldCurrentDay < activeBatch.endDay ? (
+                <p className="text-[11px] text-muted">
+                  Graduation baru tersedia saat world day mencapai <span className="text-text">{activeBatch.endDay}</span>.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="cyber-panel p-3 text-xs">
             <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Graduation Board - Top 10</p>
             <div className="mt-2 space-y-1">
-              {batch.standingsTop10.length === 0 ? (
+              {activeBatch.standingsTop10.length === 0 ? (
                 <p className="text-muted">Belum ada ranking batch.</p>
               ) : (
-                batch.standingsTop10.map((entry) => (
+                activeBatch.standingsTop10.map((entry) => (
                   <div key={`${entry.holderType}-${entry.npcId ?? entry.name}`} className="rounded border border-border/50 bg-bg/70 px-2 py-1">
-                    <span className="text-text">#{entry.rankPosition} {entry.name}</span> | score {entry.finalScore} | day {entry.dayProgress}/{batch.totalDays}
+                    <span className="text-text">#{entry.rankPosition} {entry.name}</span> | score {entry.finalScore} | day {entry.dayProgress}/{activeBatch.totalDays}
                   </div>
                 ))
               )}
-              {batch.playerStanding ? (
+              {activeBatch.playerStanding ? (
                 <p className="rounded border border-accent/60 bg-accent/10 px-2 py-1 text-text">
-                  Posisi pemain: #{batch.playerStanding.rankPosition} | score {batch.playerStanding.finalScore}
+                  Posisi pemain: #{activeBatch.playerStanding.rankPosition} | score {activeBatch.playerStanding.finalScore}
                 </p>
               ) : null}
             </div>
           </div>
         </>
       )}
+
+      {batch && batch.status !== 'ACTIVE' && batch.graduation ? (
+        <div className={`cyber-panel p-3 text-xs ${batch.graduation.passed ? 'border-emerald-400/60' : 'border-danger/60'}`}>
+          <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Hasil Batch Terakhir</p>
+          <p className="text-text">Graduation: {batch.graduation.passed ? 'LULUS' : 'BELUM LULUS'} | Rank #{batch.graduation.playerRank}/{batch.graduation.totalCadets}</p>
+          <p className="text-muted">{batch.graduation.message}</p>
+          {batch.graduation.certificateCodes.length > 0 ? (
+            <p className="text-muted">Certificate Codes: <span className="text-text">{batch.graduation.certificateCodes.join(' | ')}</span></p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="cyber-panel p-3 text-xs space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Inventory Sertifikat Visual</p>
+        {(current?.inventoryCertificates.length ?? 0) === 0 ? (
+          <p className="text-muted">Belum ada diploma/sertifikasi tersimpan.</p>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-2">
+            {(current?.inventoryCertificates ?? []).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSelectedCertificateId(item.id)}
+                className={`rounded border px-2 py-1 text-left ${selectedCertificateId === item.id ? 'border-accent bg-accent/10' : 'border-border/60 bg-bg/70'}`}
+              >
+                <p className="text-text">{item.academyName}</p>
+                <p className="text-muted">Tier {item.tier} · Grade {item.grade} · Day {item.issuedAtDay}</p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selectedCertificateId ? (
+        <div className="cyber-panel p-3">
+          {(() => {
+            const cert = (current?.inventoryCertificates ?? []).find((item) => item.id === selectedCertificateId);
+            if (!cert) return <p className="text-xs text-muted">Certificate tidak ditemukan.</p>;
+            return (
+              <div className="rounded-md border-2 border-amber-300/70 bg-gradient-to-br from-amber-50 via-[#f8f0d6] to-amber-100 p-4 text-xs text-[#2f2412] shadow-panel">
+                <p className="text-center text-[11px] uppercase tracking-[0.16em]">Military Academy Certificate Archive</p>
+                <h2 className="mt-2 text-center text-lg font-semibold">{cert.academyName}</h2>
+                <p className="mt-2 text-center">Status: VALID (Inventory V5)</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <p><span className="font-semibold">Tier:</span> {cert.tier}</p>
+                  <p><span className="font-semibold">Grade:</span> {cert.grade}</p>
+                  <p><span className="font-semibold">Score:</span> {cert.score}</p>
+                  <p><span className="font-semibold">Issued Day:</span> {cert.issuedAtDay}</p>
+                  <p><span className="font-semibold">Freedom:</span> {cert.divisionFreedomLevel}</p>
+                  <p><span className="font-semibold">Division:</span> {cert.assignedDivision}</p>
+                </div>
+                <p className="mt-3 italic">{cert.message}</p>
+                <div className="mt-3 flex items-end justify-between">
+                  <p>Authorized Signature</p>
+                  <p className="font-semibold">{cert.trainerName}</p>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {announcementOpen && batch?.graduation ? (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4">

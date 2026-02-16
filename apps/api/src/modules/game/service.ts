@@ -2,8 +2,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import type {
+  AcademyCertificate,
   ActionResult,
   CeremonyRecipient,
+  CertificationRecordV5,
   DecisionResult,
   GameSnapshot,
   GameSnapshotV5,
@@ -47,7 +49,7 @@ import {
   updateGameState
 } from './repo.js';
 import { attachAuth } from '../auth/service.js';
-import { buildSnapshotV5, clearV5World, ensureV5World } from '../game-v5/repo.js';
+import { buildSnapshotV5, clearV5World, ensureV5World, listCertifications } from '../game-v5/repo.js';
 
 interface LockedStateContext {
   client: PoolClient;
@@ -647,7 +649,77 @@ function splitAssignment(assignment: string): { division: string; position: stri
   return { division: assignment || 'Nondivisi', position: assignment || 'Staff Officer' };
 }
 
-function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, nowMs: number): GameSnapshot {
+function academyTierFromCertification(cert: CertificationRecordV5): 1 | 2 | 3 {
+  const match = cert.certCode.toUpperCase().match(/(?:^|_)T([123])(?:_|$)/);
+  if (match) {
+    const value = Number(match[1]);
+    if (value >= 3) return 3;
+    if (value <= 1) return 1;
+    return 2;
+  }
+  if (cert.tier >= 3) return 3;
+  if (cert.tier <= 1) return 1;
+  return 2;
+}
+
+function academyScoreFromGrade(grade: CertificationRecordV5['grade'], tier: 1 | 2 | 3): number {
+  const base = grade === 'A' ? 94 : grade === 'B' ? 86 : grade === 'C' ? 77 : 66;
+  return Math.max(0, Math.min(100, base + (tier - 1) * 2));
+}
+
+function academyLabelFromCertification(cert: CertificationRecordV5, tier: 1 | 2 | 3): string {
+  const track = cert.track.toUpperCase();
+  const trackLabel =
+    track === 'HIGH_COMMAND' ? 'High Command' :
+    track === 'SPECIALIST' ? 'Specialist' :
+    track === 'TRIBUNAL' ? 'Tribunal' :
+    track === 'CYBER' ? 'Cyber' :
+    'Officer';
+  const code = cert.certCode.toUpperCase();
+  if (code.includes('DIPLOMA')) return `Diploma Academy ${trackLabel} T${tier}`;
+  if (code.includes('ADV_CERT') || code.includes('EXTRA_CERT')) return `Sertifikasi Lanjutan ${trackLabel} T${tier}`;
+  return `Sertifikasi ${trackLabel} T${tier}`;
+}
+
+function mapV5CertificationsToLegacyInventory(certifications: CertificationRecordV5[]): AcademyCertificate[] {
+  return certifications
+    .filter((item) => item.valid && item.holderType === 'PLAYER')
+    .sort((a, b) => {
+      if (b.issuedDay !== a.issuedDay) return b.issuedDay - a.issuedDay;
+      if (b.tier !== a.tier) return b.tier - a.tier;
+      return b.certCode.localeCompare(a.certCode);
+    })
+    .map((item) => {
+      const tier = academyTierFromCertification(item);
+      const track = item.track.toUpperCase();
+      const assignedDivision =
+        track === 'HIGH_COMMAND' ? 'Strategic Command' :
+        track === 'SPECIALIST' ? 'Specialist Corps' :
+        track === 'TRIBUNAL' ? 'Military Tribunal' :
+        track === 'CYBER' ? 'Cyber Command' :
+        'Officer Corps';
+      const divisionFreedomLevel: AcademyCertificate['divisionFreedomLevel'] =
+        tier >= 3 ? (item.grade === 'A' ? 'ELITE' : 'ADVANCED') :
+        tier === 2 ? (item.grade === 'A' || item.grade === 'B' ? 'ADVANCED' : 'STANDARD') :
+        (item.grade === 'A' ? 'STANDARD' : 'LIMITED');
+      return {
+        id: item.certId,
+        tier,
+        academyName: academyLabelFromCertification(item, tier),
+        score: academyScoreFromGrade(item.grade, tier),
+        grade: item.grade,
+        divisionFreedomLevel,
+        trainerName: 'Military Academy Board V5',
+        issuedAtDay: item.issuedDay,
+        message: item.valid
+          ? `${item.certCode} valid hingga day ${item.expiresDay}.`
+          : `${item.certCode} tidak valid.`,
+        assignedDivision
+      };
+    });
+}
+
+function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, nowMs: number, certificates: AcademyCertificate[] = []): GameSnapshot {
   const worldDay = snapshot.world.currentDay;
   const gameTimeScale: 1 | 3 = snapshot.world.gameTimeScale === 3 ? 3 : 1;
   const serverReferenceTimeMs = snapshot.serverNowMs - Math.floor((worldDay * GAME_MS_PER_DAY) / gameTimeScale);
@@ -685,7 +757,7 @@ function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, nowMs: number): GameSna
     academyCertifiedOfficer: (snapshot.expansion?.academyBatch?.tier ?? 0) >= 1,
     academyCertifiedHighOfficer: (snapshot.expansion?.academyBatch?.tier ?? 0) >= 2,
     lastTravelPlace: null,
-    certificates: [],
+    certificates,
     divisionFreedomScore: 0,
     preferredDivision: assignment.division,
     divisionAccess: null,
@@ -757,9 +829,11 @@ async function buildV5BackedLegacySnapshot(request: FastifyRequest, nowMs: numbe
     }
 
     await ensureV5World(client, { profileId, playerName: profile.player_name, branch: profile.branch }, nowMs);
+    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+    const certificateInventory = mapV5CertificationsToLegacyInventory(playerCerts);
     const v5Snapshot = await buildSnapshotV5(client, profileId, nowMs);
     await client.query('COMMIT');
-    return v5Snapshot ? mapV5SnapshotToLegacy(v5Snapshot, nowMs) : null;
+    return v5Snapshot ? mapV5SnapshotToLegacy(v5Snapshot, nowMs, certificateInventory) : null;
   } catch (error) {
     await client.query('ROLLBACK');
     request.log.error(error, 'legacy-snapshot-v5-fallback-failed');
