@@ -63,6 +63,8 @@ interface V5Context {
   nowMs: number;
 }
 
+const CONTEXT_SESSION_TTL_MS = 90_000;
+
 async function withV5Context(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -86,6 +88,8 @@ async function withV5Context(
 
     const nowMs = Date.now();
     await ensureV5World(client, profile, nowMs);
+    await setSessionActiveUntil(client, profile.profileId, nowMs, CONTEXT_SESSION_TTL_MS);
+    await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
 
     const result = await handler({
       client,
@@ -759,7 +763,7 @@ async function buildExpansionState(
       maxNpcOps: V5_MAX_NPCS,
       adaptiveBudget: adaptive.adaptiveBudget,
       tickPressure: adaptive.tickPressure,
-      pollingHintMs: lockInfo.locked ? 60_000 : 20_000
+      pollingHintMs: lockInfo.locked ? 5_000 : 15_000
     }
   };
 

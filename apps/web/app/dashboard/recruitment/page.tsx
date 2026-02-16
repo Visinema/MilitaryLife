@@ -92,7 +92,7 @@ export default function RecruitmentPage() {
 
   useEffect(() => {
     if (!board) return;
-    const intervalMs = board.quota?.status === 'COOLDOWN' ? 60_000 : 20_000;
+    const intervalMs = board.quota?.status === 'COOLDOWN' ? 10_000 : 15_000;
     const timer = window.setInterval(() => {
       void loadBoard(board.division ?? selectedDivision).catch(() => null);
     }, intervalMs);

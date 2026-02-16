@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AcademyBatchState, ExpansionStateV51 } from '@mls/shared/game-types';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 
 type AcademyQuestionSet = {
   setId: string;
@@ -15,6 +15,7 @@ type AcademyCurrentPayload = {
   academyLockActive: boolean;
   academyBatch: AcademyBatchState | null;
   questionSet: AcademyQuestionSet | null;
+  worldCurrentDay: number | null;
   state: ExpansionStateV51;
 };
 
@@ -25,6 +26,19 @@ const TRACK_OPTIONS: Array<{ value: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 
   { value: 'TRIBUNAL', label: 'Tribunal' },
   { value: 'CYBER', label: 'Cyber' }
 ];
+
+function resolveAcademyErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    const details = error.details && typeof error.details === 'object' ? (error.details as Record<string, unknown>) : null;
+    const expectedWorldDay = typeof details?.expectedWorldDay === 'number' ? details.expectedWorldDay : null;
+    const currentWorldDay = typeof details?.currentWorldDay === 'number' ? details.currentWorldDay : null;
+    if (expectedWorldDay !== null && currentWorldDay !== null) {
+      return `${error.message} (current world day: ${currentWorldDay}, required: ${expectedWorldDay}).`;
+    }
+    return error.message;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 function AcademyPageContent() {
   const searchParams = useSearchParams();
@@ -43,6 +57,7 @@ function AcademyPageContent() {
       academyLockActive: response.academyLockActive,
       academyBatch: response.academyBatch,
       questionSet: response.questionSet,
+      worldCurrentDay: response.snapshot?.world.currentDay ?? null,
       state: response.state
     });
   }, []);
@@ -63,9 +78,15 @@ function AcademyPageContent() {
 
   useEffect(() => {
     if (!current) return;
+    const hintedInterval =
+      typeof current.state.performance?.pollingHintMs === 'number'
+        ? Math.max(3_000, Math.min(30_000, current.state.performance.pollingHintMs))
+        : current.academyLockActive
+          ? 5_000
+          : 15_000;
     const interval = window.setInterval(() => {
       void loadCurrent().catch(() => null);
-    }, current.academyLockActive ? 60_000 : 20_000);
+    }, hintedInterval);
     return () => window.clearInterval(interval);
   }, [current, loadCurrent]);
 
@@ -77,7 +98,7 @@ function AcademyPageContent() {
       setMessage(`Batch dimulai: ${response.batchId}. Selesaikan 8 hari academy tanpa keluar dari jalur.`);
       await loadCurrent();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Gagal memulai academy batch.');
+      setMessage(resolveAcademyErrorMessage(err, 'Gagal memulai academy batch.'));
     } finally {
       setBusy(null);
     }
@@ -91,7 +112,7 @@ function AcademyPageContent() {
       setMessage(`Day ${response.academyDay} tersubmit. Score hari ini: ${response.dayScore}.`);
       await loadCurrent();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Gagal submit hari academy.');
+      setMessage(resolveAcademyErrorMessage(err, 'Gagal submit hari academy.'));
     } finally {
       setBusy(null);
     }
@@ -105,16 +126,22 @@ function AcademyPageContent() {
       setMessage(response.message);
       await loadCurrent();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Graduation gagal diproses.');
+      setMessage(resolveAcademyErrorMessage(err, 'Graduation gagal diproses.'));
     } finally {
       setBusy(null);
     }
   };
 
   const batch = current?.academyBatch ?? null;
+  const worldCurrentDay = current?.worldCurrentDay ?? null;
   const lockActive = Boolean(current?.academyLockActive);
   const canSubmit = Boolean(batch && batch.status === 'ACTIVE' && batch.canSubmitToday && current?.questionSet);
-  const canGraduate = Boolean(batch && batch.status === 'ACTIVE' && batch.playerDayProgress >= batch.totalDays);
+  const canGraduate = Boolean(
+    batch &&
+      batch.status === 'ACTIVE' &&
+      batch.playerDayProgress >= batch.totalDays &&
+      (worldCurrentDay === null || worldCurrentDay >= batch.endDay)
+  );
 
   return (
     <div className="space-y-4">
@@ -163,7 +190,9 @@ function AcademyPageContent() {
           <div className="cyber-panel p-3 text-xs space-y-2">
             <p className="text-muted">Batch: <span className="text-text">{batch.batchId}</span></p>
             <p className="text-muted">Track/Tier: <span className="text-text">{batch.track} / {batch.tier}</span> | Status: <span className="text-text">{batch.status}</span></p>
-            <p className="text-muted">Progress player: <span className="text-text">{batch.playerDayProgress}/{batch.totalDays}</span> | Expected world day: <span className="text-text">{batch.expectedWorldDay}</span></p>
+            <p className="text-muted">
+              Progress player: <span className="text-text">{batch.playerDayProgress}/{batch.totalDays}</span> | Expected world day: <span className="text-text">{batch.expectedWorldDay}</span> | Current world day: <span className="text-text">{worldCurrentDay ?? '-'}</span>
+            </p>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               {Array.from({ length: 8 }, (_, idx) => {
                 const day = idx + 1;
@@ -206,14 +235,28 @@ function AcademyPageContent() {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {batch.status === 'ACTIVE' ? (
+              <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
                 <div className="flex gap-2">
-                  <button disabled={!canSubmit || busy !== null} onClick={() => void submitDay()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text disabled:opacity-60">
+                  <button disabled={!canSubmit || busy !== null || !current?.questionSet} onClick={() => void submitDay()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text disabled:opacity-60">
                     {busy === 'submit' ? 'Submitting...' : 'Submit Day Assessment'}
                   </button>
                   <button disabled={!canGraduate || busy !== null} onClick={() => void graduate()} className="rounded border border-border bg-bg px-3 py-1 text-text disabled:opacity-60">
                     {busy === 'graduate' ? 'Graduating...' : 'Run Graduation'}
                   </button>
                 </div>
+                {!batch.canSubmitToday && batch.playerDayProgress < batch.totalDays ? (
+                  <p className="text-[11px] text-muted">
+                    Submit day berikutnya dibuka saat world day mencapai <span className="text-text">{batch.expectedWorldDay}</span>.
+                  </p>
+                ) : null}
+                {batch.playerDayProgress >= batch.totalDays && worldCurrentDay !== null && worldCurrentDay < batch.endDay ? (
+                  <p className="text-[11px] text-muted">
+                    Graduation baru tersedia saat world day mencapai <span className="text-text">{batch.endDay}</span>.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {batch.graduation ? (
