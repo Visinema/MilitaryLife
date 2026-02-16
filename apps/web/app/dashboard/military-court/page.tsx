@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
 export default function MilitaryCourtPage() {
@@ -11,7 +12,8 @@ export default function MilitaryCourtPage() {
   const [message, setMessage] = useState('');
 
   const pending = useMemo(() => (snapshot?.pendingCourtCases ?? []).filter((item) => item.status !== 'CLOSED'), [snapshot?.pendingCourtCases]);
-  const inJudgeDivision = (snapshot?.playerDivision ?? '').toLowerCase().includes('court') || (snapshot?.playerDivision ?? '').toLowerCase().includes('judge');
+  const assignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
+  const inJudgeDivision = assignment.division.toLowerCase().includes('court') || assignment.division.toLowerCase().includes('judge');
 
   const review = async (caseId: string, verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN') => {
     try {
@@ -27,7 +29,7 @@ export default function MilitaryCourtPage() {
     <div className="space-y-3">
       <div className="cyber-panel p-3 text-[11px]">
         <h1 className="text-sm font-semibold text-text">Military Court V3</h1>
-        <p className="text-muted">Panel Hakim: Judge Chair + 3 Judges · Divisi aktif: <span className="text-text">{snapshot?.playerDivision ?? '-'}</span></p>
+        <p className="text-muted">Panel Hakim: Judge Chair + 3 Judges · Divisi aktif: <span className="text-text">{assignment.divisionLabel}</span> · Satuan: <span className="text-text">{assignment.unitLabel}</span> · Jabatan: <span className="text-text">{assignment.positionLabel}</span></p>
         <p className="text-muted">{inJudgeDivision ? 'Anda terdaftar di Divisi Hakim. Tab Pending Sidang aktif.' : 'Gabung Military Judge Corps via rekrutmen untuk akses tugas hakim penuh.'}</p>
         <Link href="/dashboard" className="mt-1 inline-block rounded border border-border bg-bg px-2 py-1 text-text">Back Dashboard</Link>
       </div>

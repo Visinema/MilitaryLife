@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
 export default function DivisionOpsPage() {
@@ -15,6 +16,7 @@ export default function DivisionOpsPage() {
   const [playerParticipates, setPlayerParticipates] = useState(true);
 
   const defaultSecretaryName = useMemo(() => `NPC Secretary ${Math.max(1, (snapshot?.gameDay ?? 1) % 30)}`, [snapshot?.gameDay]);
+  const assignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
 
   const runMission = async () => {
     try {
@@ -42,7 +44,7 @@ export default function DivisionOpsPage() {
     <div className="space-y-3">
       <div className="cyber-panel p-3 text-[11px]">
         <h1 className="text-sm font-semibold text-text">V3 Division Operations</h1>
-        <p className="text-muted">Divisi aktif pemain: <span className="text-text">{snapshot?.playerDivision ?? '-'}</span> · Posisi: <span className="text-text">{snapshot?.playerPosition ?? '-'}</span></p>
+        <p className="text-muted">Divisi aktif pemain: <span className="text-text">{assignment.divisionLabel}</span> · Satuan: <span className="text-text">{assignment.unitLabel}</span> · Jabatan: <span className="text-text">{assignment.positionLabel}</span></p>
         <Link href="/dashboard" className="mt-1 inline-block rounded border border-border bg-bg px-2 py-1 text-text">Back Dashboard</Link>
       </div>
 

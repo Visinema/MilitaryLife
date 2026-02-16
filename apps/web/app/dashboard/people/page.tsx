@@ -7,6 +7,7 @@ import { AvatarFrame, npcUniformTone } from '@/components/avatar-frame';
 import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 import { api } from '@/lib/api-client';
 import { buildWorldV2, type NpcV2Profile, type NpcStatus } from '@/lib/world-v2';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
 function statusTone(status: NpcStatus) {
@@ -65,6 +66,7 @@ export default function PeoplePage() {
   }, [setStoreSnapshot, storeSnapshot]);
 
   const world = useMemo(() => (snapshot ? buildWorldV2(snapshot) : null), [snapshot]);
+  const playerAssignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
 
   const selectedNpc = useMemo(() => {
     if (!world) return null;
@@ -209,7 +211,7 @@ export default function PeoplePage() {
               {snapshot ? (
                 <div className="rounded border border-accent/50 bg-accent/10 px-3 py-2">
                   <p className="text-sm font-semibold text-text">{snapshot.playerName} (You)</p>
-                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch} · {snapshot.playerPosition}</p>
+                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch} · {playerAssignment.divisionLabel} · {playerAssignment.unitLabel} · {playerAssignment.positionLabel}</p>
                   <p className="text-xs text-muted">Terdaftar pada roster people aktif.</p>
                 </div>
               ) : null}

@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { api, ApiError, type CommandAction } from '@/lib/api-client';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { buildWorldV2 } from '@/lib/world-v2';
 import { useGameStore } from '@/store/game-store';
 import { AvatarFrame } from './avatar-frame';
@@ -31,6 +32,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
+  const assignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
   const normalizedRank = snapshot.rankCode.toLowerCase();
   const commandUnlocked =
     (snapshot.rankIndex ?? 0) >= 8 ||
@@ -82,14 +84,16 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
             <AvatarFrame
               name={snapshot.playerName}
-              subtitle={`${world.player.rankLabel} · ${snapshot.playerPosition}`}
+              subtitle={`${world.player.rankLabel} · ${assignment.positionLabel}`}
               uniformTone={world.player.uniformTone}
               ribbons={world.player.ribbons}
               medals={world.player.medals}
               shoulderRankCount={Math.min(4, Math.max(2, snapshot.rankCode.length % 5))}
               details={[
                 `Authority: ${Math.round(world.player.commandAuthority)}%`,
-                `Position: ${snapshot.playerPosition}`,
+                `Division: ${assignment.divisionLabel}`,
+                `Satuan: ${assignment.unitLabel}`,
+                `Position: ${assignment.positionLabel}`,
                 `Influence record buff: +${world.player.influenceRecord}`,
                 `Mission assignment: every ${world.missionBrief.mandatoryAssignmentEveryDays} days`,
                 `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`

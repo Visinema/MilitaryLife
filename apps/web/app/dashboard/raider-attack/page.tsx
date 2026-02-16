@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api-client';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
 export default function RaiderAttackPage() {
@@ -17,6 +18,7 @@ export default function RaiderAttackPage() {
   }, [setSnapshot, snapshot]);
 
   const casualties = useMemo(() => snapshot?.raiderCasualties?.slice().reverse().slice(0, 20) ?? [], [snapshot?.raiderCasualties]);
+  const assignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
 
   const startDefense = async () => {
     setBusy(true);
@@ -38,7 +40,7 @@ export default function RaiderAttackPage() {
       <div className="cyber-panel p-3">
         <p className="text-xs uppercase tracking-[0.14em] text-muted">Situasi Serangan Raider</p>
         <h1 className="text-lg font-semibold text-text">Base Raid Simulation</h1>
-        <p className="text-xs text-muted">Komandan aktif: <span className="text-text">{snapshot?.playerName ?? '-'}</span> · Jabatan: <span className="text-text">{snapshot?.playerPosition ?? '-'}</span></p>
+        <p className="text-xs text-muted">Komandan aktif: <span className="text-text">{snapshot?.playerName ?? '-'}</span> · Divisi: <span className="text-text">{assignment.divisionLabel}</span> · Satuan: <span className="text-text">{assignment.unitLabel}</span> · Jabatan: <span className="text-text">{assignment.positionLabel}</span></p>
         <div className="mt-2 flex gap-2">
           <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-1 text-xs text-text">Back Dashboard</Link>
           <button onClick={startDefense} disabled={busy} className="rounded border border-danger/70 bg-danger/20 px-3 py-1 text-xs text-danger disabled:opacity-60">

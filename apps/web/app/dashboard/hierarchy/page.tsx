@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 import { buildWorldV2 } from '@/lib/world-v2';
+import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
 type SortMode = 'RANK_DESC' | 'AZ' | 'RANK_ASC' | 'DIVISION' | 'MOST_MEDAL';
@@ -87,6 +88,7 @@ export default function HierarchyPage() {
   }, [setStoreSnapshot, storeSnapshot]);
 
   const world = useMemo(() => (snapshot ? buildWorldV2(snapshot) : null), [snapshot]);
+  const playerAssignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
 
   const allMembers = useMemo<MemberView[]>(() => {
     if (!snapshot || !world) return [];
@@ -95,10 +97,10 @@ export default function HierarchyPage() {
       id: 'player-command-slot',
       name: snapshot.playerName,
       rank: snapshot.rankCode,
-      role: snapshot.playerPosition,
-      division: snapshot.playerDivision,
-      subdivision: snapshot.playerDivision === 'Nondivisi' ? 'Belum bergabung divisi/korps' : 'Penempatan awal divisi',
-      unit: snapshot.playerPosition === 'No Position' ? 'Belum ada jabatan' : snapshot.playerPosition,
+      role: playerAssignment.positionLabel,
+      division: playerAssignment.divisionLabel,
+      subdivision: playerAssignment.hasDivisionPlacement ? 'Penempatan awal divisi' : 'Belum bergabung divisi/korps',
+      unit: playerAssignment.unitLabel,
       medals: snapshot.playerMedals ?? [],
       ribbonNames: snapshot.playerRibbons ?? [],
       commandPower: 101,
@@ -120,7 +122,7 @@ export default function HierarchyPage() {
     }));
 
     return [player, ...npcs];
-  }, [snapshot, world]);
+  }, [playerAssignment, snapshot, world]);
 
   const sortedMembers = useMemo(() => sortMembers(allMembers, sortMode), [allMembers, sortMode]);
 
