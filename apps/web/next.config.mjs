@@ -39,6 +39,26 @@ function semverLike(input) {
   };
 }
 
+function resolveBaseVersion(input) {
+  const parsed = semverLike(input);
+  if (!parsed) {
+    return '5.1';
+  }
+
+  const major = Number(parsed.major);
+  const minor = Number(parsed.minor);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) {
+    return '5.1';
+  }
+
+  // Guard against stale env values (for example 4.x) left in hosting settings.
+  if (major < 5 || (major === 5 && minor < 1)) {
+    return '5.1';
+  }
+
+  return `${major}.${minor}`;
+}
+
 function positiveIntegerString(input) {
   const trimmed = input?.trim();
   if (!trimmed || !/^\d+$/.test(trimmed)) {
@@ -87,8 +107,7 @@ function resolveAutoVersion() {
     return overrideVersion;
   }
 
-  const requestedBase = semverLike(process.env.NEXT_PUBLIC_APP_VERSION);
-  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '5.1';
+  const baseVersion = resolveBaseVersion(process.env.NEXT_PUBLIC_APP_VERSION);
 
   const runNumber = positiveIntegerString(process.env.GITHUB_RUN_NUMBER) || positiveIntegerString(process.env.BUILD_NUMBER);
   if (runNumber) {

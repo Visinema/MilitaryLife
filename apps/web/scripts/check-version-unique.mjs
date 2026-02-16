@@ -13,6 +13,34 @@ function shortSha(input) {
   return trimmed.slice(0, 7).toLowerCase();
 }
 
+function semverLike(input) {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
+  if (!match) return null;
+
+  return {
+    major: match[1],
+    minor: match[2],
+    patch: match[3] ?? null
+  };
+}
+
+function resolveBaseVersion(input) {
+  const parsed = semverLike(input);
+  if (!parsed) return '5.1';
+
+  const major = Number(parsed.major);
+  const minor = Number(parsed.minor);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return '5.1';
+
+  // Force minimum release line to 5.1 to avoid stale CI/CD env values.
+  if (major < 5 || (major === 5 && minor < 1)) return '5.1';
+
+  return `${major}.${minor}`;
+}
+
 function gitHeadCommitTimestamp() {
   try {
     return positiveIntegerString(execSync('git show -s --format=%ct HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim());
@@ -33,7 +61,7 @@ function resolveVersion() {
   const override = process.env.NEXT_PUBLIC_APP_VERSION_OVERRIDE?.trim();
   if (override) return override;
 
-  const base = (process.env.NEXT_PUBLIC_APP_VERSION?.trim() || '5.1').split('.').slice(0, 2).join('.');
+  const base = resolveBaseVersion(process.env.NEXT_PUBLIC_APP_VERSION);
   const run = positiveIntegerString(process.env.GITHUB_RUN_NUMBER) || positiveIntegerString(process.env.BUILD_NUMBER);
   if (run) return `${base}.${run}`;
 

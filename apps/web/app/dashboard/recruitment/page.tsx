@@ -85,9 +85,10 @@ export default function RecruitmentPage() {
 
   useEffect(() => {
     const count = board?.questionSet?.questions.length ?? 0;
-    if (!count) return;
+    const setId = board?.questionSet?.setId ?? null;
+    if (!setId || count <= 0) return;
     setAnswers(new Array(count).fill(1));
-  }, [board?.questionSet?.setId]);
+  }, [board?.questionSet?.questions.length, board?.questionSet?.setId]);
 
   useEffect(() => {
     if (!board) return;

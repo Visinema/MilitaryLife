@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AcademyBatchState, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 
@@ -26,7 +26,7 @@ const TRACK_OPTIONS: Array<{ value: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 
   { value: 'CYBER', label: 'Cyber' }
 ];
 
-export default function AcademyPage() {
+function AcademyPageContent() {
   const searchParams = useSearchParams();
   const preferredTier = useMemo(() => (searchParams.get('tier') === '2' ? 2 : 1), [searchParams]);
 
@@ -53,10 +53,13 @@ export default function AcademyPage() {
     });
   }, [loadCurrent]);
 
+  const questionSetId = current?.questionSet?.setId ?? null;
+  const questionCount = current?.questionSet?.questions.length ?? 0;
+
   useEffect(() => {
-    if (!current?.questionSet) return;
-    setAnswers(new Array(current.questionSet.questions.length).fill(1));
-  }, [current?.questionSet?.setId]);
+    if (!questionSetId || questionCount <= 0) return;
+    setAnswers(new Array(questionCount).fill(1));
+  }, [questionCount, questionSetId]);
 
   useEffect(() => {
     if (!current) return;
@@ -248,5 +251,13 @@ export default function AcademyPage() {
 
       {message ? <div className="rounded border border-border bg-panel px-3 py-2 text-xs text-muted">{message}</div> : null}
     </div>
+  );
+}
+
+export default function AcademyPage() {
+  return (
+    <Suspense fallback={<div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading academy console...</div>}>
+      <AcademyPageContent />
+    </Suspense>
   );
 }
