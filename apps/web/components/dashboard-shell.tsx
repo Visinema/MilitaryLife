@@ -92,6 +92,7 @@ export function DashboardShell() {
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
+  const lastLiveMissionCheckDayRef = useRef<number>(-1);
   const snapshotLoadInFlightRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
@@ -412,6 +413,43 @@ export function DashboardShell() {
       window.clearInterval(timer);
     };
   }, [clockOffsetMs, pageReady, pathname, router, setError, setSnapshot, snapshot]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    if (!pageReady) return;
+    if (typeof window === 'undefined') return;
+
+    let checkingMissionBoundary = false;
+
+    const tickMission = () => {
+      const liveDay = deriveLiveGameDay(snapshot, clockOffsetMs);
+      if (liveDay === lastLiveMissionCheckDayRef.current) return;
+      lastLiveMissionCheckDayRef.current = liveDay;
+
+      if (liveDay < 10 || liveDay % 10 !== 0) return;
+      if (checkingMissionBoundary) return;
+      checkingMissionBoundary = true;
+
+      api
+        .snapshot()
+        .then((response) => {
+          setSnapshot(response.snapshot);
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Gagal sinkronisasi boundary mission call');
+        })
+        .finally(() => {
+          checkingMissionBoundary = false;
+        });
+    };
+
+    tickMission();
+    const timer = window.setInterval(tickMission, 900);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [clockOffsetMs, pageReady, setError, setSnapshot, snapshot]);
+
 
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;
@@ -765,30 +803,33 @@ export function DashboardShell() {
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      {snapshot.activeMission?.status === 'ACTIVE' ? (
-        <div className="rounded-md border border-amber-400/60 bg-amber-500/10 p-3 text-sm text-amber-50">
-          <p className="font-semibold">Panggilan Misi Otomatis (tiap 10 hari)</p>
-          <p className="mt-1 text-xs opacity-90">
-            Ikut misi atau tidak? Jika ikut, Anda langsung diarahkan ke frame misi dan waktu tetap pause. Jika tidak, misi berjalan otomatis di background oleh 8 NPC.
-          </p>
-          <p className="mt-1 text-[11px] opacity-80">
-            Mission: {snapshot.activeMission.missionType} · Danger: {snapshot.activeMission.dangerTier} · Issued Day {snapshot.activeMission.issuedDay}
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => void respondMissionCall(true)}
-              disabled={missionCallBusy !== null}
-              className="rounded border border-amber-200/60 bg-amber-200/20 px-2 py-1 text-xs disabled:opacity-50"
-            >
-              {missionCallBusy === 'YES' ? 'Memproses...' : 'Ya, ikut misi'}
-            </button>
-            <button
-              onClick={() => void respondMissionCall(false)}
-              disabled={missionCallBusy !== null}
-              className="rounded border border-border bg-bg px-2 py-1 text-xs text-text disabled:opacity-50"
-            >
-              {missionCallBusy === 'NO' ? 'Memproses...' : 'Tidak, jalankan via NPC'}
-            </button>
+      {snapshot.activeMission?.status === 'ACTIVE' && !snapshot.activeMission.playerParticipates ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4">
+          <div className="w-full max-w-lg rounded-md border border-amber-400/70 bg-panel p-4 shadow-panel">
+            <p className="text-xs uppercase tracking-[0.12em] text-amber-200">Panggilan Misi Otomatis · Day {snapshot.activeMission.issuedDay}</p>
+            <h3 className="mt-1 text-base font-semibold text-amber-100">Ikut misi atau tidak?</h3>
+            <p className="mt-2 text-sm text-muted">
+              Jika ikut: Anda langsung ke halaman deployment misi dan waktu game tetap pause. Jika tidak: misi berjalan otomatis oleh 8 NPC di background.
+            </p>
+            <p className="mt-2 text-xs text-amber-100/90">
+              Mission: {snapshot.activeMission.missionType} · Danger: {snapshot.activeMission.dangerTier}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => void respondMissionCall(true)}
+                disabled={missionCallBusy !== null}
+                className="rounded border border-amber-200/60 bg-amber-200/20 px-3 py-1.5 text-sm text-amber-50 disabled:opacity-50"
+              >
+                {missionCallBusy === 'YES' ? 'Memproses...' : 'Ya, ikuti misi'}
+              </button>
+              <button
+                onClick={() => void respondMissionCall(false)}
+                disabled={missionCallBusy !== null}
+                className="rounded border border-border bg-bg px-3 py-1.5 text-sm text-text disabled:opacity-50"
+              >
+                {missionCallBusy === 'NO' ? 'Memproses...' : 'Tidak, jalankan NPC'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

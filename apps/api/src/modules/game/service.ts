@@ -550,6 +550,7 @@ async function withLockedState(
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
     maybeIssueMissionCall(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+    enforceMissionCallPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
     enforceCeremonyPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
 
     if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
@@ -726,6 +727,13 @@ function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinu
   if (state.pause_reason !== 'DECISION') {
     pauseState(state, 'MODAL', nowMs, timeoutMinutes);
   }
+}
+
+function enforceMissionCallPause(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
+  if (!state.active_mission || state.active_mission.status !== 'ACTIVE') return;
+  if (state.active_mission.playerParticipates) return;
+  if (state.pause_reason === 'DECISION') return;
+  pauseState(state, 'MODAL', nowMs, timeoutMinutes);
 }
 
 export async function runTraining(
