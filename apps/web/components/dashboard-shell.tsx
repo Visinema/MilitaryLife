@@ -355,17 +355,36 @@ export function DashboardShell() {
     if (!pageReady) return;
     if (typeof window === 'undefined') return;
 
+    let checkingBoundary = false;
+
     const tick = () => {
       const liveDay = deriveLiveGameDay(snapshot, clockOffsetMs);
       if (liveDay === lastLiveCeremonyCheckDayRef.current) return;
       lastLiveCeremonyCheckDayRef.current = liveDay;
 
       if (liveDay < 12 || liveDay % 12 !== 0) return;
-      const ceremonyCycleDay = liveDay;
-      void loadSnapshot();
-      ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
-        router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}&boundary=1`);
-      });
+      if (checkingBoundary) return;
+      checkingBoundary = true;
+
+      api
+        .snapshot()
+        .then((response) => {
+          setSnapshot(response.snapshot);
+          if (!response.snapshot.ceremonyDue) return;
+          if (pathname.startsWith('/dashboard/ceremony')) return;
+          const ceremonyCycleDay = response.snapshot.gameDay < 12
+            ? 12
+            : response.snapshot.gameDay - (response.snapshot.gameDay % 12);
+          ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
+            router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}&boundary=1`);
+          });
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Gagal sinkronisasi boundary upacara');
+        })
+        .finally(() => {
+          checkingBoundary = false;
+        });
     };
 
     tick();
@@ -373,7 +392,7 @@ export function DashboardShell() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [clockOffsetMs, loadSnapshot, pageReady, router, snapshot]);
+  }, [clockOffsetMs, pageReady, pathname, router, setError, setSnapshot, snapshot]);
 
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;
