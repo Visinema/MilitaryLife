@@ -139,6 +139,7 @@ Mailbox & social:
 
 Legacy compatibility (tetap hidup sementara):
 - Endpoint `game`/`game v3` lama tetap tersedia sebagai compatibility layer.
+- Route legacy kritikal (termasuk `POST /game/actions/mission-call-response`) dipertahankan sementara untuk mencegah 404 dari frontend bundle lama/cached.
 - Endpoint lama ditandai deprecated bertahap; state utama ada di jalur `game-v5`.
 - Endpoint legacy yang mulai ditinggalkan untuk dashboard utama:
   - `GET /game/news` -> gunakan `GET /game/v5/social/timeline`
