@@ -237,13 +237,11 @@ Frontend:
 
 ## 9. Deployment (Strict Free-Tier Path)
 
-Railway deploy behavior is pinned via `railway.toml` (`build:api` + root `start` command) to avoid monorepo auto-detection failures.
+Railway deploy behavior is pinned via `railway.toml` to use the repo `Dockerfile` builder (API-focused context) and avoid Nixpacks/buildx instability on monorepo pushes.
 
 Important build-context guardrail:
-- Do **not** exclude `.nixpacks/` in `.dockerignore`.
-- Railway-generated Dockerfile copies `.nixpacks/nixpkgs-*.nix`; excluding that folder causes build failure:
-  `failed to compute cache key ... "/.nixpacks/nixpkgs-*.nix": not found`.
-- For API service deploy, exclude `apps/web` from Docker context (`.dockerignore`) to keep image layers small and reduce registry push instability on monorepo builds.
+- Keep `apps/web` excluded in `.dockerignore` for API service deploy to reduce context size and lower registry push failure risk.
+- Keep `.nixpacks/` available in context as fallback safety if builder mode is switched back to Nixpacks.
 
 ## A. Railway (Backend + PostgreSQL)
 
@@ -256,7 +254,9 @@ Important build-context guardrail:
    - Do not use `localhost` for `DATABASE_URL` in Railway production.
 6. Deploy API service.
    - For fresh Railway Postgres, set `DATABASE_PRIVATE_URL` (or `DATABASE_URL`) to your service endpoint, e.g. `postgresql://<user>:<pass>@postgres-fxbi-production.up.railway.app:5432/<db>?sslmode=require`.
-7. Run migration command in Railway service shell:
+7. Migration strategy:
+   - Default: automatic on boot (`AUTO_MIGRATE_ON_BOOT=true`, `AUTO_MIGRATE_STRICT=true`).
+   - Manual fallback (if needed), run in Railway service shell:
 
 ```bash
 corepack pnpm --filter @mls/api migrate
