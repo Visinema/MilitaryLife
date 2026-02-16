@@ -171,7 +171,7 @@ const TRACKS: Track[] = [
       { id: 'cy-3', prompt: 'Kapan aktifkan fallback channel?', choices: ['Primary comm compromised', 'Normal operations', 'During lunch', 'At random'], answer: 'Primary comm compromised' },
       { id: 'cy-4', prompt: 'Prinsip patch management?', choices: ['Risk-based priority with rollback plan', 'Patch never', 'Patch without backup', 'Patch public network first'], answer: 'Risk-based priority with rollback plan' }
     ]
-  }
+  },
   {
     id: 'military-judge-corps',
     name: 'Military Judge Corps',
