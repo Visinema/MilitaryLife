@@ -94,10 +94,10 @@ export default function MilitaryLawPage() {
                 <p className="font-semibold text-text">{COUNCIL_LABEL[council.councilType]} ({council.councilType})</p>
                 <p className="text-muted">Agenda: {council.agenda}</p>
                 <p className="text-muted">
-                  Opened Day {council.openedDay} · Quorum {council.quorum} · Sisa ke quorum: {remaining}
+                  Opened Day {council.openedDay} | Quorum {council.quorum} | Sisa ke quorum: {remaining}
                 </p>
                 <p className="text-muted">
-                  Vote: Approve {council.votes.approve} · Reject {council.votes.reject} · Abstain {council.votes.abstain}
+                  Vote: Approve {council.votes.approve} | Reject {council.votes.reject} | Abstain {council.votes.abstain}
                 </p>
                 <div className="flex flex-wrap gap-1 pt-1">
                   <button
@@ -140,8 +140,8 @@ export default function MilitaryLawPage() {
             })
             .map((entry) => (
               <div key={entry.councilId} className="rounded border border-border/50 bg-panel px-2 py-1">
-                <p className="text-text">{COUNCIL_LABEL[entry.councilType]} · {entry.status}</p>
-                <p className="text-muted">Day {entry.openedDay}{entry.closedDay ? ` -> ${entry.closedDay}` : ''} · Agenda: {entry.agenda}</p>
+                <p className="text-text">{COUNCIL_LABEL[entry.councilType]} | {entry.status}</p>
+                <p className="text-muted">Day {entry.openedDay}{entry.closedDay ? ` -> ${entry.closedDay}` : ''} | Agenda: {entry.agenda}</p>
                 <p className="text-muted">Vote A/R/AB: {entry.votes.approve}/{entry.votes.reject}/{entry.votes.abstain}</p>
               </div>
             ))}

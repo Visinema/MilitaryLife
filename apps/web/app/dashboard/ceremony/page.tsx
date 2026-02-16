@@ -64,8 +64,9 @@ export default function CeremonyPage() {
     if (loading) return;
     if (data.ceremony?.status === 'PENDING') return;
 
+    const doneToken = String(data.ceremony?.ceremonyDay ?? 'sync');
     const timer = window.setTimeout(() => {
-      router.replace('/dashboard');
+      router.replace(`/dashboard?ceremonyDone=${encodeURIComponent(doneToken)}`);
     }, 200);
 
     return () => {

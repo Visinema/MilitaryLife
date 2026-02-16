@@ -62,8 +62,8 @@ export default function MilitaryCourtPage() {
       <div className="cyber-panel p-3 text-[11px]">
         <h1 className="text-sm font-semibold text-text">Military Court V5</h1>
         <p className="text-muted">
-          Panel Hakim: Judge Chair + 3 Judges · Divisi aktif: <span className="text-text">{assignment.divisionLabel}</span> · Satuan:{' '}
-          <span className="text-text">{assignment.unitLabel}</span> · Jabatan: <span className="text-text">{assignment.positionLabel}</span>
+          Panel Hakim: Judge Chair + 3 Judges | Divisi aktif: <span className="text-text">{assignment.divisionLabel}</span> | Satuan:{' '}
+          <span className="text-text">{assignment.unitLabel}</span> | Jabatan: <span className="text-text">{assignment.positionLabel}</span>
         </p>
         <p className="text-muted">
           {inJudgeDivision
@@ -81,10 +81,10 @@ export default function MilitaryCourtPage() {
         {pending.map((item) => (
           <div key={item.caseId} className="rounded border border-border/60 bg-bg/70 p-2">
             <p className="font-semibold text-text">
-              {item.caseType} · {item.targetType}
+              {item.caseType} | {item.targetType}
             </p>
             <p className="text-muted">
-              Case: {item.caseId} · Requested Day: {item.requestedDay} · Status: {item.status}
+              Case: {item.caseId} | Requested Day: {item.requestedDay} | Status: {item.status}
             </p>
 
             {item.caseType === 'MUTATION' ? (

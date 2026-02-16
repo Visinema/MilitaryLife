@@ -85,9 +85,9 @@ export default function MedalsPage() {
         {sessionRows.length === 0 ? <p className="text-muted">Belum ada sesi DOM.</p> : null}
         {sessionRows.map((session) => (
           <article key={session.sessionId} className="rounded border border-border/60 bg-bg/70 p-2">
-            <p className="text-text">Sesi #{session.sessionNo} · {session.participantMode}</p>
-            <p className="text-muted">Status: {session.status} · Medal Quota: {Number(session.result?.medalQuota ?? 0) || 0}</p>
-            <p className="text-muted">Score: {Number(session.result?.successScore ?? 0) || '-'} · Casualties: {Number(session.result?.casualties ?? 0) || '-'}</p>
+            <p className="text-text">Sesi #{session.sessionNo} | {session.participantMode}</p>
+            <p className="text-muted">Status: {session.status} | Medal Quota: {Number(session.result?.medalQuota ?? 0) || 0}</p>
+            <p className="text-muted">Score: {Number(session.result?.successScore ?? 0) || '-'} | Casualties: {Number(session.result?.casualties ?? 0) || '-'}</p>
           </article>
         ))}
       </div>
@@ -97,7 +97,7 @@ export default function MedalsPage() {
         {!data.ceremony || data.ceremony.awards.length === 0 ? <p className="text-muted">Belum ada award yang dipublikasikan.</p> : null}
         {data.ceremony?.awards.map((award) => (
           <article key={`${award.orderNo}-${award.recipientName}`} className="rounded border border-border/60 bg-bg/70 p-2">
-            <p className="text-text">#{award.orderNo} · {award.recipientName}</p>
+            <p className="text-text">#{award.orderNo} | {award.recipientName}</p>
             <p className="text-muted">{award.medal} / {award.ribbon}</p>
             <p className="text-muted">{award.reason}</p>
           </article>

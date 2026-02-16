@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "node ./scripts/check-version-unique.mjs && node ./scripts/next-build.mjs",
+    "build": "node ./scripts/check-version-unique.mjs && node ./scripts/check-utf8-sources.mjs && node ./scripts/next-build.mjs",
     "start": "next start -p 3000",
     "check:version": "node ./scripts/check-version-unique.mjs",
+    "check:utf8": "node ./scripts/check-utf8-sources.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "next lint"
   },

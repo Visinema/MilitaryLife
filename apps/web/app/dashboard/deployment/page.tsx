@@ -123,7 +123,7 @@ function DeploymentPageContent() {
         {!loading && !cycle ? <p className="mt-2 text-muted">Cycle DOM belum tersedia.</p> : null}
         {cycle ? (
           <p className="mt-1 text-xs text-muted">
-            {cycle.cycleId} · Day {cycle.startDay} - {cycle.endDay} · Status {cycle.status}
+            {cycle.cycleId} | Day {cycle.startDay} - {cycle.endDay} | Status {cycle.status}
           </p>
         ) : null}
 
@@ -131,10 +131,10 @@ function DeploymentPageContent() {
           {orderedSessions.map((session) => (
             <article key={session.sessionId} className="rounded border border-border/60 bg-bg/60 p-2 text-xs">
               <p className="text-text font-medium">
-                Sesi #{session.sessionNo} · {session.participantMode}
+                Sesi #{session.sessionNo} | {session.participantMode}
               </p>
               <p className="text-muted">
-                Status: {session.status} · NPC Slots: {session.npcSlots} · Player Joined: {session.playerJoined ? 'YES' : 'NO'}
+                Status: {session.status} | NPC Slots: {session.npcSlots} | Player Joined: {session.playerJoined ? 'YES' : 'NO'}
               </p>
 
               <div className="mt-2 flex flex-wrap gap-1">

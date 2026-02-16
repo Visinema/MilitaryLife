@@ -171,8 +171,8 @@ export default function DivisionOpsPage() {
         {orders.length === 0 ? <p className="text-muted">Belum ada order.</p> : null}
         {orders.slice(0, 30).map((order) => (
           <div key={order.orderId} className="rounded border border-border/60 bg-bg/70 p-2">
-            <p className="text-text">{order.orderId} · {order.priority} · {order.status}</p>
-            <p className="text-muted">Issued day {order.issuedDay} · Due day {order.ackDueDay} · Target divisi: {order.targetDivision ?? '-'}</p>
+            <p className="text-text">{order.orderId} | {order.priority} | {order.status}</p>
+            <p className="text-muted">Issued day {order.issuedDay} | Due day {order.ackDueDay} | Target divisi: {order.targetDivision ?? '-'}</p>
           </div>
         ))}
       </div>
