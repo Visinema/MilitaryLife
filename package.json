@@ -8,7 +8,8 @@
   "scripts": {
     "dev:web": "corepack pnpm --filter @mls/web dev",
     "dev:api": "corepack pnpm --filter @mls/api dev",
-    "build": "corepack pnpm -r build",
+    "build": "corepack pnpm run build:api",
+    "build:all": "corepack pnpm -r build",
     "build:api": "corepack pnpm --filter @mls/shared build && corepack pnpm --filter @mls/api build",
     "typecheck": "corepack pnpm -r typecheck",
     "lint": "corepack pnpm -r lint",
