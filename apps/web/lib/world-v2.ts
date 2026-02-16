@@ -1,5 +1,6 @@
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
 export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
@@ -192,7 +193,7 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
     branch: toBranchLabel(snapshot.branch),
     rank,
     role: fallen ? `Fallen (${fallen.role})` : identity.position || roleFromUniversalRank(rank, slot),
-    division: identity.division || 'Infantry Division',
+    division: identity.division || REGISTERED_DIVISIONS[0]?.name || 'Unassigned Division',
     subdivision: identity.subdivision || 'Recon',
     unit: identity.unit || '1st Brigade',
     medals,

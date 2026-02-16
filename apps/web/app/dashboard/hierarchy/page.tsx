@@ -167,7 +167,7 @@ export default function HierarchyPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 cyber-panel p-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-muted">Cyber Command Chain</p>
@@ -183,7 +183,7 @@ export default function HierarchyPage() {
         </div>
       </div>
 
-      <section className="cyber-panel p-3 text-xs">
+      <section className="cyber-panel p-2 text-xs">
         <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Sort Hierarchy</p>
         <div className="mt-2 grid gap-1 sm:grid-cols-5">
           {([
@@ -196,7 +196,7 @@ export default function HierarchyPage() {
             <button
               key={mode}
               onClick={() => setSortMode(mode)}
-              className={`rounded border px-2 py-1 text-[11px] ${sortMode === mode ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
+              className={`rounded border px-2 py-1 text-[10px] leading-none ${sortMode === mode ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
             >
               {label}
             </button>
@@ -208,9 +208,9 @@ export default function HierarchyPage() {
       {!snapshot && !error ? <p className="text-sm text-muted">Loading hierarchy...</p> : null}
 
       {world ? (
-        <section className="cyber-panel p-3 text-xs space-y-2">
+        <section className="cyber-panel p-2 text-xs space-y-1.5">
           <h2 className="text-sm font-semibold text-text">Frame Divisi/Korps/Satuan (Collapsible)</h2>
-          <div className="max-h-[36rem] space-y-2 overflow-y-auto pr-1">
+          <div className="max-h-[36rem] space-y-1 overflow-y-auto pr-1">
             {groupedFrames.map((group) => {
               const expanded = Boolean(expandedFrames[group.frame]);
               return (
@@ -218,22 +218,22 @@ export default function HierarchyPage() {
                   <button
                     type="button"
                     onClick={() => toggleFrame(group.frame)}
-                    className="flex w-full items-center justify-between px-2 py-2 text-left"
+                    className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
                   >
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-muted">{group.frame}</span>
-                    <span className="text-[10px] text-text">{expanded ? 'Collapse' : 'Expand'} · {group.members.length} personel</span>
+                    <span className="truncate text-[10px] uppercase tracking-[0.08em] text-muted">{group.frame}</span>
+                    <span className="whitespace-nowrap text-[10px] text-text">{expanded ? 'Collapse' : 'Expand'} · {group.members.length}</span>
                   </button>
 
                   {expanded ? (
-                    <div className="space-y-1 border-t border-border/40 px-2 py-2">
+                    <div className="space-y-1 border-t border-border/40 px-1.5 py-1.5">
                       {group.members.map((member) => (
-                        <div key={member.id} className="grid gap-1 rounded border border-border/40 px-2 py-1 sm:grid-cols-[1.3fr,1fr,1fr,auto]">
-                          <p className="truncate text-text">
+                        <div key={member.id} className="grid gap-1 rounded border border-border/40 px-1.5 py-1 text-[10px] sm:grid-cols-[1.3fr,1fr,1fr,auto]">
+                          <p className="truncate leading-tight text-text">
                             {member.name} <span className="text-[10px] text-muted">({member.type})</span>
                           </p>
-                          <p className="truncate text-muted">{member.rank} · {member.role}</p>
-                          <p className="truncate text-muted">{member.subdivision} / {member.unit}</p>
-                          <p className="text-muted">Medal {member.medals.length}</p>
+                          <p className="truncate leading-tight text-muted">{member.rank} · {member.role}</p>
+                          <p className="truncate leading-tight text-muted">{member.subdivision} / {member.unit}</p>
+                          <p className="text-muted">M:{member.medals.length}</p>
                         </div>
                       ))}
                     </div>

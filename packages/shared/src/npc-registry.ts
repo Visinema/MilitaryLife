@@ -1,4 +1,5 @@
 import type { BranchCode } from './constants.js';
+import { DIVISION_REFERENCE_PROFILES } from './division-registry';
 
 export const MAX_ACTIVE_NPCS = 50;
 
@@ -13,10 +14,7 @@ export interface NpcIdentity {
 
 const FIRST_NAMES = ['James', 'Michael', 'William', 'David', 'Joseph', 'Daniel', 'Matthew', 'Anthony', 'Andrew', 'Christopher', 'Robert', 'Thomas', 'Ryan', 'Logan', 'Nathan'];
 const LAST_NAMES = ['Anderson', 'Walker', 'Rodriguez', 'Bennett', 'Parker', 'Morgan', 'Hughes', 'Cooper', 'Price', 'Foster', 'Sullivan', 'Reed', 'Campbell', 'Brooks', 'Hayes'];
-const DIVISIONS = ['Infantry Division', 'Naval Operations', 'Logistics Command', 'Signals & Cyber'];
-const SUBDIVISIONS = ['Recon', 'Cyber', 'Support', 'Training', 'Forward Command', 'Rapid Response'];
-const UNITS = ['1st Brigade', '2nd Fleet Group', 'Joint Recon Unit', 'Medical Support Unit', 'Rapid Response Group', 'Engineering Task Unit'];
-const POSITIONS = ['Division Commander', 'Deputy Commander', 'Operations Officer', 'Intel Officer', 'Logistics Officer', 'Medical Officer'];
+const DIVISION_NAMES = DIVISION_REFERENCE_PROFILES.map((profile) => profile.name);
 
 function pick<T>(arr: T[], idx: number): T {
   return arr[Math.abs(idx) % arr.length] as T;
@@ -28,13 +26,15 @@ function branchSeed(branch: BranchCode): number {
 
 export function getNpcIdentity(branch: BranchCode, slot: number): NpcIdentity {
   const seed = branchSeed(branch) + slot * 17;
+  const profile = DIVISION_REFERENCE_PROFILES[Math.abs(seed * 5) % DIVISION_REFERENCE_PROFILES.length];
+
   return {
     slot,
     name: `${pick(FIRST_NAMES, seed)} ${pick(LAST_NAMES, seed * 3)}`,
-    division: pick(DIVISIONS, seed * 5),
-    subdivision: pick(SUBDIVISIONS, seed * 7),
-    unit: pick(UNITS, seed * 11),
-    position: pick(POSITIONS, seed * 13)
+    division: profile?.name ?? pick(DIVISION_NAMES, seed * 5),
+    subdivision: pick(profile?.subdivisions ?? ['General Support Unit'], seed * 7),
+    unit: pick(profile?.units ?? ['Command Response Team'], seed * 11),
+    position: pick(profile?.positions ?? ['Operations Officer'], seed * 13)
   };
 }
 
