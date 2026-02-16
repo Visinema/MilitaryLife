@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
@@ -19,7 +19,7 @@ const STRATEGY_OPTIONS = [
   { id: 'escort-defensive', label: 'Escort Defensive' }
 ];
 
-export default function DeploymentPage() {
+function DeploymentPageContent() {
   const searchParams = useSearchParams();
   const fromMissionCall = searchParams.get('missionCall') === '1';
   const snapshot = useGameStore((state) => state.snapshot);
@@ -195,5 +195,13 @@ export default function DeploymentPage() {
 
       {message ? <p className="rounded border border-border bg-panel px-3 py-2 text-sm text-muted">{message}</p> : null}
     </div>
+  );
+}
+
+export default function DeploymentPage() {
+  return (
+    <Suspense fallback={<div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading deployment console...</div>}>
+      <DeploymentPageContent />
+    </Suspense>
   );
 }
