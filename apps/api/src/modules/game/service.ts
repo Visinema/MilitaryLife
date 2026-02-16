@@ -213,7 +213,7 @@ function composeCustomRules(selection: MilitaryLawDraftSelection): MilitaryLawEn
   return {
     cabinetSeatCount: cabinet.value,
     chiefOfStaffTermLimitDays: chiefTerm.value,
-    optionalPosts: optionalPosts.posts,
+    optionalPosts: [...optionalPosts.posts],
     promotionPointMultiplierPct,
     npcCommandDrift
   };
