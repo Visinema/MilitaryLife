@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ZodSchema } from 'zod';
+import type { ZodTypeAny, output } from 'zod';
 
-export function parseOrThrow<T>(schema: ZodSchema<T>, payload: unknown): T {
+export function parseOrThrow<S extends ZodTypeAny>(schema: S, payload: unknown): output<S> {
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
     const error = new Error('Validation failed');
