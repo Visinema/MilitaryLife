@@ -708,7 +708,12 @@ function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boo
 
 function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
   const missionIntervalDays = 10;
-  if (state.active_mission?.status === 'ACTIVE') return;
+  if (state.active_mission?.status === 'ACTIVE') {
+    if (!state.paused_at_ms && state.pause_reason !== 'DECISION') {
+      pauseState(state, 'MODAL', nowMs, timeoutMinutes);
+    }
+    return;
+  }
 
   const currentCycle = Math.floor(state.current_day / missionIntervalDays);
   const lastIssuedCycle = Math.floor(Math.max(0, state.mission_call_issued_day) / missionIntervalDays);
