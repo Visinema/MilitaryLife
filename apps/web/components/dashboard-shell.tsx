@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { usePathname, useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import type { CountryCode } from '@mls/shared/constants';
+import type { ExpansionStateV51 } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { deriveLiveGameDay } from '@/lib/clock';
@@ -88,6 +89,7 @@ export function DashboardShell() {
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const [missionCallBusy, setMissionCallBusy] = useState<null | 'YES' | 'NO'>(null);
+  const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
@@ -108,8 +110,17 @@ export function DashboardShell() {
       setLoading(true);
     }
     try {
-      const response = await api.snapshot();
-      setSnapshot(response.snapshot);
+      const [snapshotResult, expansionResult] = await Promise.allSettled([api.snapshot(), api.v5ExpansionState()]);
+      if (snapshotResult.status !== 'fulfilled') {
+        throw snapshotResult.reason;
+      }
+
+      setSnapshot(snapshotResult.value.snapshot);
+      if (expansionResult.status === 'fulfilled') {
+        setExpansionState(expansionResult.value.state);
+      } else {
+        setExpansionState(null);
+      }
       hasInitialSnapshotRef.current = true;
       setNoProfile(false);
     } catch (err) {
@@ -152,7 +163,7 @@ export function DashboardShell() {
 
     const schedule = () => {
       if (cancelled) return;
-      const intervalMs = snapshot.paused ? 60_000 : 20_000;
+      const intervalMs = snapshot.paused || expansionState?.academyLockActive ? 60_000 : 20_000;
       timer = window.setTimeout(() => {
         if (document.visibilityState === 'visible') {
           void loadSnapshot();
@@ -178,7 +189,13 @@ export function DashboardShell() {
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [loadSnapshot, noProfile, snapshot]);
+  }, [expansionState?.academyLockActive, loadSnapshot, noProfile, snapshot]);
+
+  useEffect(() => {
+    if (!expansionState?.academyLockActive) return;
+    if (pathname.startsWith('/dashboard/academy')) return;
+    router.replace('/dashboard/academy?lock=1');
+  }, [expansionState?.academyLockActive, pathname, router]);
 
   const onCreateProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -594,8 +611,8 @@ export function DashboardShell() {
         onToggleTimeScale={() => void toggleTimeScale()}
         timeScaleBusy={timeScaleBusy}
       />
-      <div className="rounded-md border border-border/60 bg-panel/60 px-3 py-1.5 text-[11px] text-muted">Navigasi V4: gunakan Quick Tabs untuk akses Status, Perintah, dan semua halaman dashboard lebih cepat.</div>
-      <V2CommandCenter snapshot={snapshot} />
+      <div className="rounded-md border border-border/60 bg-panel/60 px-3 py-1.5 text-[11px] text-muted">Navigasi V5.1: Quick Tabs desktop dipindah ke header atas untuk akses Status, Perintah, dan semua halaman lebih cepat.</div>
+      <V2CommandCenter snapshot={snapshot} expansionState={expansionState} />
       <div className="cyber-panel space-y-2 p-2.5">
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-5">
           {TRAVEL_PLACES.map((entry) => (
@@ -612,14 +629,14 @@ export function DashboardShell() {
 
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-4">
           <button
-            onClick={() => { setAcademyTierDraft(1); setAcademyOpen(true); }}
+            onClick={() => { void router.push('/dashboard/academy?tier=1'); }}
             disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >
-            {actionBusy === 'ACADEMY_T1' ? 'Processing...' : 'Military Academy Officer'}
+            {expansionState?.academyLockActive ? 'Resume Academy Batch' : (actionBusy === 'ACADEMY_T1' ? 'Processing...' : 'Military Academy Officer')}
           </button>
           <button
-            onClick={() => { setAcademyTierDraft(2); setAcademyOpen(true); }}
+            onClick={() => { void router.push('/dashboard/academy?tier=2'); }}
             disabled={Boolean(actionBusy) || Boolean(snapshot.pendingDecision)}
             className="rounded border border-border bg-bg/70 px-2 py-1.5 text-[11px] text-text hover:border-accent disabled:opacity-60"
           >

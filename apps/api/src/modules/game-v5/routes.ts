@@ -1,17 +1,26 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import { parseOrThrow, sendValidationError } from '../../utils/validate.js';
 import {
+  academyBatchStartSchemaV51,
+  academyBatchSubmitDaySchemaV51,
   academyEnrollSchemaV5,
   certificationExamSchemaV5,
   missionExecuteSchemaV5,
   missionPlanSchemaV5,
   npcListQuerySchema,
+  recruitmentApplySchemaV51,
+  recruitmentBoardQuerySchemaV51,
   sessionHeartbeatSchema,
   sessionStartSchema,
   sessionSyncQuerySchema
 } from './schema.js';
 import {
+  applyRecruitmentV51,
+  getAcademyBatchCurrentV51,
+  getExpansionStateV51,
+  getRecruitmentBoardV51,
   completeCeremonyV5,
+  graduateAcademyBatchV51,
   enrollAcademyV5,
   executeMissionV5,
   getCurrentCeremonyV5,
@@ -19,8 +28,10 @@ import {
   heartbeatSessionV5,
   listNpcsV5,
   planMissionV5,
+  startAcademyBatchV51,
   startSessionV5,
   submitCertificationExamV5,
+  submitAcademyBatchDayV51,
   syncSessionV5
 } from './service.js';
 
@@ -105,6 +116,54 @@ export async function gameV5Routes(app: FastifyInstance): Promise<void> {
     try {
       const body = parseOrThrow(certificationExamSchemaV5, request.body ?? {});
       await submitCertificationExamV5(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/expansion/state', async (request, reply) => {
+    await getExpansionStateV51(request, reply);
+  });
+
+  app.post('/academy/batch/start', async (request, reply) => {
+    try {
+      const body = parseOrThrow(academyBatchStartSchemaV51, request.body ?? {});
+      await startAcademyBatchV51(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/academy/batch/current', async (request, reply) => {
+    await getAcademyBatchCurrentV51(request, reply);
+  });
+
+  app.post('/academy/batch/submit-day', async (request, reply) => {
+    try {
+      const body = parseOrThrow(academyBatchSubmitDaySchemaV51, request.body ?? {});
+      await submitAcademyBatchDayV51(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/academy/batch/graduate', async (request, reply) => {
+    await graduateAcademyBatchV51(request, reply);
+  });
+
+  app.get('/recruitment/board', async (request, reply) => {
+    try {
+      const query = parseOrThrow(recruitmentBoardQuerySchemaV51, request.query ?? {});
+      await getRecruitmentBoardV51(request, reply, query.division);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/recruitment/apply', async (request, reply) => {
+    try {
+      const body = parseOrThrow(recruitmentApplySchemaV51, request.body ?? {});
+      await applyRecruitmentV51(request, reply, body);
     } catch (error) {
       sendValidationError(reply, error);
     }

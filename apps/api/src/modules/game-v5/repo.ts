@@ -2,6 +2,11 @@
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import type {
+  AcademyBatchState,
+  AcademyBatchStanding,
+  DivisionQuotaState,
+  ExpansionStateV51,
+  RecruitmentCompetitionEntry,
   CeremonyCycleV5,
   CertificationRecordV5,
   GameSnapshotV5,
@@ -11,10 +16,11 @@ import type {
   NpcRuntimeStatus,
   WorldDelta
 } from '@mls/shared/game-types';
-import { buildNpcRegistry } from '@mls/shared/npc-registry';
+import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import type { BranchCode } from '@mls/shared/constants';
 
-export const V5_MAX_NPCS = 80;
+export const V5_MAX_NPCS = MAX_ACTIVE_NPCS;
 
 export interface V5ProfileBase {
   profileId: string;
@@ -102,7 +108,22 @@ export async function getProfileBaseByUserId(client: PoolClient, userId: string)
 }
 
 export async function clearV5World(client: PoolClient, profileId: string): Promise<void> {
-  const tables = [
+  // academy_batch_members does not have profile_id, so it must be cleared via batch linkage.
+  await client.query(
+    `
+      DELETE FROM academy_batch_members
+      WHERE batch_id IN (
+        SELECT batch_id FROM academy_batches WHERE profile_id = $1
+      )
+    `,
+    [profileId]
+  );
+
+  const tablesWithProfileId = [
+    'quota_decision_logs',
+    'recruitment_applications_v51',
+    'academy_batches',
+    'division_quota_states',
     'game_world_deltas',
     'recruitment_queue',
     'ceremony_awards',
@@ -119,7 +140,7 @@ export async function clearV5World(client: PoolClient, profileId: string): Promi
     'game_worlds'
   ];
 
-  for (const table of tables) {
+  for (const table of tablesWithProfileId) {
     await client.query(`DELETE FROM ${table} WHERE profile_id = $1`, [profileId]);
   }
 }
@@ -140,7 +161,7 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
   await client.query(
     `
       INSERT INTO player_runtime (profile_id, money_cents, morale, health, rank_index, assignment, command_authority, fatigue)
-      VALUES ($1, 0, 70, 82, 0, 'Field Command', 40, 0)
+      VALUES ($1, 0, 70, 82, 0, 'Nondivisi Cadet', 40, 0)
     `,
     [profile.profileId]
   );
@@ -160,9 +181,9 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         npcId,
         slotNo,
         identity?.name ?? `NPC ${slotNo}`,
-        identity?.division ?? 'General Command',
-        identity?.unit ?? 'Unit',
-        identity?.position ?? 'Operations Officer'
+        'Nondivisi',
+        'Academy Cadet Unit',
+        'Cadet Trainee'
       ]
     );
 
@@ -885,6 +906,637 @@ export async function listCertifications(client: PoolClient, profileId: string, 
     expiresDay: row.expires_day,
     valid: row.valid
   }));
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function parseBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+  }
+  return fallback;
+}
+
+export interface AcademyDailyScoreRecord {
+  academyDay: number;
+  worldDay: number;
+  score: number;
+  source: 'PLAYER' | 'NPC';
+}
+
+export interface AcademyBatchMemberRecord {
+  batchId: string;
+  memberKey: string;
+  holderType: 'PLAYER' | 'NPC';
+  npcId: string | null;
+  dayProgress: number;
+  dailyScores: AcademyDailyScoreRecord[];
+  finalScore: number;
+  passed: boolean;
+  rankPosition: number;
+  extraCertCount: number;
+}
+
+export interface AcademyBatchRecord {
+  batchId: string;
+  profileId: string;
+  track: string;
+  tier: number;
+  startDay: number;
+  endDay: number;
+  status: 'ACTIVE' | 'GRADUATED' | 'FAILED';
+  lockEnabled: boolean;
+  graduationPayload: Record<string, unknown>;
+}
+
+function normalizeDailyScores(value: unknown): AcademyDailyScoreRecord[] {
+  return parseJsonArray(value)
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null;
+      const item = row as Record<string, unknown>;
+      const source = item.source === 'NPC' ? 'NPC' : 'PLAYER';
+      return {
+        academyDay: parseNumber(item.academyDay, 0),
+        worldDay: parseNumber(item.worldDay, 0),
+        score: Math.max(0, Math.min(100, parseNumber(item.score, 0))),
+        source
+      };
+    })
+    .filter((item): item is AcademyDailyScoreRecord => Boolean(item))
+    .slice(0, 16);
+}
+
+function mapAcademyBatchRow(row: Record<string, unknown>): AcademyBatchRecord {
+  return {
+    batchId: parseString(row.batch_id),
+    profileId: parseString(row.profile_id),
+    track: parseString(row.track),
+    tier: parseNumber(row.tier, 1),
+    startDay: parseNumber(row.start_day, 0),
+    endDay: parseNumber(row.end_day, 0),
+    status: parseString(row.status, 'ACTIVE') as AcademyBatchRecord['status'],
+    lockEnabled: parseBoolean(row.lock_enabled, true),
+    graduationPayload: parseJsonObject(row.graduation_payload)
+  };
+}
+
+function mapAcademyBatchMemberRow(row: Record<string, unknown>): AcademyBatchMemberRecord {
+  return {
+    batchId: parseString(row.batch_id),
+    memberKey: parseString(row.member_key),
+    holderType: parseString(row.holder_type, 'PLAYER') === 'NPC' ? 'NPC' : 'PLAYER',
+    npcId: row.npc_id == null ? null : parseString(row.npc_id),
+    dayProgress: parseNumber(row.day_progress, 0),
+    dailyScores: normalizeDailyScores(row.daily_scores),
+    finalScore: parseNumber(row.final_score, 0),
+    passed: parseBoolean(row.passed, false),
+    rankPosition: parseNumber(row.rank_position, 0),
+    extraCertCount: parseNumber(row.extra_cert_count, 0)
+  };
+}
+
+export async function getLegacyGovernanceSnapshot(
+  client: PoolClient,
+  profileId: string
+): Promise<{ nationalStability: number; militaryStability: number; militaryFundCents: number }> {
+  const result = await client.query<{
+    national_stability: number | string | null;
+    military_stability: number | string | null;
+    military_fund_cents: number | string | null;
+  }>(
+    `
+      SELECT national_stability, military_stability, military_fund_cents
+      FROM game_states
+      WHERE profile_id = $1
+      LIMIT 1
+    `,
+    [profileId]
+  );
+  const row = result.rows[0];
+  return {
+    nationalStability: parseNumber(row?.national_stability, 72),
+    militaryStability: parseNumber(row?.military_stability, 70),
+    militaryFundCents: parseNumber(row?.military_fund_cents, 250_000)
+  };
+}
+
+export async function listDivisionQuotaStates(client: PoolClient, profileId: string): Promise<DivisionQuotaState[]> {
+  const result = await client.query<{
+    division: string;
+    head_npc_id: string | null;
+    quota_total: number | string;
+    quota_used: number | string;
+    status: 'OPEN' | 'COOLDOWN';
+    cooldown_until_day: number | string | null;
+    cooldown_days: number | string;
+    decision_note: string;
+    updated_day: number | string;
+    head_name: string | null;
+  }>(
+    `
+      SELECT
+        q.division,
+        q.head_npc_id,
+        q.quota_total,
+        q.quota_used,
+        q.status,
+        q.cooldown_until_day,
+        q.cooldown_days,
+        q.decision_note,
+        q.updated_day,
+        e.name AS head_name
+      FROM division_quota_states q
+      LEFT JOIN npc_entities e
+        ON e.profile_id = q.profile_id
+       AND e.npc_id = q.head_npc_id
+       AND e.is_current = TRUE
+      WHERE q.profile_id = $1
+      ORDER BY q.division ASC
+    `,
+    [profileId]
+  );
+
+  return result.rows.map((row) => {
+    const total = parseNumber(row.quota_total, 0);
+    const used = parseNumber(row.quota_used, 0);
+    return {
+      division: row.division,
+      headNpcId: row.head_npc_id,
+      headName: row.head_name,
+      quotaTotal: total,
+      quotaUsed: used,
+      quotaRemaining: Math.max(0, total - used),
+      status: row.status === 'COOLDOWN' ? 'COOLDOWN' : 'OPEN',
+      cooldownUntilDay: row.cooldown_until_day == null ? null : parseNumber(row.cooldown_until_day, 0),
+      cooldownDays: parseNumber(row.cooldown_days, 2),
+      decisionNote: row.decision_note,
+      updatedDay: parseNumber(row.updated_day, 0)
+    };
+  });
+}
+
+export async function upsertDivisionQuotaState(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    division: string;
+    headNpcId: string | null;
+    quotaTotal: number;
+    quotaUsed: number;
+    status: 'OPEN' | 'COOLDOWN';
+    cooldownUntilDay: number | null;
+    cooldownDays: number;
+    decisionNote: string;
+    updatedDay: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO division_quota_states (
+        profile_id, division, head_npc_id, quota_total, quota_used, status,
+        cooldown_until_day, cooldown_days, decision_note, updated_day
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (profile_id, division) DO UPDATE
+      SET
+        head_npc_id = EXCLUDED.head_npc_id,
+        quota_total = EXCLUDED.quota_total,
+        quota_used = EXCLUDED.quota_used,
+        status = EXCLUDED.status,
+        cooldown_until_day = EXCLUDED.cooldown_until_day,
+        cooldown_days = EXCLUDED.cooldown_days,
+        decision_note = EXCLUDED.decision_note,
+        updated_day = EXCLUDED.updated_day,
+        updated_at = now()
+    `,
+    [
+      input.profileId,
+      input.division,
+      input.headNpcId,
+      Math.max(0, Math.min(120, input.quotaTotal)),
+      Math.max(0, Math.min(120, input.quotaUsed)),
+      input.status,
+      input.cooldownUntilDay,
+      Math.max(1, Math.min(30, input.cooldownDays)),
+      input.decisionNote,
+      Math.max(0, input.updatedDay)
+    ]
+  );
+}
+
+export async function appendQuotaDecisionLog(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    division: string;
+    headNpcId: string | null;
+    decisionDay: number;
+    quotaTotal: number;
+    cooldownDays: number;
+    reasons: Record<string, unknown>;
+    note: string;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO quota_decision_logs (
+        profile_id, division, head_npc_id, decision_day, quota_total, cooldown_days, reasons, note
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+    `,
+    [
+      input.profileId,
+      input.division,
+      input.headNpcId,
+      Math.max(0, input.decisionDay),
+      Math.max(0, Math.min(120, input.quotaTotal)),
+      Math.max(1, Math.min(30, input.cooldownDays)),
+      toJsonb(input.reasons),
+      input.note
+    ]
+  );
+}
+
+export async function findDivisionHeadCandidate(
+  client: PoolClient,
+  profileId: string,
+  division: string
+): Promise<{ npcId: string; name: string; leadership: number; resilience: number; fatigue: number } | null> {
+  const result = await client.query<{
+    npc_id: string;
+    name: string;
+    leadership: number | string;
+    resilience: number | string;
+    fatigue: number | string;
+  }>(
+    `
+      SELECT
+        e.npc_id,
+        e.name,
+        s.leadership,
+        s.resilience,
+        s.fatigue
+      FROM npc_entities e
+      JOIN npc_stats s
+        ON s.profile_id = e.profile_id
+       AND s.npc_id = e.npc_id
+      WHERE e.profile_id = $1
+        AND e.is_current = TRUE
+        AND e.division = $2
+        AND e.status = 'ACTIVE'
+      ORDER BY s.leadership DESC, s.resilience DESC, s.fatigue ASC
+      LIMIT 1
+    `,
+    [profileId, division]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    npcId: row.npc_id,
+    name: row.name,
+    leadership: parseNumber(row.leadership, 50),
+    resilience: parseNumber(row.resilience, 50),
+    fatigue: parseNumber(row.fatigue, 50)
+  };
+}
+
+export async function createAcademyBatch(
+  client: PoolClient,
+  input: {
+    batchId: string;
+    profileId: string;
+    track: string;
+    tier: number;
+    startDay: number;
+    endDay: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO academy_batches (batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload)
+      VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', TRUE, '{}'::jsonb)
+    `,
+    [input.batchId, input.profileId, input.track, Math.max(1, Math.min(3, input.tier)), input.startDay, input.endDay]
+  );
+}
+
+export async function getActiveAcademyBatch(client: PoolClient, profileId: string): Promise<AcademyBatchRecord | null> {
+  const result = await client.query(
+    `
+      SELECT batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload
+      FROM academy_batches
+      WHERE profile_id = $1 AND status = 'ACTIVE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [profileId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapAcademyBatchRow(row) : null;
+}
+
+export async function getLatestAcademyBatch(client: PoolClient, profileId: string): Promise<AcademyBatchRecord | null> {
+  const result = await client.query(
+    `
+      SELECT batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload
+      FROM academy_batches
+      WHERE profile_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [profileId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapAcademyBatchRow(row) : null;
+}
+
+export async function upsertAcademyBatchMember(
+  client: PoolClient,
+  input: {
+    batchId: string;
+    memberKey: string;
+    holderType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    dayProgress?: number;
+    dailyScores?: AcademyDailyScoreRecord[];
+    finalScore?: number;
+    passed?: boolean;
+    rankPosition?: number;
+    extraCertCount?: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO academy_batch_members (
+        batch_id, member_key, holder_type, npc_id, day_progress, daily_scores,
+        final_score, passed, rank_position, extra_cert_count
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+      ON CONFLICT (batch_id, member_key) DO UPDATE
+      SET
+        holder_type = EXCLUDED.holder_type,
+        npc_id = EXCLUDED.npc_id,
+        day_progress = EXCLUDED.day_progress,
+        daily_scores = EXCLUDED.daily_scores,
+        final_score = EXCLUDED.final_score,
+        passed = EXCLUDED.passed,
+        rank_position = EXCLUDED.rank_position,
+        extra_cert_count = EXCLUDED.extra_cert_count,
+        updated_at = now()
+    `,
+    [
+      input.batchId,
+      input.memberKey,
+      input.holderType,
+      input.npcId,
+      Math.max(0, Math.min(8, input.dayProgress ?? 0)),
+      toJsonb(input.dailyScores ?? []),
+      Math.max(0, Math.min(100, input.finalScore ?? 0)),
+      Boolean(input.passed),
+      Math.max(0, input.rankPosition ?? 0),
+      Math.max(0, Math.min(8, input.extraCertCount ?? 0))
+    ]
+  );
+}
+
+export async function listAcademyBatchMembers(
+  client: PoolClient,
+  batchId: string
+): Promise<AcademyBatchMemberRecord[]> {
+  const result = await client.query(
+    `
+      SELECT batch_id, member_key, holder_type, npc_id, day_progress, daily_scores, final_score, passed, rank_position, extra_cert_count
+      FROM academy_batch_members
+      WHERE batch_id = $1
+      ORDER BY holder_type ASC, member_key ASC
+    `,
+    [batchId]
+  );
+  return result.rows.map((row) => mapAcademyBatchMemberRow(row as Record<string, unknown>));
+}
+
+export async function getAcademyBatchMember(
+  client: PoolClient,
+  batchId: string,
+  memberKey: string
+): Promise<AcademyBatchMemberRecord | null> {
+  const result = await client.query(
+    `
+      SELECT batch_id, member_key, holder_type, npc_id, day_progress, daily_scores, final_score, passed, rank_position, extra_cert_count
+      FROM academy_batch_members
+      WHERE batch_id = $1 AND member_key = $2
+      LIMIT 1
+    `,
+    [batchId, memberKey]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapAcademyBatchMemberRow(row) : null;
+}
+
+export async function updateAcademyBatchMeta(
+  client: PoolClient,
+  input: {
+    batchId: string;
+    status: 'ACTIVE' | 'GRADUATED' | 'FAILED';
+    lockEnabled: boolean;
+    graduationPayload: Record<string, unknown>;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE academy_batches
+      SET status = $2, lock_enabled = $3, graduation_payload = $4::jsonb, updated_at = now()
+      WHERE batch_id = $1
+    `,
+    [input.batchId, input.status, input.lockEnabled, toJsonb(input.graduationPayload)]
+  );
+}
+
+export async function insertRecruitmentApplicationV51(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    division: string;
+    holderType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    holderName: string;
+    appliedDay: number;
+    baseDiplomaScore: number;
+    extraCertCount: number;
+    examScore: number;
+    compositeScore: number;
+    fatigue: number;
+    status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+    reason: string;
+  }
+): Promise<number> {
+  const result = await client.query<{ id: number }>(
+    `
+      INSERT INTO recruitment_applications_v51 (
+        profile_id, division, holder_type, npc_id, holder_name, applied_day,
+        base_diploma_score, extra_cert_count, exam_score, composite_score, fatigue, status, reason
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING id
+    `,
+    [
+      input.profileId,
+      input.division,
+      input.holderType,
+      input.npcId,
+      input.holderName,
+      Math.max(0, input.appliedDay),
+      Math.max(0, Math.min(100, input.baseDiplomaScore)),
+      Math.max(0, Math.min(30, input.extraCertCount)),
+      Math.max(0, Math.min(100, input.examScore)),
+      Math.max(0, Math.min(999, input.compositeScore)),
+      Math.max(0, Math.min(100, input.fatigue)),
+      input.status,
+      input.reason
+    ]
+  );
+  return result.rows[0]?.id ?? 0;
+}
+
+export async function updateRecruitmentApplicationStatusV51(
+  client: PoolClient,
+  profileId: string,
+  id: number,
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED',
+  reason: string
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE recruitment_applications_v51
+      SET status = $3, reason = $4
+      WHERE profile_id = $1 AND id = $2
+    `,
+    [profileId, id, status, reason]
+  );
+}
+
+export async function listRecruitmentCompetitionEntries(
+  client: PoolClient,
+  profileId: string,
+  division: string,
+  limit = 40
+): Promise<RecruitmentCompetitionEntry[]> {
+  const result = await client.query<{
+    holder_type: 'PLAYER' | 'NPC';
+    npc_id: string | null;
+    holder_name: string;
+    division: string;
+    id: number;
+    applied_day: number | string;
+    exam_score: number | string;
+    composite_score: number | string;
+    fatigue: number | string;
+    status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+    reason: string | null;
+  }>(
+    `
+      WITH latest AS (
+        SELECT DISTINCT ON (holder_type, COALESCE(npc_id, 'PLAYER'))
+          id,
+          holder_type,
+          npc_id,
+          holder_name,
+          division,
+          applied_day,
+          exam_score,
+          composite_score,
+          fatigue,
+          status,
+          reason
+        FROM recruitment_applications_v51
+        WHERE profile_id = $1 AND division = $2
+        ORDER BY holder_type, COALESCE(npc_id, 'PLAYER'), applied_day DESC, id DESC
+      )
+      SELECT id, holder_type, npc_id, holder_name, division, applied_day, exam_score, composite_score, fatigue, status, reason
+      FROM latest
+      ORDER BY composite_score DESC, applied_day ASC, fatigue ASC, id ASC
+      LIMIT $3
+    `,
+    [profileId, division, Math.max(1, Math.min(120, limit))]
+  );
+
+  return result.rows.map((row, idx) => ({
+    holderType: row.holder_type,
+    npcId: row.npc_id,
+    name: row.holder_name,
+    division: row.division,
+    appliedDay: parseNumber(row.applied_day, 0),
+    examScore: parseNumber(row.exam_score, 0),
+    compositeScore: Number(parseNumber(row.composite_score, 0).toFixed(2)),
+    fatigue: parseNumber(row.fatigue, 0),
+    status: row.status,
+    reason: row.reason ?? null,
+    rank: idx + 1
+  }));
+}
+
+export function buildEmptyExpansionState(day: number): ExpansionStateV51 {
+  return {
+    academyLockActive: false,
+    academyLockReason: null,
+    academyBatch: null,
+    quotaBoard: REGISTERED_DIVISIONS.map((division) => ({
+      division: division.name,
+      headNpcId: null,
+      headName: null,
+      quotaTotal: 0,
+      quotaUsed: 0,
+      quotaRemaining: 0,
+      status: 'COOLDOWN' as const,
+      cooldownUntilDay: day + 1,
+      cooldownDays: 1,
+      decisionNote: 'Quota belum diinisialisasi.',
+      updatedDay: day
+    })),
+    recruitmentRace: {
+      division: null,
+      top10: [],
+      playerRank: null,
+      playerEntry: null,
+      generatedAtDay: day
+    },
+    performance: {
+      maxNpcOps: V5_MAX_NPCS,
+      adaptiveBudget: V5_MAX_NPCS,
+      tickPressure: 'LOW',
+      pollingHintMs: 20_000
+    }
+  };
 }
 
 export async function getNpcSummary(client: PoolClient, profileId: string): Promise<GameSnapshotV5['npcSummary']> {

@@ -76,6 +76,11 @@ Key files:
 - Decision logs with cursor pagination
 - Subpage pause guard (`SUBPAGE`) and decision pause (`DECISION`)
 - Auto-resume safety timeout: 30 minutes
+- V5.1 Academy + Recruitment expansion:
+  - 8-day academy lock flow with graduation ranking
+  - recruitment quota race with mandatory diploma + extra certifications
+  - all player/NPC start-reset path from `Nondivisi`
+  - adaptive V5 scheduler budget for 120 active NPC targets
 
 ## 5. REST API (Base: `/api/v1`)
 
@@ -116,6 +121,13 @@ Game V5:
 - `POST /game/v5/ceremony/complete`
 - `POST /game/v5/academy/enroll`
 - `POST /game/v5/certifications/exam`
+- `GET /game/v5/expansion/state`
+- `POST /game/v5/academy/batch/start`
+- `GET /game/v5/academy/batch/current`
+- `POST /game/v5/academy/batch/submit-day`
+- `POST /game/v5/academy/batch/graduate`
+- `GET /game/v5/recruitment/board`
+- `POST /game/v5/recruitment/apply`
 
 Events:
 

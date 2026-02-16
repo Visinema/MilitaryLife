@@ -17,7 +17,7 @@ interface TopbarTimeProps {
 
 export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy, onToggleTimeScale, timeScaleBusy }: TopbarTimeProps) {
   const [, setTick] = useState(0);
-  const [appVersion, setAppVersion] = useState(process.env.NEXT_PUBLIC_APP_VERSION ?? '5.0.0');
+  const [appVersion, setAppVersion] = useState(process.env.NEXT_PUBLIC_APP_VERSION ?? '5.1.0');
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), snapshot.gameTimeScale === 3 ? 650 : 2000);

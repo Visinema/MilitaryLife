@@ -88,7 +88,7 @@ function resolveAutoVersion() {
   }
 
   const requestedBase = semverLike(process.env.NEXT_PUBLIC_APP_VERSION);
-  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '5.0';
+  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '5.1';
 
   const runNumber = positiveIntegerString(process.env.GITHUB_RUN_NUMBER) || positiveIntegerString(process.env.BUILD_NUMBER);
   if (runNumber) {

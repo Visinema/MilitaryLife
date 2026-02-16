@@ -345,6 +345,91 @@ export interface CertificationRecordV5 {
   valid: boolean;
 }
 
+export interface AcademyBatchStanding {
+  holderType: 'PLAYER' | 'NPC';
+  npcId: string | null;
+  name: string;
+  dayProgress: number;
+  finalScore: number;
+  passed: boolean;
+  rankPosition: number;
+  extraCertCount: number;
+}
+
+export interface AcademyBatchState {
+  batchId: string;
+  track: string;
+  tier: number;
+  status: 'ACTIVE' | 'GRADUATED' | 'FAILED';
+  lockEnabled: boolean;
+  startDay: number;
+  endDay: number;
+  totalDays: number;
+  playerDayProgress: number;
+  expectedWorldDay: number;
+  canSubmitToday: boolean;
+  nextQuestionSetId: string | null;
+  standingsTop10: AcademyBatchStanding[];
+  playerStanding: AcademyBatchStanding | null;
+  graduation:
+    | {
+        passed: boolean;
+        playerRank: number;
+        totalCadets: number;
+        certificateCodes: string[];
+        message: string;
+      }
+    | null;
+}
+
+export interface DivisionQuotaState {
+  division: string;
+  headNpcId: string | null;
+  headName: string | null;
+  quotaTotal: number;
+  quotaUsed: number;
+  quotaRemaining: number;
+  status: 'OPEN' | 'COOLDOWN';
+  cooldownUntilDay: number | null;
+  cooldownDays: number;
+  decisionNote: string;
+  updatedDay: number;
+}
+
+export interface RecruitmentCompetitionEntry {
+  holderType: 'PLAYER' | 'NPC';
+  npcId: string | null;
+  name: string;
+  division: string;
+  appliedDay: number;
+  examScore: number;
+  compositeScore: number;
+  fatigue: number;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  reason?: string | null;
+  rank: number;
+}
+
+export interface ExpansionStateV51 {
+  academyLockActive: boolean;
+  academyLockReason: string | null;
+  academyBatch: AcademyBatchState | null;
+  quotaBoard: DivisionQuotaState[];
+  recruitmentRace: {
+    division: string | null;
+    top10: RecruitmentCompetitionEntry[];
+    playerRank: number | null;
+    playerEntry: RecruitmentCompetitionEntry | null;
+    generatedAtDay: number;
+  };
+  performance: {
+    maxNpcOps: number;
+    adaptiveBudget: number;
+    tickPressure: 'LOW' | 'MEDIUM' | 'HIGH';
+    pollingHintMs: number;
+  };
+}
+
 export interface WorldDelta {
   fromVersion: number;
   toVersion: number;
@@ -399,4 +484,5 @@ export interface GameSnapshotV5 {
   };
   activeMission: MissionInstanceV5 | null;
   pendingCeremony: CeremonyCycleV5 | null;
+  expansion?: ExpansionStateV51 | null;
 }

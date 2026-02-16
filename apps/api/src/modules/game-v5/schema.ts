@@ -15,7 +15,7 @@ export const sessionSyncQuerySchema = z.object({
 export const npcListQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'INJURED', 'KIA', 'RESERVE', 'RECRUITING']).optional(),
   cursor: z.coerce.number().int().min(0).optional(),
-  limit: z.coerce.number().int().min(1).max(80).optional().default(20)
+  limit: z.coerce.number().int().min(1).max(120).optional().default(20)
 });
 
 export const missionPlanSchemaV5 = z.object({
@@ -44,4 +44,22 @@ export const certificationExamSchemaV5 = z.object({
   npcId: z.string().min(3).max(96).optional(),
   certCode: z.string().min(2).max(96),
   score: z.coerce.number().int().min(0).max(100)
+});
+
+export const academyBatchStartSchemaV51 = z.object({
+  track: z.enum(['OFFICER', 'HIGH_COMMAND', 'SPECIALIST', 'TRIBUNAL', 'CYBER']).default('OFFICER'),
+  tier: z.coerce.number().int().min(1).max(3).default(1)
+});
+
+export const academyBatchSubmitDaySchemaV51 = z.object({
+  answers: z.array(z.coerce.number().int().min(1).max(4)).length(3)
+});
+
+export const recruitmentBoardQuerySchemaV51 = z.object({
+  division: z.string().min(2).max(96).optional()
+});
+
+export const recruitmentApplySchemaV51 = z.object({
+  division: z.string().min(2).max(96),
+  answers: z.array(z.coerce.number().int().min(1).max(4)).length(3)
 });

@@ -9,20 +9,20 @@ function shortSha(input: string | undefined): string | null {
 function resolveVersion(): string {
   const run = process.env.GITHUB_RUN_NUMBER?.trim();
   if (run && /^\d+$/.test(run)) {
-    return `5.0.${run}`;
+    return `5.1.${run}`;
   }
 
   const commit = shortSha(process.env.VERCEL_GIT_COMMIT_SHA) ?? shortSha(process.env.GIT_COMMIT_SHA);
   if (commit) {
-    return `5.0.${commit}`;
+    return `5.1.${commit}`;
   }
 
   const timestamp = process.env.VERCEL_GIT_COMMIT_TIMESTAMP?.trim();
   if (timestamp && /^\d+$/.test(timestamp)) {
-    return `5.0.${timestamp}`;
+    return `5.1.${timestamp}`;
   }
 
-  return `5.0.${Math.floor(Date.now() / 1000)}`;
+  return `5.1.${Math.floor(Date.now() / 1000)}`;
 }
 
 export async function metaRoutes(app: FastifyInstance): Promise<void> {

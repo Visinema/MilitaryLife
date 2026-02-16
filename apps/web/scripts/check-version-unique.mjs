@@ -33,7 +33,7 @@ function resolveVersion() {
   const override = process.env.NEXT_PUBLIC_APP_VERSION_OVERRIDE?.trim();
   if (override) return override;
 
-  const base = (process.env.NEXT_PUBLIC_APP_VERSION?.trim() || '5.0').split('.').slice(0, 2).join('.');
+  const base = (process.env.NEXT_PUBLIC_APP_VERSION?.trim() || '5.1').split('.').slice(0, 2).join('.');
   const run = positiveIntegerString(process.env.GITHUB_RUN_NUMBER) || positiveIntegerString(process.env.BUILD_NUMBER);
   if (run) return `${base}.${run}`;
 

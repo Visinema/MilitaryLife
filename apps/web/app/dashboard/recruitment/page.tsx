@@ -1,370 +1,278 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, ApiError } from '@/lib/api-client';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
-import { useGameStore } from '@/store/game-store';
+import type { ExpansionStateV51 } from '@mls/shared/game-types';
+import { api, ApiError } from '@/lib/api-client';
 
-type Question = {
-  id: string;
-  prompt: string;
-  choices: string[];
-  answer: string;
+type RecruitmentBoardPayload = {
+  division: string | null;
+  requirement: { label: 'STANDARD' | 'ADVANCED' | 'ELITE'; minExtraCerts: number };
+  playerEligibility: {
+    hasBaseDiploma: boolean;
+    baseDiplomaCode: string | null;
+    baseDiplomaGrade: 'A' | 'B' | 'C' | 'D' | null;
+    extraCertCount: number;
+    requiredExtraCerts: number;
+    missingExtraCerts: number;
+    bonusScore: number;
+    bonusCap: number;
+    eligible: boolean;
+  };
+  quota: {
+    division: string;
+    quotaTotal: number;
+    quotaUsed: number;
+    quotaRemaining: number;
+    status: 'OPEN' | 'COOLDOWN';
+    cooldownUntilDay: number | null;
+    cooldownDays: number;
+    decisionNote: string;
+    headName: string | null;
+  } | null;
+  quotaBoard: ExpansionStateV51['quotaBoard'];
+  race: ExpansionStateV51['recruitmentRace'];
+  questionSet: { setId: string; questions: Array<{ id: string; prompt: string; choices: [string, string, string, string] }> } | null;
 };
 
-type InternalNode = {
-  level: 'DIVISI' | 'SATUAN' | 'KORPS';
-  name: string;
-  roles: string[];
-};
+type NoticeState =
+  | {
+      tone: 'ok' | 'warn' | 'error';
+      code: string;
+      message: string;
+      detail?: string;
+    }
+  | null;
 
-type Track = {
-  id: string;
-  name: string;
-  type: 'SATUAN_TUGAS' | 'KORPS' | 'DIVISI';
-  minRankIndex: number;
-  needOfficerCert: boolean;
-  needHighCommandCert: boolean;
-  assets: string[];
-  internalHierarchy: InternalNode[];
-  questions: Question[];
-};
-
-const TRACKS: Track[] = [
-  {
-    id: 'special-forces',
-    name: 'Special Forces Task Group',
-    type: 'SATUAN_TUGAS',
-    minRankIndex: 5,
-    needOfficerCert: true,
-    needHighCommandCert: false,
-    assets: ['Night Vision Suite', 'Silent Insertion Vehicle', 'Breach Drone'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Special Operations Division', roles: ['Commander', 'XO', 'Intel Lead'] },
-      { level: 'SATUAN', name: 'Rapid Breach Unit', roles: ['Team Lead', 'Breach Specialist', 'Medic'] },
-      { level: 'KORPS', name: 'Deep Recon Corps', roles: ['Recon Sniper', 'Signal Scout', 'Forward Observer'] }
-    ],
-    questions: [
-      { id: 'sf-1', prompt: 'Prioritas infiltrasi malam?', choices: ['Noise discipline', 'Open assault', 'Heavy convoy', 'Delay until sunrise'], answer: 'Noise discipline' },
-      { id: 'sf-2', prompt: 'Fallback saat komunikasi putus?', choices: ['Pre-brief exfil corridor', 'Standby tanpa arah', 'Retreat random', 'Broadcast open channel'], answer: 'Pre-brief exfil corridor' },
-      { id: 'sf-3', prompt: 'Urutan raid yang benar?', choices: ['Recon → isolate → breach', 'Breach → recon', 'Random attack', 'Only hold perimeter'], answer: 'Recon → isolate → breach' },
-      { id: 'sf-4', prompt: 'KPI utama satgas elit?', choices: ['Objective success + low casualty', 'Ammo spend', 'Durasi briefing', 'Jumlah kendaraan'], answer: 'Objective success + low casualty' }
-    ]
-  },
-  {
-    id: 'military-police-division',
-    name: 'Military Police Division',
-    type: 'DIVISI',
-    minRankIndex: 4,
-    needOfficerCert: true,
-    needHighCommandCert: false,
-    assets: ['Detention Block Ops Kit', 'Route Security Fleet', 'Forensic Field Lab'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Military Police HQ', roles: ['Provost Marshal', 'Deputy Marshal', 'Legal Ops'] },
-      { level: 'SATUAN', name: 'Base Law Enforcement Unit', roles: ['Patrol Commander', 'Evidence Officer', 'Custody Officer'] },
-      { level: 'KORPS', name: 'Security Escort Corps', roles: ['Escort Lead', 'Route Intel', 'Rapid Arrest Team'] }
-    ],
-    questions: [
-      { id: 'mp-1', prompt: 'Tindakan pertama saat pelanggaran disiplin?', choices: ['Secure scene and record', 'Use force immediately', 'Ignore minor issue', 'Send to frontline'], answer: 'Secure scene and record' },
-      { id: 'mp-2', prompt: 'KPI keberhasilan polisi militer?', choices: ['Incident resolution quality', 'Total punishment', 'Vehicle speed', 'Ammo usage'], answer: 'Incident resolution quality' },
-      { id: 'mp-3', prompt: 'Prioritas konvoi tahanan?', choices: ['Route security + custody protocol', 'No escort', 'Public route open', 'Single driver only'], answer: 'Route security + custody protocol' },
-      { id: 'mp-4', prompt: 'Jika bukti digital ditemukan?', choices: ['Preserve chain of custody', 'Delete quickly', 'Share publicly', 'Delay reporting'], answer: 'Preserve chain of custody' }
-    ]
-  },
-  {
-    id: 'armored-division',
-    name: 'Armored Division',
-    type: 'DIVISI',
-    minRankIndex: 5,
-    needOfficerCert: true,
-    needHighCommandCert: false,
-    assets: ['MBT Squadron', 'Heavy Recovery Vehicle', 'Armor Simulation Grid'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Armored Command', roles: ['Division Commander', 'Ops Chief', 'Logistics Chief'] },
-      { level: 'SATUAN', name: 'Tank Battalion Alpha', roles: ['Battalion XO', 'Platoon Lead', 'Fire Control Officer'] },
-      { level: 'KORPS', name: 'Mechanized Support Corps', roles: ['Engineer Support', 'Fuel Supervisor', 'Recovery Crew Lead'] }
-    ],
-    questions: [
-      { id: 'ar-1', prompt: 'Saat armor breakthrough, prioritas?', choices: ['Maintain fuel + flank security', 'Split unsupported', 'Stop all movement', 'Ignore recon'], answer: 'Maintain fuel + flank security' },
-      { id: 'ar-2', prompt: 'Kapan gunakan heavy recovery?', choices: ['When disabled armor blocks lane', 'At mission start always', 'Never', 'Only for drills'], answer: 'When disabled armor blocks lane' },
-      { id: 'ar-3', prompt: 'KPI armored readiness?', choices: ['Operational tanks + repair time', 'Total horn usage', 'Longest idle time', 'Uniform color'], answer: 'Operational tanks + repair time' },
-      { id: 'ar-4', prompt: 'Pairing ideal untuk armor push?', choices: ['Recon + air-defense cover', 'No escort', 'Only medics', 'Civil convoy'], answer: 'Recon + air-defense cover' }
-    ]
-  },
-  {
-    id: 'air-defense-division',
-    name: 'Air Defense Division',
-    type: 'DIVISI',
-    minRankIndex: 5,
-    needOfficerCert: true,
-    needHighCommandCert: true,
-    assets: ['SAM Battery', 'Radar Mesh', 'EW Counter-UAV Suite'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Air Defense HQ', roles: ['Air Defense Commander', 'Radar Director', 'EW Lead'] },
-      { level: 'SATUAN', name: 'Missile Intercept Unit', roles: ['Battery Chief', 'Targeting Officer', 'Launcher Crew'] },
-      { level: 'KORPS', name: 'Counter-UAV Corps', roles: ['Drone Hunter Lead', 'Signal Jammer', 'Net Capture Team'] }
-    ],
-    questions: [
-      { id: 'ad-1', prompt: 'Urutan intercept ancaman udara?', choices: ['Detect → classify → engage', 'Engage without detect', 'Evacuate all units', 'Wait for hit'], answer: 'Detect → classify → engage' },
-      { id: 'ad-2', prompt: 'KPI air defense terbaik?', choices: ['Intercept rate + false positive low', 'Missile usage only', 'Radar brightness', 'Shift duration'], answer: 'Intercept rate + false positive low' },
-      { id: 'ad-3', prompt: 'Jika drone swarm datang?', choices: ['Layered EW + missile discipline', 'Fire all at once', 'Power down radar', 'Retreat no report'], answer: 'Layered EW + missile discipline' },
-      { id: 'ad-4', prompt: 'Kapan status red alert?', choices: ['Validated inbound threat', 'Any radio ping', 'Morning roll call', 'After lunch'], answer: 'Validated inbound threat' }
-    ]
-  },
-  {
-    id: 'engineering-command',
-    name: 'Combat Engineering Command',
-    type: 'KORPS',
-    minRankIndex: 4,
-    needOfficerCert: true,
-    needHighCommandCert: false,
-    assets: ['Bridge Deployment Kit', 'Demolition Charge Vault', 'Fortification Drone'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Engineer Command HQ', roles: ['Chief Engineer', 'Ops Planner', 'Safety Officer'] },
-      { level: 'SATUAN', name: 'Field Construction Unit', roles: ['Site Commander', 'Bridge Specialist', 'Route Surveyor'] },
-      { level: 'KORPS', name: 'Explosive Ordnance Corps', roles: ['EOD Lead', 'Demolition Tech', 'Containment Team'] }
-    ],
-    questions: [
-      { id: 'en-1', prompt: 'Prioritas engineer saat support raid?', choices: ['Mobility corridor first', 'Decorate base', 'Random excavation', 'No safety check'], answer: 'Mobility corridor first' },
-      { id: 'en-2', prompt: 'KPI engineer command?', choices: ['Build speed + safety compliance', 'Most explosives spent', 'Loudest equipment', 'Longest break'], answer: 'Build speed + safety compliance' },
-      { id: 'en-3', prompt: 'Saat jembatan darurat gagal?', choices: ['Deploy secondary span protocol', 'Abort all comms', 'Ignore crossing', 'Use civilian road only'], answer: 'Deploy secondary span protocol' },
-      { id: 'en-4', prompt: 'EOD engagement rule?', choices: ['Isolate + identify + neutralize', 'Touch immediately', 'Skip report', 'Open detonation in crowd'], answer: 'Isolate + identify + neutralize' }
-    ]
-  },
-  {
-    id: 'medical-support-division',
-    name: 'Medical Support Division',
-    type: 'DIVISI',
-    minRankIndex: 3,
-    needOfficerCert: true,
-    needHighCommandCert: false,
-    assets: ['Forward Trauma Bay', 'Medevac Detachment', 'Field Bio-monitor Grid'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Medical Command HQ', roles: ['Chief Medical Officer', 'Triage Lead', 'Recovery Director'] },
-      { level: 'SATUAN', name: 'Frontline Triage Unit', roles: ['Medic Captain', 'Trauma Specialist', 'Evac Coordinator'] },
-      { level: 'KORPS', name: 'Preventive Health Corps', roles: ['Epidemiology Lead', 'Sanitation Officer', 'Resilience Coach'] }
-    ],
-    questions: [
-      { id: 'md-1', prompt: 'Prioritas triage tempur?', choices: ['Life-saving first by severity', 'By rank first', 'By arrival random', 'Delay all care'], answer: 'Life-saving first by severity' },
-      { id: 'md-2', prompt: 'KPI medical support?', choices: ['Survival rate + evacuation speed', 'Bandage count', 'Ambulance color', 'Shift music'], answer: 'Survival rate + evacuation speed' },
-      { id: 'md-3', prompt: 'Saat mass casualty?', choices: ['Activate surge protocol', 'Stop intake', 'Close comms', 'Only treat officers'], answer: 'Activate surge protocol' },
-      { id: 'md-4', prompt: 'Langkah preventif utama?', choices: ['Daily bio-monitor screening', 'No hydration plan', 'Ignore fatigue', 'Cancel debrief'], answer: 'Daily bio-monitor screening' }
-    ]
-  },
-  {
-    id: 'signal-cyber-corps',
-    name: 'Signal & Cyber Corps',
-    type: 'KORPS',
-    minRankIndex: 6,
-    needOfficerCert: true,
-    needHighCommandCert: true,
-    assets: ['Secure Comms Backbone', 'Blue-Team SOC', 'Tactical Encryption Node'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Signal Cyber HQ', roles: ['Cyber Director', 'Signal Commander', 'Threat Analyst'] },
-      { level: 'SATUAN', name: 'Network Defense Unit', roles: ['Incident Commander', 'SOC Operator', 'Patch Lead'] },
-      { level: 'KORPS', name: 'Offensive Security Corps', roles: ['Red Team Lead', 'Exploit Specialist', 'Containment Liaison'] }
-    ],
-    questions: [
-      { id: 'cy-1', prompt: 'Saat intrusi aktif?', choices: ['Contain and isolate segment', 'Reboot all blindly', 'Publish credentials', 'Disable logging'], answer: 'Contain and isolate segment' },
-      { id: 'cy-2', prompt: 'KPI signal/cyber?', choices: ['Uptime + breach containment time', 'Cable length', 'Keyboard speed', 'Server color'], answer: 'Uptime + breach containment time' },
-      { id: 'cy-3', prompt: 'Kapan aktifkan fallback channel?', choices: ['Primary comm compromised', 'Normal operations', 'During lunch', 'At random'], answer: 'Primary comm compromised' },
-      { id: 'cy-4', prompt: 'Prinsip patch management?', choices: ['Risk-based priority with rollback plan', 'Patch never', 'Patch without backup', 'Patch public network first'], answer: 'Risk-based priority with rollback plan' }
-    ]
-  },
-  {
-    id: 'military-judge-corps',
-    name: 'Military Judge Corps',
-    type: 'KORPS',
-    minRankIndex: 6,
-    needOfficerCert: true,
-    needHighCommandCert: true,
-    assets: ['Court Evidence Archive', 'Tribunal Chamber', 'Legal Intelligence Desk'],
-    internalHierarchy: [
-      { level: 'DIVISI', name: 'Military Court Division', roles: ['Judge Chair', 'Panel Judge 1', 'Panel Judge 2', 'Panel Judge 3'] },
-      { level: 'SATUAN', name: 'Court Clerk Unit', roles: ['Chief Clerk', 'Evidence Custodian', 'Legal Secretary'] },
-      { level: 'KORPS', name: 'Military Law Corps', roles: ['Case Reviewer', 'Disciplinary Prosecutor', 'Defense Liaison'] }
-    ],
-    questions: [
-      { id: 'mj-1', prompt: 'Prinsip utama sidang militer?', choices: ['Evidence integrity and due process', 'Command favoritism', 'Closed without record', 'Random penalty'], answer: 'Evidence integrity and due process' },
-      { id: 'mj-2', prompt: 'Fokus evaluasi hakim militer?', choices: ['Chain of command accountability', 'Weapon caliber', 'Vehicle speed', 'Supply quantity'], answer: 'Chain of command accountability' },
-      { id: 'mj-3', prompt: 'Sanksi terbaik?', choices: ['Proportional sanction recommendation', 'Max penalty always', 'No sanction', 'Public humiliation'], answer: 'Proportional sanction recommendation' },
-      { id: 'mj-4', prompt: 'Sikap panel hakim?', choices: ['Impartial review with legal basis', 'Rank bias', 'Political pressure first', 'Ignore witnesses'], answer: 'Impartial review with legal basis' }
-    ]
-  },
-
-];
-
-const REGISTERED_DIVISION_SET = new Set(REGISTERED_DIVISIONS.map((item) => item.name));
-const RECRUITMENT_TRACKS = TRACKS.filter((track) => REGISTERED_DIVISION_SET.has(track.internalHierarchy[0]?.name ?? track.name));
-
-function rotateChoices(choices: string[], seed: number): string[] {
-  if (choices.length <= 1) return choices;
-  const shift = Math.abs(seed) % choices.length;
-  return [...choices.slice(shift), ...choices.slice(0, shift)];
+function normalizeErrorNotice(err: unknown): NoticeState {
+  if (err instanceof ApiError) {
+    const details = err.details && typeof err.details === 'object' ? (err.details as Record<string, unknown>) : null;
+    const code = typeof details?.code === 'string' ? details.code : 'RECRUITMENT_ERROR';
+    const message = typeof details?.error === 'string' ? details.error : err.message;
+    const detail = details ? JSON.stringify(details) : undefined;
+    return { tone: 'error', code, message, detail };
+  }
+  return { tone: 'error', code: 'RECRUITMENT_ERROR', message: err instanceof Error ? err.message : 'Recruitment apply gagal.' };
 }
 
 export default function RecruitmentPage() {
   const router = useRouter();
-  const snapshot = useGameStore((s) => s.snapshot);
-  const setSnapshot = useGameStore((s) => s.setSnapshot);
-  const [selected, setSelected] = useState(RECRUITMENT_TRACKS[0]?.id ?? TRACKS[0].id);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<string | null>(null);
-  const [errorDetails, setErrorDetails] = useState<Record<string, unknown> | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const [selectedDivision, setSelectedDivision] = useState<string>(REGISTERED_DIVISIONS[0]?.name ?? 'Special Operations Division');
+  const [board, setBoard] = useState<RecruitmentBoardPayload | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+  const [busy, setBusy] = useState(false);
+  const [answers, setAnswers] = useState<number[]>([1, 1, 1]);
 
-  useEffect(() => {
-    if (snapshot) return;
-    api.snapshot().then((res) => setSnapshot(res.snapshot)).catch(() => null);
-  }, [setSnapshot, snapshot]);
-
-  const track = useMemo(() => RECRUITMENT_TRACKS.find((x) => x.id === selected) ?? RECRUITMENT_TRACKS[0] ?? TRACKS[0], [selected]);
-
-  const dynamicQuestions = useMemo(() => {
-    const seed = (snapshot?.gameDay ?? 0) + track.id.length;
-    return track.questions
-      .map((question, idx) => ({ question, weight: Math.abs((seed + idx * 13) % 97) }))
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 3)
-      .map(({ question }, idx) => ({
-        ...question,
-        choices: rotateChoices(question.choices, seed + idx * 7)
-      }));
-  }, [snapshot?.gameDay, track]);
-
-  useEffect(() => {
-    setAnswers({});
-    setResult(null);
-    setErrorDetails(null);
-    setExpandedNodes(() => {
-      const first = track.internalHierarchy[0]?.name;
-      return first ? { [first]: true } : {};
-    });
-  }, [track.id, track.internalHierarchy]);
-
-  const submit = async () => {
-    if (!snapshot) return;
-    try {
-      const response = await api.recruitmentApply({
-        trackId: track.id,
-        answers
-      });
-      setSnapshot(response.snapshot);
-      setErrorDetails(null);
-      setResult(`LULUS: ${snapshot.playerName} diterima ke ${track.name}. Sertifikasi + surat mutasi masuk inventori.`);
-      window.setTimeout(() => router.replace('/dashboard'), 450);
-    } catch (err) {
-      if (err instanceof ApiError && err.details && typeof err.details === 'object') {
-        const details = err.details as Record<string, unknown>;
-        const diagnostics = [
-          `rankOk=${String(details.rankOk)}`,
-          `officerOk=${String(details.officerOk)}`,
-          `highOk=${String(details.highOk)}`,
-          `examPass=${String(details.examPass)}`,
-          `answered=${String(details.answeredCount ?? '-')}`,
-          `correct=${String(details.correctCount ?? '-')}`
-        ].join(', ');
-        setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${err.message}). Detail: ${diagnostics}`);
+  const loadBoard = useCallback(
+    async (division?: string) => {
+      const response = await api.v5RecruitmentBoard(division);
+      if (response.state.academyLockActive) {
+        router.replace('/dashboard/academy?lock=1');
         return;
       }
+      setBoard(response.board);
+    },
+    [router]
+  );
 
-      const message = err instanceof Error ? err.message : 'Gagal memproses rekrutmen';
-      const details = err instanceof ApiError && err.details && typeof err.details === 'object' ? (err.details as Record<string, unknown>) : null;
-      setErrorDetails(details);
-      setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${message}).`);
+  useEffect(() => {
+    void loadBoard(selectedDivision).catch((err) => {
+      setNotice(normalizeErrorNotice(err));
+    });
+  }, [loadBoard, selectedDivision]);
+
+  useEffect(() => {
+    const count = board?.questionSet?.questions.length ?? 0;
+    if (!count) return;
+    setAnswers(new Array(count).fill(1));
+  }, [board?.questionSet?.setId]);
+
+  useEffect(() => {
+    if (!board) return;
+    const intervalMs = board.quota?.status === 'COOLDOWN' ? 60_000 : 20_000;
+    const timer = window.setInterval(() => {
+      void loadBoard(board.division ?? selectedDivision).catch(() => null);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [board, loadBoard, selectedDivision]);
+
+  const canApply = useMemo(
+    () =>
+      Boolean(
+        board?.division &&
+          board?.questionSet &&
+          board.playerEligibility.eligible &&
+          board.quota &&
+          board.quota.status === 'OPEN' &&
+          board.quota.quotaRemaining > 0
+      ),
+    [board]
+  );
+
+  const submitApply = async () => {
+    if (!board?.division) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await api.v5RecruitmentApply({
+        division: board.division,
+        answers
+      });
+      setNotice({
+        tone: response.accepted ? 'ok' : 'warn',
+        code: response.playerDecision.code,
+        message: `${response.message} (Exam ${response.examScore}, Composite ${response.compositeScore})`,
+        detail: `Player status: ${response.playerDecision.status}. Accepted slots wave: ${response.acceptedSlots}.`
+      });
+      await loadBoard(board.division);
+    } catch (err) {
+      setNotice(normalizeErrorNotice(err));
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <div className="space-y-4">
       <div className="cyber-panel p-3">
-        <p className="text-xs uppercase tracking-[0.14em] text-muted">Rekrutmen Satuan/Korps/Divisi</p>
-        <h1 className="text-lg font-semibold text-text">Recruitment Board</h1>
-        <p className="text-xs text-muted">Nama karakter aktif: <span className="text-text">{snapshot?.playerName ?? '-'}</span></p>
+        <p className="text-xs uppercase tracking-[0.14em] text-muted">Recruitment Expansion v5.1</p>
+        <h1 className="text-lg font-semibold text-text">Recruitment Quota Race Board</h1>
+        <p className="text-xs text-muted">Syarat wajib: diploma academy + sertifikasi tambahan bertingkat. Bonus extra cert dibatasi agar kompetisi tetap fair.</p>
         <div className="mt-2 flex gap-2">
           <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-1 text-xs text-text">Back Dashboard</Link>
+          <Link href="/dashboard/academy" className="rounded border border-border bg-bg px-3 py-1 text-xs text-text">Go Academy</Link>
         </div>
       </div>
 
-      <div className="cyber-panel p-3 text-xs space-y-2">
-        <label className="text-muted">Pilih track rekrutmen</label>
-        <select value={selected} onChange={(e) => setSelected(e.target.value)} className="w-full rounded border border-border bg-bg px-2 py-1 text-text">
-          {TRACKS.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.type})</option>)}
-        </select>
+      <div className="cyber-panel p-3 text-xs space-y-3">
+        <label className="text-muted">Pilih division target
+          <select
+            value={selectedDivision}
+            onChange={(e) => setSelectedDivision(e.target.value)}
+            className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-text"
+          >
+            {REGISTERED_DIVISIONS.map((item) => (
+              <option key={item.name} value={item.name}>{item.name}</option>
+            ))}
+          </select>
+        </label>
 
-        <p className="text-muted">Persyaratan: min rank {track.minRankIndex}, Officer Cert: {track.needOfficerCert ? 'Ya' : 'Tidak'}, High Command Cert: {track.needHighCommandCert ? 'Ya' : 'Tidak'}</p>
-        <p className="text-muted">Jika lolos Military Judge Corps, tab &quot;Pending Sidang&quot; akan aktif di menu Pengadilan Militer.</p>
+        {board ? (
+          <>
+            <div className="grid gap-2 lg:grid-cols-2">
+              <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Requirement</p>
+                <p className="text-muted">Tier: <span className="text-text">{board.requirement.label}</span> | Sertifikasi tambahan minimum: <span className="text-text">{board.requirement.minExtraCerts}</span></p>
+                <p className="text-muted">Komposisi nilai: Diploma 45% | Konsistensi 15% | Sertifikasi 25% | Exam 10% | Reputasi 5%</p>
+                <p className="text-muted">Bonus extra cert: <span className="text-text">+{board.playerEligibility.bonusScore}</span> (cap +{board.playerEligibility.bonusCap})</p>
+              </div>
 
-        <div className="rounded border border-border/60 bg-bg/50 p-2">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Aset Divisi/Satuan/Korps</p>
-          <p className="mt-1 text-text">{track.assets.join(' · ')}</p>
-        </div>
+              <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Eligibility Player</p>
+                <p className="text-muted">Diploma: <span className="text-text">{board.playerEligibility.hasBaseDiploma ? 'SIAP' : 'BELUM ADA'}</span></p>
+                <p className="text-muted">Base cert: <span className="text-text">{board.playerEligibility.baseDiplomaCode ?? 'N/A'}</span> ({board.playerEligibility.baseDiplomaGrade ?? '-'})</p>
+                <p className="text-muted">Extra cert: <span className="text-text">{board.playerEligibility.extraCertCount}/{board.playerEligibility.requiredExtraCerts}</span></p>
+                <p className="text-muted">Missing extra cert: <span className="text-text">{board.playerEligibility.missingExtraCerts}</span></p>
+                <p className="text-muted">Status apply: <span className="text-text">{board.playerEligibility.eligible ? 'ELIGIBLE' : 'NOT_ELIGIBLE'}</span></p>
+              </div>
+            </div>
 
-        <div className="rounded border border-border/60 bg-bg/50 p-2">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Hierarki Internal (Expandable / Collapsible)</p>
-          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
-            {track.internalHierarchy.map((node) => {
-              const expanded = Boolean(expandedNodes[node.name]);
-              return (
-                <div key={node.name} className="rounded border border-border/50 bg-bg/70">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedNodes((prev) => ({ ...prev, [node.name]: !prev[node.name] }))}
-                    className="flex w-full items-center justify-between px-2 py-1 text-left"
-                  >
-                    <span className="text-text">{node.level} · {node.name}</span>
-                    <span className="text-muted">{expanded ? 'Collapse' : 'Expand'}</span>
-                  </button>
-                  {expanded ? (
-                    <div className="border-t border-border/40 px-2 py-1">
-                      <p className="text-muted">Jabatan: {node.roles.join(' · ')}</p>
-                    </div>
+            <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Selected Division Quota</p>
+              {board.quota ? (
+                <>
+                  <p className="text-muted">Quota: <span className="text-text">{board.quota.quotaRemaining}/{board.quota.quotaTotal}</span> | Status: <span className="text-text">{board.quota.status}</span></p>
+                  <p className="text-muted">Head Divisi: <span className="text-text">{board.quota.headName ?? 'System Board'}</span></p>
+                  <p className="text-muted">Decision Note: <span className="text-text">{board.quota.decisionNote}</span></p>
+                  {board.quota.cooldownUntilDay !== null ? (
+                    <p className="text-muted">Cooldown until day: <span className="text-text">{board.quota.cooldownUntilDay}</span></p>
                   ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                </>
+              ) : (
+                <p className="text-muted">Quota belum tersedia.</p>
+              )}
+            </div>
 
-        <div className="space-y-3">
-          {dynamicQuestions.map((item, idx) => (
-            <div key={item.id} className="rounded border border-border/60 bg-bg/60 p-2">
-              <p className="text-text">{idx + 1}. {item.prompt}</p>
-              <div className="mt-1 space-y-1">
-                {item.choices.map((choice) => (
-                  <label key={`${item.id}-${choice}`} className="flex items-center gap-2 text-muted">
-                    <input
-                      type="radio"
-                      name={item.id}
-                      value={choice}
-                      checked={answers[item.id] === choice}
-                      onChange={(e) => setAnswers((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                    />
-                    <span>{choice}</span>
-                  </label>
+            <div className="rounded border border-border/60 bg-bg/60 p-2">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Live Quota Board (All Divisions)</p>
+              <div className="mt-1 grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                {board.quotaBoard.map((item) => (
+                  <p key={item.division} className="rounded border border-border/50 bg-bg/70 px-2 py-1 text-muted">
+                    <span className="text-text">{item.division}</span> | {item.quotaRemaining}/{item.quotaTotal} | {item.status}
+                  </p>
                 ))}
               </div>
             </div>
-          ))}
-        </div>
 
-        <button onClick={() => void submit()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text">Submit Ujian Rekrutmen</button>
-        {result ? <p className="text-muted">{result}</p> : null}
-        {errorDetails ? (
-          <div className="rounded border border-danger/50 bg-danger/5 p-2 text-[11px] text-muted">
-            <p className="font-semibold text-text">Detail validasi backend:</p>
-            <ul className="mt-1 list-disc space-y-1 pl-4">
-              {Object.entries(errorDetails).map(([key, value]) => (
-                <li key={key}>
-                  <span className="text-text">{key}</span>: {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+            {board.questionSet ? (
+              <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
+                <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Recruitment Exam - {board.questionSet.setId}</p>
+                {board.questionSet.questions.map((question, qIdx) => (
+                  <div key={question.id} className="rounded border border-border/50 bg-bg/70 p-2">
+                    <p className="text-text">{qIdx + 1}. {question.prompt}</p>
+                    <div className="mt-1 space-y-1">
+                      {question.choices.map((choice, idx) => (
+                        <label key={`${question.id}-${idx}`} className="flex items-center gap-2 text-muted">
+                          <input
+                            type="radio"
+                            name={question.id}
+                            value={idx + 1}
+                            checked={answers[qIdx] === idx + 1}
+                            onChange={(e) => {
+                              const selected = Number(e.target.value);
+                              setAnswers((prev) => {
+                                const next = [...prev];
+                                next[qIdx] = selected;
+                                return next;
+                              });
+                            }}
+                          />
+                          <span>{choice}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button disabled={!canApply || busy} onClick={() => void submitApply()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text disabled:opacity-60">
+                  {busy ? 'Applying...' : 'Submit Recruitment Application'}
+                </button>
+                {!board.playerEligibility.eligible ? (
+                  <p className="text-[11px] text-danger">Apply dikunci: penuhi diploma + sertifikasi tambahan minimum terlebih dahulu.</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="rounded border border-border/60 bg-bg/60 p-2">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Competition Preview - Top 10</p>
+              <div className="mt-1 space-y-1">
+                {board.race.top10.length === 0 ? (
+                  <p className="text-muted">Belum ada data kompetisi.</p>
+                ) : (
+                  board.race.top10.map((entry) => (
+                    <p key={`${entry.holderType}-${entry.npcId ?? entry.name}`} className="rounded border border-border/50 bg-bg/70 px-2 py-1 text-muted">
+                      <span className="text-text">#{entry.rank} {entry.name}</span> | score {entry.compositeScore} | {entry.status}{entry.reason ? ` | ${entry.reason}` : ''}
+                    </p>
+                  ))
+                )}
+                {typeof board.race.playerRank === 'number' ? (
+                  <p className="rounded border border-accent/60 bg-accent/10 px-2 py-1 text-text">Posisi pemain saat ini: #{board.race.playerRank}</p>
+                ) : null}
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-muted">Loading recruitment board...</p>
+        )}
       </div>
+
+      {notice ? (
+        <div className={`rounded border px-3 py-2 text-xs ${notice.tone === 'ok' ? 'border-emerald-400/70 bg-emerald-500/10 text-emerald-100' : notice.tone === 'warn' ? 'border-amber-400/70 bg-amber-500/10 text-amber-100' : 'border-danger/70 bg-danger/10 text-danger'}`}>
+          <p><span className="font-semibold">[{notice.code}]</span> {notice.message}</p>
+          {notice.detail ? <p className="mt-1 text-[11px] opacity-90">{notice.detail}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

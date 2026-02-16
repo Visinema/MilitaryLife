@@ -33,6 +33,26 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+let adaptiveNpcBudget = Math.min(V5_MAX_NPCS, 120);
+let lastSchedulerDurationMs = 0;
+let lastTickPressure: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+
+function clampAdaptiveBudget(value: number): number {
+  return Math.max(64, Math.min(V5_MAX_NPCS, Math.round(value)));
+}
+
+export function getAdaptiveTickMetrics(): {
+  adaptiveBudget: number;
+  lastSchedulerDurationMs: number;
+  tickPressure: 'LOW' | 'MEDIUM' | 'HIGH';
+} {
+  return {
+    adaptiveBudget: adaptiveNpcBudget,
+    lastSchedulerDurationMs,
+    tickPressure: lastTickPressure
+  };
+}
+
 function hashSeed(input: string): number {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
@@ -127,7 +147,7 @@ export async function runWorldTick(
   health = clamp(health - Math.floor(dayGain / 3) - Math.floor(activeMissionPressure / 3), 0, 100);
   commandAuthority = clamp(commandAuthority + (morale >= 60 ? 1 : -1) + (health >= 60 ? 1 : 0), 0, 100);
 
-  const npcs = await lockCurrentNpcsForUpdate(client, profileId, Math.min(options?.maxNpcOps ?? 160, V5_MAX_NPCS));
+  const npcs = await lockCurrentNpcsForUpdate(client, profileId, Math.min(options?.maxNpcOps ?? V5_MAX_NPCS, V5_MAX_NPCS));
   const changedNpcStates: NpcRuntimeState[] = [];
   const changedNpcIds = new Set<string>();
 
@@ -243,7 +263,7 @@ export async function runWorldTick(
   const cycleDay = currentDay >= 15 ? currentDay - (currentDay % 15) : 0;
   const currentCeremony = await getCurrentCeremony(client, profileId);
   if (cycleDay >= 15 && (!currentCeremony || currentCeremony.ceremonyDay < cycleDay)) {
-    const latestNpcList = await listCurrentNpcRuntime(client, profileId, { limit: 80 });
+    const latestNpcList = await listCurrentNpcRuntime(client, profileId, { limit: V5_MAX_NPCS });
     const awards = buildCycleAwards(latestNpcList.items, cycleDay);
     const kiaCount = latestNpcList.items.filter((item) => item.status === 'KIA').length;
 
@@ -349,12 +369,20 @@ export function mergeDeltas(sinceVersion: number, deltas: WorldDelta[]): WorldDe
 export async function runSchedulerTick(pool: Pool, nowMs: number): Promise<number> {
   const client = await pool.connect();
   let processed = 0;
+  const schedulerStart = Date.now();
   try {
     await client.query('BEGIN');
     const profiles = await listActiveWorldProfilesForTick(client, nowMs, 12);
     for (const profileId of profiles) {
-      const result = await runWorldTick(client, profileId, nowMs, { maxNpcOps: 160 });
+      const profileStart = Date.now();
+      const result = await runWorldTick(client, profileId, nowMs, { maxNpcOps: adaptiveNpcBudget });
       if (result.advanced) processed += 1;
+      const profileDurationMs = Date.now() - profileStart;
+      if (profileDurationMs > 145) {
+        adaptiveNpcBudget = clampAdaptiveBudget(adaptiveNpcBudget - 10);
+      } else if (profileDurationMs < 75) {
+        adaptiveNpcBudget = clampAdaptiveBudget(adaptiveNpcBudget + 6);
+      }
     }
     await client.query('COMMIT');
   } catch (error) {
@@ -363,6 +391,18 @@ export async function runSchedulerTick(pool: Pool, nowMs: number): Promise<numbe
   } finally {
     client.release();
   }
+
+  lastSchedulerDurationMs = Date.now() - schedulerStart;
+  if (lastSchedulerDurationMs >= 220) {
+    lastTickPressure = 'HIGH';
+    adaptiveNpcBudget = clampAdaptiveBudget(adaptiveNpcBudget - 8);
+  } else if (lastSchedulerDurationMs >= 120) {
+    lastTickPressure = 'MEDIUM';
+  } else {
+    lastTickPressure = 'LOW';
+    adaptiveNpcBudget = clampAdaptiveBudget(adaptiveNpcBudget + 4);
+  }
+
   return processed;
 }
 

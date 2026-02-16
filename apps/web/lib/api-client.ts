@@ -1,9 +1,11 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
 import type {
+  AcademyBatchState,
   ActionResult,
   CeremonyCycleV5,
   CeremonyReport,
   CertificationRecordV5,
+  ExpansionStateV51,
   DecisionResult,
   GameSnapshot,
   GameSnapshotV5,
@@ -18,6 +20,7 @@ import type {
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
+  RecruitmentCompetitionEntry,
   WorldDelta
 } from '@mls/shared/game-types';
 
@@ -227,6 +230,116 @@ export const api = {
       'POST',
       payload
     );
+  },
+  v5ExpansionState() {
+    return request<{ state: ExpansionStateV51; snapshot: GameSnapshotV5 | null }>('/game/v5/expansion/state', 'GET');
+  },
+  v5AcademyBatchStart(payload: { track: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 'TRIBUNAL' | 'CYBER'; tier: number }) {
+    return request<{ started: boolean; batchId: string; state: ExpansionStateV51; snapshot: GameSnapshotV5 | null }>(
+      '/game/v5/academy/batch/start',
+      'POST',
+      payload
+    );
+  },
+  v5AcademyBatchCurrent() {
+    return request<{
+      academyLockActive: boolean;
+      academyBatch: AcademyBatchState | null;
+      questionSet: { setId: string; questions: Array<{ id: string; prompt: string; choices: [string, string, string, string] }> } | null;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/batch/current', 'GET');
+  },
+  v5AcademyBatchSubmitDay(payload: { answers: number[] }) {
+    return request<{
+      submitted: boolean;
+      academyDay: number;
+      dayScore: number;
+      dayPassed: boolean;
+      readyToGraduate: boolean;
+      academyBatch: AcademyBatchState | null;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/batch/submit-day', 'POST', payload);
+  },
+  v5AcademyBatchGraduate() {
+    return request<{
+      graduated: boolean;
+      passed: boolean;
+      playerRank: number;
+      totalCadets: number;
+      certificateCodes: string[];
+      message: string;
+      academyBatch: AcademyBatchState | null;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/batch/graduate', 'POST', {});
+  },
+  v5RecruitmentBoard(division?: string) {
+    const query = division ? `?division=${encodeURIComponent(division)}` : '';
+    return request<{
+      board: {
+        division: string | null;
+        requirement: { label: 'STANDARD' | 'ADVANCED' | 'ELITE'; minExtraCerts: number };
+        playerEligibility: {
+          hasBaseDiploma: boolean;
+          baseDiplomaCode: string | null;
+          baseDiplomaGrade: 'A' | 'B' | 'C' | 'D' | null;
+          extraCertCount: number;
+          requiredExtraCerts: number;
+          missingExtraCerts: number;
+          bonusScore: number;
+          bonusCap: number;
+          eligible: boolean;
+        };
+        quota: {
+          division: string;
+          quotaTotal: number;
+          quotaUsed: number;
+          quotaRemaining: number;
+          status: 'OPEN' | 'COOLDOWN';
+          cooldownUntilDay: number | null;
+          cooldownDays: number;
+          decisionNote: string;
+          headName: string | null;
+        } | null;
+        quotaBoard: ExpansionStateV51['quotaBoard'];
+        race: ExpansionStateV51['recruitmentRace'];
+        questionSet: { setId: string; questions: Array<{ id: string; prompt: string; choices: [string, string, string, string] }> } | null;
+      };
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/recruitment/board${query}`, 'GET');
+  },
+  v5RecruitmentApply(payload: { division: string; answers: number[] }) {
+    return request<{
+      accepted: boolean;
+      division: string;
+      requirement: { label: 'STANDARD' | 'ADVANCED' | 'ELITE'; minExtraCerts: number };
+      examScore: number;
+      compositeScore: number;
+      acceptedSlots: number;
+      quota: {
+        division: string;
+        quotaTotal: number;
+        quotaUsed: number;
+        quotaRemaining: number;
+        status: 'OPEN' | 'COOLDOWN';
+        cooldownUntilDay: number | null;
+        cooldownDays: number;
+        decisionNote: string;
+      };
+      playerDecision: {
+        status: 'ACCEPTED' | 'REJECTED';
+        code: string;
+        reason: string;
+      };
+      playerEntry: RecruitmentCompetitionEntry | null;
+      raceTop10: RecruitmentCompetitionEntry[];
+      message: string;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/recruitment/apply', 'POST', payload);
   },
   createProfile(payload: { name: string; startAge: number; country: 'US'; branch: string }) {
     return request<{ profileId: string }>('/profile/create', 'POST', payload);

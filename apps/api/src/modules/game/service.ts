@@ -35,6 +35,7 @@ import {
   updateGameState
 } from './repo.js';
 import { attachAuth } from '../auth/service.js';
+import { clearV5World, ensureV5World } from '../game-v5/repo.js';
 
 interface LockedStateContext {
   client: PoolClient;
@@ -1468,6 +1469,12 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.military_law_logs = [];
 
     await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
+    await clearV5World(client, profileId);
+    await ensureV5World(client, {
+      profileId,
+      playerName: state.player_name,
+      branch: state.branch
+    }, nowMs);
 
     return {
       payload: {

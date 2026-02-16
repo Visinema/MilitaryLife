@@ -2,29 +2,24 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import type { GameSnapshot } from '@mls/shared/game-types';
+import type { ExpansionStateV51, GameSnapshot } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { api, ApiError, type CommandAction } from '@/lib/api-client';
 import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { buildWorldV2 } from '@/lib/world-v2';
 import { useGameStore } from '@/store/game-store';
+import { useDashboardUiStore } from '@/store/dashboard-ui-store';
 import { AvatarFrame } from './avatar-frame';
 import { PersonalStatsPanel } from './personal-stats-panel';
 
 interface V2CommandCenterProps {
   snapshot: GameSnapshot;
+  expansionState?: ExpansionStateV51 | null;
 }
 
-type CommandPanelTab = 'status' | 'command' | 'location';
-
-export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
+export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterProps) {
   const [mobileTab, setMobileTab] = useState<'overview' | 'mission'>('overview');
-  const quickTabs = [
-    { key: 'status', label: 'Status Cepat' },
-    { key: 'command', label: 'Perintah Cepat' },
-    { key: 'location', label: 'Semua Tabs' }
-  ] as const;
-  const [panelTab, setPanelTab] = useState<CommandPanelTab>('status');
+  const panelTab = useDashboardUiStore((state) => state.panelTab);
   const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
   const [commandNote, setCommandNote] = useState('');
   const [targetNpcId, setTargetNpcId] = useState<string>('');
@@ -103,21 +98,6 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
           <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border-2 border-border/85 bg-bg/70 p-2.5`}>
             <p className="text-xs uppercase tracking-[0.12em] text-muted">Indikator status negara dan militer</p>
 
-            <div className="mt-2 rounded border-2 border-border/80 bg-panel/70 p-1">
-              <p className="mb-1 px-1 text-[10px] uppercase tracking-[0.12em] text-muted">Quick Tabs</p>
-              <div className="grid grid-cols-3 gap-1">
-              {quickTabs.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setPanelTab(key)}
-                  className={`rounded border px-2 py-1 text-[11px] font-medium ${panelTab === key ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
-                >
-                  {label}
-                </button>
-              ))}
-              </div>
-            </div>
-
             {panelTab === 'status' ? (
               <>
                 <div className="mt-2 grid grid-cols-2 gap-1 text-[10px]">
@@ -142,6 +122,53 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                   />
                 </div>
 
+                <div className="mt-2 grid gap-1.5 xl:grid-cols-3">
+                  <div className="rounded border border-border/70 bg-bg/60 p-2">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Division Quota Board</p>
+                    {expansionState?.quotaBoard?.length ? (
+                      <div className="mt-1 space-y-1 text-[10px] text-muted">
+                        {expansionState.quotaBoard.slice(0, 3).map((item) => (
+                          <p key={item.division} className="rounded border border-border/50 px-1.5 py-1">
+                            <span className="text-text">{item.division}</span> | {item.quotaRemaining}/{item.quotaTotal} | {item.status}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-muted">Quota board belum tersedia.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded border border-border/70 bg-bg/60 p-2">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Recruitment Race</p>
+                    {expansionState?.recruitmentRace?.top10?.length ? (
+                      <div className="mt-1 space-y-1 text-[10px] text-muted">
+                        {expansionState.recruitmentRace.top10.slice(0, 3).map((entry) => (
+                          <p key={`${entry.holderType}-${entry.npcId ?? entry.name}`} className="rounded border border-border/50 px-1.5 py-1">
+                            <span className="text-text">#{entry.rank} {entry.name}</span> | score {entry.compositeScore}
+                          </p>
+                        ))}
+                        {typeof expansionState.recruitmentRace.playerRank === 'number' ? (
+                          <p className="rounded border border-accent/60 bg-accent/10 px-1.5 py-1 text-text">Posisi pemain: #{expansionState.recruitmentRace.playerRank}</p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-muted">Belum ada race data.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded border border-border/70 bg-bg/60 p-2">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Academy Batch Status</p>
+                    {expansionState?.academyBatch ? (
+                      <div className="mt-1 space-y-1 text-[10px] text-muted">
+                        <p>Track: <span className="text-text">{expansionState.academyBatch.track}</span> | Tier {expansionState.academyBatch.tier}</p>
+                        <p>Progress: <span className="text-text">{expansionState.academyBatch.playerDayProgress}/{expansionState.academyBatch.totalDays}</span></p>
+                        <p>Status: <span className="text-text">{expansionState.academyBatch.status}</span></p>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-muted">Tidak ada batch academy aktif.</p>
+                    )}
+                  </div>
+                </div>
               </>
             ) : null}
 
