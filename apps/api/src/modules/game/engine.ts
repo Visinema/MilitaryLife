@@ -252,7 +252,8 @@ function autoAssignFundSecretary(state: DbGameStateRow): void {
 
 export function synchronizeProgress(state: DbGameStateRow, nowMs: number): number {
   const effectiveNow = state.paused_at_ms ?? nowMs;
-  const targetDay = computeGameDay(effectiveNow, state.server_reference_time_ms);
+  const baseTargetDay = computeGameDay(effectiveNow, state.server_reference_time_ms);
+  const targetDay = Math.max(0, Math.floor(baseTargetDay * (state.game_time_scale || 1)));
   const elapsed = Math.max(0, targetDay - state.current_day);
 
   if (elapsed === 0) {
@@ -573,6 +574,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     pauseReason: state.pause_reason,
     pauseToken: state.pause_token,
     pauseExpiresAtMs: state.pause_expires_at_ms,
+    gameTimeScale: state.game_time_scale === 3 ? 3 : 1,
     lastMissionDay: state.last_mission_day,
     academyTier: state.academy_tier,
     academyCertifiedOfficer: state.academy_tier >= 1,
@@ -736,6 +738,7 @@ export function snapshotStateForLog(state: DbGameStateRow): Record<string, unkno
     nextEventDay: state.next_event_day,
     pendingEventId: state.pending_event_id,
     pauseReason: state.pause_reason,
+    gameTimeScale: state.game_time_scale,
     lastMissionDay: state.last_mission_day,
     academyTier: state.academy_tier,
     lastTravelPlace: state.last_travel_place,

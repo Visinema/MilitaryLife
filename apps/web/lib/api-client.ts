@@ -28,7 +28,27 @@ class ApiError extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api/v1';
+function normalizeApiBase(rawValue: string | undefined): string {
+  const fallback = '/api/v1';
+  const raw = rawValue?.trim();
+  if (!raw) return fallback;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const url = new URL(raw);
+      const normalizedPath = url.pathname.replace(/\/$/, '').replace(/\/api(?:\/v1)?$/i, '/api/v1');
+      const ensuredPath = normalizedPath.endsWith('/api/v1') ? normalizedPath : `${normalizedPath}/api/v1`;
+      return `${url.origin}${ensuredPath}`;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const normalizedRelative = raw.replace(/\/$/, '').replace(/\/api(?:\/v1)?$/i, '/api/v1');
+  return normalizedRelative.endsWith('/api/v1') ? normalizedRelative : `${normalizedRelative}/api/v1`;
+}
+
+const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE);
 
 let snapshotBackoffUntilMs = 0;
 let snapshotInFlight: Promise<{ snapshot: GameSnapshot }> | null = null;
@@ -130,6 +150,9 @@ export const api = {
     }
 
     return requestSnapshot();
+  },
+  setTimeScale(scale: 1 | 3) {
+    return request<ActionResult>('/game/actions/time-scale', 'POST', { scale });
   },
   pause(reason: 'DECISION' | 'MODAL' | 'SUBPAGE') {
     return request<{ pauseToken: string; pauseExpiresAtMs: number | null; snapshot: GameSnapshot }>('/game/pause', 'POST', {

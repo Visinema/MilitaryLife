@@ -10,9 +10,11 @@ interface TopbarTimeProps {
   onManualPause: () => void;
   onManualContinue: () => void;
   controlBusy?: 'pause' | 'continue' | null;
+  onToggleTimeScale: () => void;
+  timeScaleBusy?: boolean;
 }
 
-export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy }: TopbarTimeProps) {
+export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy, onToggleTimeScale, timeScaleBusy }: TopbarTimeProps) {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -37,6 +39,16 @@ export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualCon
         <div className="rounded border border-border px-2 py-1 text-[10px] uppercase tracking-[0.1em] text-muted">
           {snapshot.paused ? 'Paused' : 'Running'}
         </div>
+
+        <button
+          onClick={onToggleTimeScale}
+          disabled={Boolean(timeScaleBusy)}
+          className={`rounded border px-2 py-1 text-[10px] ${snapshot.gameTimeScale === 3 ? 'border-accent bg-accent/20 text-text' : 'border-border text-muted'} disabled:opacity-50`}
+          title="Percepat waktu dunia x3"
+        >
+          {timeScaleBusy ? '...' : `x${snapshot.gameTimeScale}`}
+        </button>
+
         <button
           onClick={onManualPause}
           disabled={snapshot.paused || controlBusy === 'pause'}

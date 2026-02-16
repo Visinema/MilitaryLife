@@ -15,6 +15,7 @@ export interface DbGameStateRow {
   pause_reason: PauseReason | null;
   pause_token: string | null;
   pause_expires_at_ms: number | null;
+  game_time_scale: 1 | 3;
   rank_index: number;
   money_cents: number;
   morale: number;
@@ -256,6 +257,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.pause_reason::text AS pause_reason,
         gs.pause_token::text AS pause_token,
         gs.pause_expires_at_ms,
+        gs.game_time_scale,
         gs.rank_index,
         gs.money_cents,
         gs.morale,
@@ -300,6 +302,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   const row = result.rows[0] ?? null;
   if (!row) return null;
 
+  row.game_time_scale = row.game_time_scale === 3 ? 3 : 1;
   row.certificate_inventory = parseJsonbArray(row.certificate_inventory);
   row.ceremony_recent_awards = parseCeremonyRecipients(row.ceremony_recent_awards);
   row.player_medals = parseJsonbStringArray(row.player_medals);
@@ -358,38 +361,39 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         pause_reason = $6::pause_reason,
         pause_token = $7::uuid,
         pause_expires_at_ms = $8,
-        rank_index = $9,
-        money_cents = $10,
-        morale = $11,
-        health = $12,
-        promotion_points = $13,
-        days_in_rank = $14,
-        next_event_day = $15,
-        last_mission_day = $16,
-        academy_tier = $17,
-        last_travel_place = $18,
-        certificate_inventory = $19::jsonb,
-        division_freedom_score = $20,
-        preferred_division = $21,
-        pending_event_id = $22,
-        ceremony_completed_day = $23,
-        ceremony_recent_awards = $24::jsonb,
-        player_medals = $25::jsonb,
-        player_ribbons = $26::jsonb,
-        player_position = $27,
-        player_division = $28,
-        npc_award_history = $29::jsonb,
-        raider_last_attack_day = $30,
-        raider_casualties = $31::jsonb,
-        national_stability = $32,
-        military_stability = $33,
-        military_fund_cents = $34,
-        fund_secretary_npc = $35,
-        corruption_risk = $36,
-        court_pending_cases = $37::jsonb,
-        military_law_current = $38::jsonb,
-        military_law_logs = $39::jsonb,
-        pending_event_payload = $40::jsonb,
+        game_time_scale = $9,
+        rank_index = $10,
+        money_cents = $11,
+        morale = $12,
+        health = $13,
+        promotion_points = $14,
+        days_in_rank = $15,
+        next_event_day = $16,
+        last_mission_day = $17,
+        academy_tier = $18,
+        last_travel_place = $19,
+        certificate_inventory = $20::jsonb,
+        division_freedom_score = $21,
+        preferred_division = $22,
+        pending_event_id = $23,
+        ceremony_completed_day = $24,
+        ceremony_recent_awards = $25::jsonb,
+        player_medals = $26::jsonb,
+        player_ribbons = $27::jsonb,
+        player_position = $28,
+        player_division = $29,
+        npc_award_history = $30::jsonb,
+        raider_last_attack_day = $31,
+        raider_casualties = $32::jsonb,
+        national_stability = $33,
+        military_stability = $34,
+        military_fund_cents = $35,
+        fund_secretary_npc = $36,
+        corruption_risk = $37,
+        court_pending_cases = $38::jsonb,
+        military_law_current = $39::jsonb,
+        military_law_logs = $40::jsonb,
+        pending_event_payload = $41::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -403,6 +407,7 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.pause_reason,
       state.pause_token,
       state.pause_expires_at_ms,
+      state.game_time_scale,
       state.rank_index,
       state.money_cents,
       state.morale,

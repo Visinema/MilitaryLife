@@ -135,6 +135,7 @@ export interface GameSnapshot {
   pauseReason: PauseReason | null;
   pauseToken: string | null;
   pauseExpiresAtMs: number | null;
+  gameTimeScale: 1 | 3;
   lastMissionDay: number;
   academyTier?: number;
   academyCertifiedOfficer?: boolean;

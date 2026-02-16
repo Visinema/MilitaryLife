@@ -77,6 +77,7 @@ export function DashboardShell() {
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [manualControlBusy, setManualControlBusy] = useState<'pause' | 'continue' | null>(null);
+  const [timeScaleBusy, setTimeScaleBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const [academyOpen, setAcademyOpen] = useState(false);
@@ -235,6 +236,22 @@ export function DashboardShell() {
       setManualControlBusy(null);
     }
   }, [setError, setSnapshot, snapshot?.pauseToken]);
+
+
+
+  const toggleTimeScale = useCallback(async () => {
+    const nextScale: 1 | 3 = snapshot?.gameTimeScale === 3 ? 1 : 3;
+    setTimeScaleBusy(true);
+    try {
+      const response = await api.setTimeScale(nextScale);
+      setSnapshot(response.snapshot);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal ubah skala waktu game');
+    } finally {
+      setTimeScaleBusy(false);
+    }
+  }, [setError, setSnapshot, snapshot?.gameTimeScale]);
 
   const runTravel = useCallback(
     async (place: TravelPlace) => {
@@ -518,6 +535,8 @@ export function DashboardShell() {
         onManualPause={() => void runManualPause()}
         onManualContinue={() => void runManualContinue()}
         controlBusy={manualControlBusy}
+        onToggleTimeScale={() => void toggleTimeScale()}
+        timeScaleBusy={timeScaleBusy}
       />
       <V2CommandCenter snapshot={snapshot} />
       <div className="cyber-panel space-y-1.5 p-2">

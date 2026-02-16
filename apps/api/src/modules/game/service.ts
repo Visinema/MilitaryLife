@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, MilitaryLawEntry, MilitaryLawPresetId, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
+import { GAME_MS_PER_DAY } from '@mls/shared/constants';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
 import {
@@ -209,6 +210,7 @@ interface StateCheckpoint {
   pauseReason: DbGameStateRow['pause_reason'];
   pauseToken: string | null;
   pauseExpiresAtMs: number | null;
+  gameTimeScale: 1 | 3;
   rankIndex: number;
   moneyCents: number;
   morale: number;
@@ -252,6 +254,7 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     pauseReason: state.pause_reason,
     pauseToken: state.pause_token,
     pauseExpiresAtMs: state.pause_expires_at_ms,
+    gameTimeScale: state.game_time_scale,
     rankIndex: state.rank_index,
     moneyCents: state.money_cents,
     morale: state.morale,
@@ -296,6 +299,7 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.pause_reason !== checkpoint.pauseReason ||
     state.pause_token !== checkpoint.pauseToken ||
     state.pause_expires_at_ms !== checkpoint.pauseExpiresAtMs ||
+    state.game_time_scale !== checkpoint.gameTimeScale ||
     state.rank_index !== checkpoint.rankIndex ||
     state.money_cents !== checkpoint.moneyCents ||
     state.morale !== checkpoint.morale ||
@@ -1053,6 +1057,41 @@ export async function runCommandAction(
   });
 }
 
+
+
+export async function setGameTimeScale(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { scale: 1 | 3 }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    autoResumeIfExpired(state, nowMs);
+    synchronizeProgress(state, nowMs);
+
+    const nextScale: 1 | 3 = payload.scale === 3 ? 3 : 1;
+    if (state.game_time_scale === nextScale) {
+      return {
+        payload: {
+          type: 'COMMAND',
+          snapshot: buildSnapshot(state, nowMs),
+          details: { gameTimeScale: nextScale, changed: false }
+        } as ActionResult
+      };
+    }
+
+    state.game_time_scale = nextScale;
+    state.server_reference_time_ms = Math.round(nowMs - (state.current_day * GAME_MS_PER_DAY) / nextScale);
+
+    return {
+      payload: {
+        type: 'COMMAND',
+        snapshot: buildSnapshot(state, nowMs),
+        details: { gameTimeScale: nextScale, changed: true }
+      } as ActionResult
+    };
+  });
+}
+
 export async function restartWorldFromZero(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs, client, profileId }) => {
     state.server_reference_time_ms = nowMs;
@@ -1061,6 +1100,7 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.pause_reason = null;
     state.pause_token = null;
     state.pause_expires_at_ms = null;
+    state.game_time_scale = 1;
     state.rank_index = 0;
     state.money_cents = 0;
     state.morale = 70;

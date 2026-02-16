@@ -81,3 +81,8 @@ export const militaryLawVoteSchema = z.object({
   presetId: z.enum(['BALANCED_COMMAND', 'EXPEDITIONARY_MANDATE', 'DISCIPLINE_FIRST', 'CIVIL_OVERSIGHT']),
   rationale: z.string().min(2).max(200).optional()
 });
+
+
+export const gameTimeScaleSchema = z.object({
+  scale: z.union([z.literal(1), z.literal(3)]).default(1)
+});
