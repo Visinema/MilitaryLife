@@ -1,5 +1,9 @@
 import { NextRequest } from 'next/server';
 
+function trimApiPrefix(pathname: string): string {
+  return pathname.replace(/\/api(?:\/v1)?\/?$/i, '').replace(/\/$/, '');
+}
+
 function normalizeBackendOrigin(rawValue: string | undefined): string | null {
   if (!rawValue) return null;
   const trimmed = rawValue.trim();
@@ -9,7 +13,8 @@ function normalizeBackendOrigin(rawValue: string | undefined): string | null {
 
   try {
     const url = new URL(withProtocol);
-    return `${url.origin}${url.pathname.replace(/\/$/, '')}`;
+    const normalizedPath = trimApiPrefix(url.pathname);
+    return `${url.origin}${normalizedPath}`;
   } catch {
     return null;
   }
@@ -25,7 +30,7 @@ function resolveBackendOrigin(): string | null {
   if (/^https?:\/\//i.test(rawApiBase)) {
     try {
       const url = new URL(rawApiBase);
-      const pathname = url.pathname.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+      const pathname = trimApiPrefix(url.pathname);
       return `${url.origin}${pathname}`;
     } catch {
       return null;
