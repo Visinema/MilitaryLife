@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 type MissionStage = 'ASSIGNMENT' | 'BRIEF' | 'COORDINATION' | 'OPERATION' | 'DEBRIEF';
@@ -198,9 +198,22 @@ export default function DeploymentPage() {
       };
 
       if (missionPauseToken) {
-        await api.resume(missionPauseToken).catch(() => {
-          // Token can be expired/invalid if server already resumed implicitly.
-        });
+        try {
+          const resumed = await api.resume(missionPauseToken);
+          setSnapshot(resumed.snapshot);
+        } catch (resumeErr) {
+          if (resumeErr instanceof ApiError && resumeErr.status === 409) {
+            const synced = await api.snapshot();
+            setSnapshot(synced.snapshot);
+            if (synced.snapshot.ceremonyDue) {
+              setMessage('Upacara wajib aktif. Selesaikan upacara terlebih dahulu sebelum melanjutkan misi/deploy lain.');
+            } else {
+              setMessage('Pause token tidak lagi valid karena sinkronisasi terbaru. Snapshot telah diperbarui.');
+            }
+          } else {
+            throw resumeErr;
+          }
+        }
       }
 
       setSnapshot(response.snapshot);

@@ -351,11 +351,29 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
     }
 
     if (!state.pause_token || state.pause_token !== pauseToken) {
-      return { payload: { error: 'Invalid pause token' }, statusCode: 409 };
+      return {
+        payload: {
+          error: 'Invalid pause token',
+          code: 'PAUSE_TOKEN_MISMATCH',
+          snapshot: buildSnapshot(state, nowMs),
+          details: {
+            pauseReason: state.pause_reason,
+            ceremonyDue: ceremonyPending(state)
+          }
+        },
+        statusCode: 409
+      };
     }
 
     if (ceremonyPending(state)) {
-      return { payload: { error: 'Complete mandatory ceremony before resuming', snapshot: buildSnapshot(state, nowMs) }, statusCode: 409 };
+      return {
+        payload: {
+          error: 'Complete mandatory ceremony before resuming',
+          code: 'CEREMONY_REQUIRED',
+          snapshot: buildSnapshot(state, nowMs)
+        },
+        statusCode: 409
+      };
     }
 
     resumeState(state, nowMs);
