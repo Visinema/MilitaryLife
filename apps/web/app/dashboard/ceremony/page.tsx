@@ -185,7 +185,7 @@ export default function CeremonyPage() {
           </section>
         </>
       ) : (
-        <p className="text-sm text-muted">{ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari kelipatan 12 berikutnya.'}</p>
+        <p className="text-sm text-muted">{ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari kelipatan 15 berikutnya.'}</p>
       )}
     </div>
   );

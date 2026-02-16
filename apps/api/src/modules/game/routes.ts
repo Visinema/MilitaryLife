@@ -17,7 +17,8 @@ import {
   appointSecretarySchema,
   courtReviewSchema,
   militaryLawVoteSchema,
-  gameTimeScaleSchema
+  gameTimeScaleSchema,
+  missionCallResponseSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -47,7 +48,8 @@ import {
   getMedalCatalog,
   getMilitaryLawState,
   voteMilitaryLaw,
-  setGameTimeScale
+  setGameTimeScale,
+  respondMissionCall
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -240,6 +242,15 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     try {
       const body = parseOrThrow(v3MissionSchema, request.body ?? {});
       await runV3Mission(request, reply, { missionType: body.missionType, dangerTier: body.dangerTier ?? 'MEDIUM', playerParticipates: body.playerParticipates ?? false });
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
+  app.post('/actions/mission-call-response', async (request, reply) => {
+    try {
+      const body = parseOrThrow(missionCallResponseSchema, request.body ?? {});
+      await respondMissionCall(request, reply, { participate: body.participate });
     } catch (err) {
       sendValidationError(reply, err);
     }

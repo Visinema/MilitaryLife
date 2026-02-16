@@ -1,0 +1,3 @@
+ALTER TABLE IF EXISTS game_states
+  ADD COLUMN IF NOT EXISTS mission_call_issued_day INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS active_mission JSONB NOT NULL DEFAULT 'null'::jsonb;

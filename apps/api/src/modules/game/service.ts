@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, MilitaryLawEntry, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
@@ -390,6 +391,8 @@ interface StateCheckpoint {
   militaryLawLogs: DbGameStateRow['military_law_logs'];
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
+  missionCallIssuedDay: number;
+  activeMission: DbGameStateRow['active_mission'];
 }
 
 function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
@@ -433,7 +436,9 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     militaryLawCurrent: state.military_law_current,
     militaryLawLogs: state.military_law_logs,
     pendingEventId: state.pending_event_id,
-    pendingEventPayload: state.pending_event_payload
+    pendingEventPayload: state.pending_event_payload,
+    missionCallIssuedDay: state.mission_call_issued_day,
+    activeMission: state.active_mission
   };
 }
 
@@ -478,7 +483,9 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.military_law_current !== checkpoint.militaryLawCurrent ||
     state.military_law_logs !== checkpoint.militaryLawLogs ||
     state.pending_event_id !== checkpoint.pendingEventId ||
-    state.pending_event_payload !== checkpoint.pendingEventPayload
+    state.pending_event_payload !== checkpoint.pendingEventPayload ||
+    state.mission_call_issued_day !== checkpoint.missionCallIssuedDay ||
+    state.active_mission !== checkpoint.activeMission
   );
 }
 
@@ -542,6 +549,7 @@ async function withLockedState(
     const initialStateCheckpoint = createStateCheckpoint(state);
     autoResumeIfExpired(state, nowMs);
     synchronizeProgress(state, nowMs);
+    maybeIssueMissionCall(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
     enforceCeremonyPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
 
     if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
@@ -658,13 +666,13 @@ function hasCommandAccess(state: DbGameStateRow): boolean {
 
 
 function currentCeremonyCycleDay(gameDay: number): number {
-  if (gameDay < 12) return 0;
-  return Math.floor(gameDay / 12) * 12;
+  if (gameDay < 15) return 0;
+  return Math.floor(gameDay / 15) * 15;
 }
 
 function ceremonyPending(state: DbGameStateRow): boolean {
   const cycleDay = currentCeremonyCycleDay(state.current_day);
-  return cycleDay >= 12 && state.ceremony_completed_day < cycleDay;
+  return cycleDay >= 15 && state.ceremony_completed_day < cycleDay;
 }
 
 function enforceCeremonyPause(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
@@ -676,7 +684,38 @@ function enforceCeremonyPause(state: DbGameStateRow, nowMs: number, timeoutMinut
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
   if (state.pending_event_id) return 'Resolve pending decision before taking actions';
   if (ceremonyPending(state)) return 'Ceremony is mandatory today. Open Ceremony page to proceed.';
+  if (state.active_mission?.status === 'ACTIVE') return 'Mission call active. Please choose ikut/tidak ikut dulu.';
   return null;
+}
+
+function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boolean): Array<{ name: string; role: 'PLAYER' | 'NPC' }> {
+  const npcParticipants = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS)
+    .slice(0, 8)
+    .map((npc) => ({ name: npc.name, role: 'NPC' as const }));
+  if (!playerParticipates) {
+    return npcParticipants;
+  }
+  return [{ name: state.player_name, role: 'PLAYER' as const }, ...npcParticipants.slice(0, 7)];
+}
+
+function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
+  const missionIntervalDays = 10;
+  if (state.active_mission?.status === 'ACTIVE') return;
+  if (state.current_day < state.mission_call_issued_day + missionIntervalDays) return;
+
+  state.active_mission = {
+    missionId: `mission-call-${state.current_day}-${randomUUID().slice(0, 8)}`,
+    issuedDay: state.current_day,
+    missionType: 'COUNTER_RAID',
+    dangerTier: state.rank_index >= 8 ? 'HIGH' : 'MEDIUM',
+    playerParticipates: false,
+    status: 'ACTIVE',
+    participants: buildMissionParticipants(state, false)
+  };
+  state.mission_call_issued_day = state.current_day;
+  if (!state.pending_event_id) {
+    pauseState(state, 'MODAL', nowMs, timeoutMinutes);
+  }
 }
 
 export async function runTraining(
@@ -1263,6 +1302,8 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.preferred_division = null;
     state.pending_event_id = null;
     state.pending_event_payload = null;
+    state.mission_call_issued_day = 0;
+    state.active_mission = null;
     state.ceremony_completed_day = 0;
     state.ceremony_recent_awards = [];
     state.player_medals = [];
@@ -1883,6 +1924,24 @@ export async function runV3Mission(
   payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
+    const existingMission = state.active_mission?.status === 'ACTIVE' ? state.active_mission : null;
+    state.active_mission = existingMission
+      ? {
+          ...existingMission,
+          missionType: payload.missionType,
+          dangerTier: payload.dangerTier,
+          playerParticipates: payload.playerParticipates,
+          participants: buildMissionParticipants(state, payload.playerParticipates)
+        }
+      : {
+          missionId: `mission-manual-${state.current_day}`,
+          issuedDay: state.current_day,
+          missionType: payload.missionType,
+          dangerTier: payload.dangerTier,
+          playerParticipates: payload.playerParticipates,
+          status: 'ACTIVE',
+          participants: buildMissionParticipants(state, payload.playerParticipates)
+        };
     const delta = computeMissionDelta(payload);
 
     state.money_cents = Math.max(0, state.money_cents + Math.floor(delta.fundDelta / 2));
@@ -1893,6 +1952,12 @@ export async function runV3Mission(
     state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
     state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
     state.last_mission_day = state.current_day;
+    if (state.active_mission) {
+      state.active_mission = { ...state.active_mission, status: 'RESOLVED' };
+    }
+    if (state.paused_at_ms && state.pause_reason === 'MODAL') {
+      resumeState(state, nowMs);
+    }
 
     maybeCreateCourtCase(state);
 
@@ -1909,6 +1974,78 @@ export async function runV3Mission(
         type: 'V3_MISSION',
         snapshot: buildSnapshot(state, nowMs),
         details
+      } as ActionResult
+    };
+  });
+}
+
+export async function respondMissionCall(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { participate: boolean }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const activeMission = state.active_mission;
+    if (!activeMission || activeMission.status !== 'ACTIVE') {
+      return { statusCode: 409, payload: { error: 'Tidak ada panggilan misi aktif.', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    state.active_mission = {
+      ...activeMission,
+      playerParticipates: payload.participate,
+      participants: buildMissionParticipants(state, payload.participate)
+    };
+
+    if (payload.participate) {
+      return {
+        payload: {
+          type: 'V3_MISSION',
+          snapshot: buildSnapshot(state, nowMs),
+          details: {
+            missionType: state.active_mission.missionType,
+            dangerTier: state.active_mission.dangerTier,
+            playerParticipates: true,
+            autoTriggered: true,
+            awaitingManualExecution: true
+          }
+        } as ActionResult
+      };
+    }
+
+    const missionPayload = {
+      missionType: activeMission.missionType,
+      dangerTier: activeMission.dangerTier,
+      playerParticipates: false
+    } as const;
+
+    const delta = computeMissionDelta(missionPayload);
+    state.money_cents = Math.max(0, state.money_cents + Math.floor(delta.fundDelta / 2));
+    state.military_fund_cents = Math.max(0, state.military_fund_cents + delta.fundDelta);
+    state.morale = clampScore(state.morale + delta.moraleDelta);
+    state.health = clampScore(state.health + delta.healthDelta);
+    state.national_stability = clampScore(state.national_stability + delta.stabilityDelta);
+    state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
+    state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
+    state.last_mission_day = state.current_day;
+    state.active_mission = { ...state.active_mission, status: 'RESOLVED' };
+
+    if (state.paused_at_ms && state.pause_reason === 'MODAL') {
+      resumeState(state, nowMs);
+    }
+
+    maybeCreateCourtCase(state);
+
+    return {
+      payload: {
+        type: 'V3_MISSION',
+        snapshot: buildSnapshot(state, nowMs),
+        details: {
+          ...delta,
+          missionType: missionPayload.missionType,
+          dangerTier: missionPayload.dangerTier,
+          playerParticipates: missionPayload.playerParticipates,
+          autoTriggered: true
+        }
       } as ActionResult
     };
   });

@@ -201,8 +201,8 @@ export function autoResumeIfExpired(state: DbGameStateRow, nowMs: number): boole
     return false;
   }
 
-  const ceremonyCycleDay = state.current_day >= 12 ? Math.floor(state.current_day / 12) * 12 : 0;
-  if (state.pause_reason === 'SUBPAGE' && ceremonyCycleDay >= 12 && state.ceremony_completed_day < ceremonyCycleDay) {
+  const ceremonyCycleDay = state.current_day >= 15 ? Math.floor(state.current_day / 15) * 15 : 0;
+  if (state.pause_reason === 'SUBPAGE' && ceremonyCycleDay >= 15 && state.ceremony_completed_day < ceremonyCycleDay) {
     return false;
   }
 
@@ -552,8 +552,8 @@ function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['division
 
 export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapshot {
   const gameDay = state.current_day;
-  const currentCeremonyDay = gameDay >= 12 ? Math.floor(gameDay / 12) * 12 : 0;
-  const ceremonyDue = currentCeremonyDay >= 12 && state.ceremony_completed_day < currentCeremonyDay;
+  const currentCeremonyDay = gameDay >= 15 ? Math.floor(gameDay / 15) * 15 : 0;
+  const ceremonyDue = currentCeremonyDay >= 15 && state.ceremony_completed_day < currentCeremonyDay;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
   const secretaryVacancyDays = computeSecretaryVacancyDays(state);
   return {
@@ -585,8 +585,11 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     preferredDivision: state.preferred_division,
     divisionAccess: getDivisionAccessProfile(state),
     pendingDecision: normalizePendingDecisionPayload(state),
+    missionCallDue: state.current_day >= state.mission_call_issued_day + 10,
+    missionCallIssuedDay: state.mission_call_issued_day,
+    activeMission: state.active_mission,
     ceremonyDue,
-    nextCeremonyDay: gameDay < 12 ? 12 : gameDay % 12 === 0 ? gameDay + 12 : gameDay + (12 - (gameDay % 12)),
+    nextCeremonyDay: gameDay < 15 ? 15 : gameDay % 15 === 0 ? gameDay + 15 : gameDay + (15 - (gameDay % 15)),
     ceremonyCompletedDay: state.ceremony_completed_day,
     ceremonyRecentAwards: state.ceremony_recent_awards,
     playerMedals: state.player_medals,

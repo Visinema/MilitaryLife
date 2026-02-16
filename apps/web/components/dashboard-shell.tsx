@@ -87,6 +87,7 @@ export function DashboardShell() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
+  const [missionCallBusy, setMissionCallBusy] = useState<null | 'YES' | 'NO'>(null);
   const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
@@ -380,7 +381,7 @@ export function DashboardShell() {
       if (liveDay === lastLiveCeremonyCheckDayRef.current) return;
       lastLiveCeremonyCheckDayRef.current = liveDay;
 
-      if (liveDay < 12 || liveDay % 12 !== 0) return;
+      if (liveDay < 15 || liveDay % 15 !== 0) return;
       if (checkingBoundary) return;
       checkingBoundary = true;
 
@@ -390,9 +391,9 @@ export function DashboardShell() {
           setSnapshot(response.snapshot);
           if (!response.snapshot.ceremonyDue) return;
           if (pathname.startsWith('/dashboard/ceremony')) return;
-          const ceremonyCycleDay = response.snapshot.gameDay < 12
-            ? 12
-            : response.snapshot.gameDay - (response.snapshot.gameDay % 12);
+          const ceremonyCycleDay = response.snapshot.gameDay < 15
+            ? 15
+            : response.snapshot.gameDay - (response.snapshot.gameDay % 15);
           ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
             router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}&boundary=1`);
           });
@@ -419,7 +420,7 @@ export function DashboardShell() {
     if (document.visibilityState !== 'visible') return;
 
     if (pathname.startsWith('/dashboard/ceremony')) return;
-    const ceremonyCycleDay = snapshot.gameDay < 12 ? 12 : snapshot.gameDay - (snapshot.gameDay % 12);
+    const ceremonyCycleDay = snapshot.gameDay < 15 ? 15 : snapshot.gameDay - (snapshot.gameDay % 15);
     ceremonyRedirectFrameRef.current = window.requestAnimationFrame(() => {
       router.replace(`/dashboard/ceremony?forced=1&cycleDay=${ceremonyCycleDay}`);
     });
@@ -431,6 +432,22 @@ export function DashboardShell() {
       }
     };
   }, [pageReady, pathname, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
+
+  const respondMissionCall = useCallback(async (participate: boolean) => {
+    setMissionCallBusy(participate ? 'YES' : 'NO');
+    try {
+      const response = await api.respondMissionCall(participate);
+      setSnapshot(response.snapshot);
+      setError(null);
+      if (participate) {
+        router.push('/dashboard/deployment?missionCall=1');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal merespons panggilan misi');
+    } finally {
+      setMissionCallBusy(null);
+    }
+  }, [router, setError, setSnapshot]);
 
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 
@@ -747,6 +764,34 @@ export function DashboardShell() {
 
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
+
+      {snapshot.activeMission?.status === 'ACTIVE' ? (
+        <div className="rounded-md border border-amber-400/60 bg-amber-500/10 p-3 text-sm text-amber-50">
+          <p className="font-semibold">Panggilan Misi Otomatis (tiap 10 hari)</p>
+          <p className="mt-1 text-xs opacity-90">
+            Ikut misi atau tidak? Jika ikut, Anda langsung diarahkan ke frame misi dan waktu tetap pause. Jika tidak, misi berjalan otomatis di background oleh 8 NPC.
+          </p>
+          <p className="mt-1 text-[11px] opacity-80">
+            Mission: {snapshot.activeMission.missionType} · Danger: {snapshot.activeMission.dangerTier} · Issued Day {snapshot.activeMission.issuedDay}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => void respondMissionCall(true)}
+              disabled={missionCallBusy !== null}
+              className="rounded border border-amber-200/60 bg-amber-200/20 px-2 py-1 text-xs disabled:opacity-50"
+            >
+              {missionCallBusy === 'YES' ? 'Memproses...' : 'Ya, ikut misi'}
+            </button>
+            <button
+              onClick={() => void respondMissionCall(false)}
+              disabled={missionCallBusy !== null}
+              className="rounded border border-border bg-bg px-2 py-1 text-xs text-text disabled:opacity-50"
+            >
+              {missionCallBusy === 'NO' ? 'Memproses...' : 'Tidak, jalankan via NPC'}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {snapshot.pendingDecision ? (
         <DecisionModal

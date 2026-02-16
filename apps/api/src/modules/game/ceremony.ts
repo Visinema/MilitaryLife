@@ -13,8 +13,8 @@ const MEDALS = [
 const RIBBONS = ['Ribbon-1', 'Ribbon-2', 'Ribbon-3', 'Ribbon-4', 'Ribbon-5'];
 
 function ceremonyDay(gameDay: number): number {
-  if (gameDay < 12) return 12;
-  return Math.floor(gameDay / 12) * 12;
+  if (gameDay < 15) return 15;
+  return Math.floor(gameDay / 15) * 15;
 }
 
 function scoreNpc(ceremonyDayValue: number, slot: number, morale: number, health: number): number {
@@ -74,7 +74,7 @@ function pickUniqueAward(state: DbGameStateRow, candidateName: string, seed: num
 
 export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const currentCeremonyDay = ceremonyDay(state.current_day);
-  const previousCeremonyDay = Math.max(12, currentCeremonyDay - 12);
+  const previousCeremonyDay = Math.max(15, currentCeremonyDay - 15);
   const registry = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS);
 
   const ranked = registry
@@ -111,7 +111,8 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     }
   ].sort((a: { competenceScore: number }, b: { competenceScore: number }) => b.competenceScore - a.competenceScore);
 
-  const hasMissionPrestasi = state.last_mission_day > 0 && state.current_day - state.last_mission_day <= 24;
+  const missionParticipants = new Set((state.active_mission?.participants ?? []).map((item) => item.name));
+  const hasMissionPrestasi = state.last_mission_day > 0 && state.current_day - state.last_mission_day <= 30;
   const highPerformers = candidatePool.filter((x) => x.competenceScore >= chief.competenceScore - 6).length;
   const awardSaturation = Math.min(8, Math.floor((Object.keys(state.npc_award_history).length + state.player_medals.length) / 2));
   const strictnessPenalty = state.morale < 68 ? 1 : 0;
@@ -124,6 +125,10 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
     if (!award) continue;
     if (candidate.competenceScore < chief.competenceScore - 16) continue;
+    const isMissionParticipant = missionParticipants.has(candidate.name);
+    if (!isMissionParticipant && candidate.name !== state.player_name) continue;
+    const rollGate = (currentCeremonyDay + candidate.name.length + candidate.competenceScore) % 100;
+    if (rollGate > 42) continue;
     if (!hasMissionPrestasi) continue;
 
     recipients.push({
@@ -134,7 +139,7 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
       position: candidate.position,
       medalName: award.medalName,
       ribbonName: award.ribbonName,
-      reason: `Performance score ${candidate.competenceScore} lolos ambang seleksi ketat Chief-of-Staff AI.`
+      reason: `Performance score ${candidate.competenceScore} dengan status ${isMissionParticipant ? 'partisipan misi aktif' : 'cadangan komando'} lolos seleksi ketat Chief-of-Staff AI.`
     });
   }
 
@@ -143,8 +148,10 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     `Chief of Staff ${chief.name} sets dynamic quota ${quota} from competence, saturation, and excellence threshold.`,
     hasMissionPrestasi ? 'Mission achievement detected. Medal board activated for this ceremony cycle.' : 'No mission achievement in active window. Medal board locked: impossible to grant medals this cycle.',
     'Award session runs sequentially for one unified category of personnel (player and NPC progression share the same board).',
-    `Recipients selected: ${recipients.length}. Non-selected personnel remain on progression evaluation for next 12-day cycle.`,
-    'Ceremony closes with branch-wide directives for next 12-day operational cycle.'
+    `Recipients selected: ${recipients.length}. Tidak semua personel/partisipan otomatis mendapat prestasi atau pita medali tiap siklus.`,
+    `Deteksi misi aktif: ${state.active_mission ? `${state.active_mission.missionType} (${state.active_mission.status})` : 'tidak ada'}.`,
+    `Peserta misi terdeteksi: ${missionParticipants.size > 0 ? Array.from(missionParticipants).join(', ') : 'tidak ada'}.`,
+    'Ceremony closes with branch-wide directives for next 15-day operational cycle.'
   ];
 
   return {

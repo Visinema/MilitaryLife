@@ -52,6 +52,21 @@ export interface CeremonyRecipient {
   reason: string;
 }
 
+export interface MissionParticipant {
+  name: string;
+  role: 'PLAYER' | 'NPC';
+}
+
+export interface ActiveMissionState {
+  missionId: string;
+  issuedDay: number;
+  missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY';
+  dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  playerParticipates: boolean;
+  status: 'ACTIVE' | 'RESOLVED';
+  participants: MissionParticipant[];
+}
+
 
 
 export interface RaiderCasualty {
@@ -158,6 +173,9 @@ export interface GameSnapshot {
   preferredDivision?: string | null;
   divisionAccess?: DivisionAccessProfile | null;
   pendingDecision: PendingDecision | null;
+  missionCallDue?: boolean;
+  missionCallIssuedDay?: number | null;
+  activeMission?: ActiveMissionState | null;
   ceremonyDue: boolean;
   nextCeremonyDay: number;
   ceremonyCompletedDay: number;

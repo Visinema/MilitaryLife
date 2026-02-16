@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
-import type { AcademyCertificate, CeremonyRecipient, MilitaryLawEntry, RaiderCasualty } from '@mls/shared/game-types';
+import type { AcademyCertificate, ActiveMissionState, CeremonyRecipient, MilitaryLawEntry, RaiderCasualty } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -59,6 +59,8 @@ export interface DbGameStateRow {
       effectPreview?: string;
     }>;
   } | null;
+  mission_call_issued_day: number;
+  active_mission: ActiveMissionState | null;
   version: number;
 }
 
@@ -236,6 +238,34 @@ function parseMilitaryLawLogs(value: unknown): MilitaryLawEntry[] {
   return [];
 }
 
+function parseActiveMission(value: unknown): ActiveMissionState | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parseActiveMission(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+  const mission = value as Partial<ActiveMissionState>;
+  if (typeof mission.missionId !== 'string' || typeof mission.issuedDay !== 'number') return null;
+  return {
+    missionId: mission.missionId,
+    issuedDay: mission.issuedDay,
+    missionType: mission.missionType === 'BLACK_OPS' || mission.missionType === 'COUNTER_RAID' || mission.missionType === 'TRIBUNAL_SECURITY' ? mission.missionType : 'RECON',
+    dangerTier: mission.dangerTier === 'EXTREME' || mission.dangerTier === 'HIGH' || mission.dangerTier === 'LOW' ? mission.dangerTier : 'MEDIUM',
+    playerParticipates: Boolean(mission.playerParticipates),
+    status: mission.status === 'RESOLVED' ? 'RESOLVED' : 'ACTIVE',
+    participants: Array.isArray(mission.participants)
+      ? mission.participants
+          .filter((item): item is { name: string; role: 'PLAYER' | 'NPC' } => Boolean(item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'))
+          .map((item) => ({ name: item.name, role: item.role === 'PLAYER' ? 'PLAYER' : 'NPC' }))
+      : []
+  };
+}
+
 export async function getProfileIdByUserId(client: PoolClient, userId: string): Promise<string | null> {
   const result = await client.query<{ id: string }>(`SELECT id FROM profiles WHERE user_id = $1`, [userId]);
   return result.rows[0]?.id ?? null;
@@ -290,6 +320,8 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.military_law_current,
         gs.military_law_logs,
         gs.pending_event_payload,
+        gs.mission_call_issued_day,
+        gs.active_mission,
         gs.version
       FROM profiles p
       JOIN game_states gs ON gs.profile_id = p.id
@@ -312,6 +344,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   row.court_pending_cases = parseCourtCases(row.court_pending_cases);
   row.military_law_current = parseMilitaryLawEntry(row.military_law_current);
   row.military_law_logs = parseMilitaryLawLogs(row.military_law_logs);
+  row.active_mission = parseActiveMission(row.active_mission);
   return row;
 }
 
@@ -394,6 +427,8 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         military_law_current = $39::jsonb,
         military_law_logs = $40::jsonb,
         pending_event_payload = $41::jsonb,
+        mission_call_issued_day = $42,
+        active_mission = $43::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -439,7 +474,9 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       toJsonbParam(state.court_pending_cases, []),
       toJsonbParam(state.military_law_current, null),
       toJsonbParam(state.military_law_logs, []),
-      toJsonbParam(state.pending_event_payload, null)
+      toJsonbParam(state.pending_event_payload, null),
+      state.mission_call_issued_day,
+      toJsonbParam(state.active_mission, null)
     ]
   );
 }

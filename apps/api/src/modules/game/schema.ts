@@ -96,6 +96,11 @@ export const militaryLawVoteSchema = z.discriminatedUnion('articleKey', [
 ]);
 
 
+
+export const missionCallResponseSchema = z.object({
+  participate: z.boolean()
+});
+
 export const gameTimeScaleSchema = z.object({
   scale: z.union([z.literal(1), z.literal(3)]).default(1)
 });

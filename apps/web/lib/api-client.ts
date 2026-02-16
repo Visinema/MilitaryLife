@@ -239,6 +239,9 @@ export const api = {
   v3Mission(payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }) {
     return request<ActionResult>('/game/actions/v3-mission', 'POST', payload);
   },
+  respondMissionCall(participate: boolean) {
+    return request<ActionResult>('/game/actions/mission-call-response', 'POST', { participate });
+  },
   appointSecretary(npcName: string) {
     return request<ActionResult>('/game/actions/appoint-secretary', 'POST', { npcName });
   },
