@@ -229,7 +229,8 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/time-scale', async (request, reply) => {
     try {
       const body = parseOrThrow(gameTimeScaleSchema, request.body ?? {});
-      await setGameTimeScale(request, reply, { scale: body.scale });
+      const scale: 1 | 3 = body.scale === 3 ? 3 : 1;
+      await setGameTimeScale(request, reply, { scale });
     } catch (err) {
       sendValidationError(reply, err);
     }
