@@ -57,7 +57,7 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown, opti
     }
     throw error;
   } finally {
-globalThis.clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
   }
 
   if (response.status === 204) {
