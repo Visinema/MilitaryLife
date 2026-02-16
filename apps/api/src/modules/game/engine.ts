@@ -258,14 +258,14 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
 
     const secretaryVacancyDays = computeSecretaryVacancyDays(state);
     if (secretaryVacancyDays > 2) {
-      const sustainedVacancyDays = Math.max(0, secretaryVacancyDays - 2);
-      const escalation = Math.min(elapsed, sustainedVacancyDays);
+      const sustainedVacancyDays = secretaryVacancyDays - 2;
+      const escalation = Math.max(1, Math.min(elapsed, sustainedVacancyDays));
       const reputationLoss = Math.max(1, Math.floor(escalation / 2));
       state.promotion_points = Math.max(0, state.promotion_points - reputationLoss);
       state.morale = Math.max(0, Math.min(100, state.morale - Math.max(1, Math.floor(escalation / 3))));
       state.military_stability = Math.max(0, Math.min(100, state.military_stability - Math.max(1, Math.floor(escalation / 2))));
 
-      if (sustainedVacancyDays >= 4 && state.current_day % 2 === 0) {
+      if (shouldEscalateSecretaryVacancy(state, sustainedVacancyDays)) {
         state.court_pending_cases = [
           ...state.court_pending_cases,
           {
@@ -285,7 +285,20 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
 
 function computeSecretaryVacancyDays(state: DbGameStateRow): number {
   if (state.fund_secretary_npc) return 0;
-  return Math.max(0, state.current_day - 2);
+  return Math.max(0, state.current_day);
+}
+
+function shouldEscalateSecretaryVacancy(state: DbGameStateRow, sustainedVacancyDays: number): boolean {
+  if (sustainedVacancyDays < 4) return false;
+  const unresolvedReviews = state.court_pending_cases.filter(
+    (item) => item.status !== 'CLOSED' && item.id.startsWith('chief-review-')
+  );
+  const latestReviewDay = unresolvedReviews.reduce((latest, item) => Math.max(latest, item.day), 0);
+  if (latestReviewDay >= state.current_day - 2) return false;
+
+  const escalationChance = Math.min(85, 22 + sustainedVacancyDays * 6);
+  const rollSeed = (state.current_day * 31 + state.morale * 7 + state.military_stability * 11) % 100;
+  return rollSeed < escalationChance;
 }
 
 function secretaryEscalationRisk(vacancyDays: number): 'LOW' | 'MEDIUM' | 'HIGH' {
