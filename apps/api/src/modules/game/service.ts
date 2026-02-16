@@ -684,7 +684,9 @@ function enforceCeremonyPause(state: DbGameStateRow, nowMs: number, timeoutMinut
 function ensureNoPendingDecision(state: DbGameStateRow): string | null {
   if (state.pending_event_id) return 'Resolve pending decision before taking actions';
   if (ceremonyPending(state)) return 'Ceremony is mandatory today. Open Ceremony page to proceed.';
-  if (state.active_mission?.status === 'ACTIVE') return 'Mission call active. Please choose ikut/tidak ikut dulu.';
+  if (state.active_mission?.status === 'ACTIVE' && !state.active_mission.playerParticipates) {
+    return 'Mission call active. Please choose ikut/tidak ikut dulu.';
+  }
   return null;
 }
 
@@ -791,6 +793,12 @@ export async function runDeployment(
     const action = applyDeploymentAction(state, missionType, mission);
     const advancedDays = advanceGameDays(state, missionDurationDays);
     state.last_mission_day = state.current_day;
+    if (state.active_mission?.status === 'ACTIVE' && state.active_mission.playerParticipates) {
+      state.active_mission = {
+        ...state.active_mission,
+        status: 'RESOLVED'
+      };
+    }
     const promoted = tryPromotion(state);
 
     const snapshot = buildSnapshot(state, nowMs);
