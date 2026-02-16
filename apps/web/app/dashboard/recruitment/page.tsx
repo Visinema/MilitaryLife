@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 type Question = {
@@ -228,6 +228,20 @@ export default function RecruitmentPage() {
       setResult(`LULUS: ${snapshot.playerName} diterima ke ${track.name}. Sertifikasi + surat mutasi masuk inventori.`);
       window.setTimeout(() => router.replace('/dashboard'), 450);
     } catch (err) {
+      if (err instanceof ApiError && err.details && typeof err.details === 'object') {
+        const details = err.details as Record<string, unknown>;
+        const diagnostics = [
+          `rankOk=${String(details.rankOk)}`,
+          `officerOk=${String(details.officerOk)}`,
+          `highOk=${String(details.highOk)}`,
+          `examPass=${String(details.examPass)}`,
+          `answered=${String(details.answeredCount ?? '-')}`,
+          `correct=${String(details.correctCount ?? '-')}`
+        ].join(', ');
+        setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${err.message}). Detail: ${diagnostics}`);
+        return;
+      }
+
       const message = err instanceof Error ? err.message : 'Gagal memproses rekrutmen';
       setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${message}).`);
     }

@@ -54,13 +54,13 @@ type RecruitmentTrack = {
 };
 
 const RECRUITMENT_TRACKS: RecruitmentTrack[] = [
-  { id: 'special-forces', name: 'Special Forces Task Group', division: 'Special Operations Division', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Assault Lead', 'Deep Recon Officer', 'Breach Controller'], exam: [{ id: 'sf-1', answer: 'Noise discipline' }, { id: 'sf-2', answer: 'Pre-brief exfil corridor' }, { id: 'sf-3', answer: 'Recon → isolate → breach' }] },
-  { id: 'military-police-division', name: 'Military Police Division', division: 'Military Police HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Provost Operations Officer', 'Base Law Commander', 'Escort Security Officer'], exam: [{ id: 'mp-1', answer: 'Secure scene and record' }, { id: 'mp-2', answer: 'Incident resolution quality' }, { id: 'mp-3', answer: 'Route security + custody protocol' }] },
-  { id: 'armored-division', name: 'Armored Division', division: 'Armored Command', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Armored Operations Officer', 'Tank Battalion XO', 'Mechanized Readiness Officer'], exam: [{ id: 'ar-1', answer: 'Maintain fuel + flank security' }, { id: 'ar-2', answer: 'When disabled armor blocks lane' }, { id: 'ar-3', answer: 'Operational tanks + repair time' }] },
-  { id: 'air-defense-division', name: 'Air Defense Division', division: 'Air Defense HQ', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Air Defense Controller', 'Radar Director', 'Counter-UAV Ops Officer'], exam: [{ id: 'ad-1', answer: 'Detect → classify → engage' }, { id: 'ad-2', answer: 'Intercept rate + false positive low' }, { id: 'ad-3', answer: 'Layered EW + missile discipline' }] },
-  { id: 'engineering-command', name: 'Combat Engineering Command', division: 'Engineer Command HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Combat Engineer Planner', 'Field Construction Officer', 'EOD Coordination Officer'], exam: [{ id: 'en-1', answer: 'Mobility corridor first' }, { id: 'en-2', answer: 'Build speed + safety compliance' }, { id: 'en-3', answer: 'Deploy secondary span protocol' }] },
-  { id: 'medical-support-division', name: 'Medical Support Division', division: 'Medical Command HQ', minRankIndex: 3, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Forward Medical Officer', 'Triage Command Officer', 'Recovery Planning Officer'], exam: [{ id: 'md-1', answer: 'Life-saving first by severity' }, { id: 'md-2', answer: 'Survival rate + evacuation speed' }, { id: 'md-3', answer: 'Activate surge protocol' }] },
-  { id: 'signal-cyber-corps', name: 'Signal & Cyber Corps', division: 'Signal Cyber HQ', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Cyber Incident Commander', 'Signal Security Officer', 'SOC Mission Coordinator'], exam: [{ id: 'cy-1', answer: 'Contain and isolate segment' }, { id: 'cy-2', answer: 'Uptime + breach containment time' }, { id: 'cy-3', answer: 'Primary comm compromised' }] }
+  { id: 'special-forces', name: 'Special Forces Task Group', division: 'Special Operations Division', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Assault Lead', 'Deep Recon Officer', 'Breach Controller'], exam: [{ id: 'sf-1', answer: 'Noise discipline' }, { id: 'sf-2', answer: 'Pre-brief exfil corridor' }, { id: 'sf-3', answer: 'Recon → isolate → breach' }, { id: 'sf-4', answer: 'Objective success + low casualty' }] },
+  { id: 'military-police-division', name: 'Military Police Division', division: 'Military Police HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Provost Operations Officer', 'Base Law Commander', 'Escort Security Officer'], exam: [{ id: 'mp-1', answer: 'Secure scene and record' }, { id: 'mp-2', answer: 'Incident resolution quality' }, { id: 'mp-3', answer: 'Route security + custody protocol' }, { id: 'mp-4', answer: 'Preserve chain of custody' }] },
+  { id: 'armored-division', name: 'Armored Division', division: 'Armored Command', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Armored Operations Officer', 'Tank Battalion XO', 'Mechanized Readiness Officer'], exam: [{ id: 'ar-1', answer: 'Maintain fuel + flank security' }, { id: 'ar-2', answer: 'When disabled armor blocks lane' }, { id: 'ar-3', answer: 'Operational tanks + repair time' }, { id: 'ar-4', answer: 'Recon + air-defense cover' }] },
+  { id: 'air-defense-division', name: 'Air Defense Division', division: 'Air Defense HQ', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Air Defense Controller', 'Radar Director', 'Counter-UAV Ops Officer'], exam: [{ id: 'ad-1', answer: 'Detect → classify → engage' }, { id: 'ad-2', answer: 'Intercept rate + false positive low' }, { id: 'ad-3', answer: 'Layered EW + missile discipline' }, { id: 'ad-4', answer: 'Validated inbound threat' }] },
+  { id: 'engineering-command', name: 'Combat Engineering Command', division: 'Engineer Command HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Combat Engineer Planner', 'Field Construction Officer', 'EOD Coordination Officer'], exam: [{ id: 'en-1', answer: 'Mobility corridor first' }, { id: 'en-2', answer: 'Build speed + safety compliance' }, { id: 'en-3', answer: 'Deploy secondary span protocol' }, { id: 'en-4', answer: 'Isolate + identify + neutralize' }] },
+  { id: 'medical-support-division', name: 'Medical Support Division', division: 'Medical Command HQ', minRankIndex: 3, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Forward Medical Officer', 'Triage Command Officer', 'Recovery Planning Officer'], exam: [{ id: 'md-1', answer: 'Life-saving first by severity' }, { id: 'md-2', answer: 'Survival rate + evacuation speed' }, { id: 'md-3', answer: 'Activate surge protocol' }, { id: 'md-4', answer: 'Daily bio-monitor screening' }] },
+  { id: 'signal-cyber-corps', name: 'Signal & Cyber Corps', division: 'Signal Cyber HQ', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Cyber Incident Commander', 'Signal Security Officer', 'SOC Mission Coordinator'], exam: [{ id: 'cy-1', answer: 'Contain and isolate segment' }, { id: 'cy-2', answer: 'Uptime + breach containment time' }, { id: 'cy-3', answer: 'Primary comm compromised' }, { id: 'cy-4', answer: 'Risk-based priority with rollback plan' }] }
 ];
 
 interface StateCheckpoint {
@@ -1178,14 +1178,27 @@ export async function runRecruitmentApply(
     const officerOk = !track.needOfficerCert || state.academy_tier >= 1 || hasRecruitmentPrereqFromInventory(state, 1);
     const highOk = !track.needHighCommandCert || state.academy_tier >= 2 || hasRecruitmentPrereqFromInventory(state, 2);
     const priorDivisionCertified = hasDivisionCertificate(state, track.division);
-    const examPass = priorDivisionCertified || track.exam.every((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase());
+
+    const answeredEntries = track.exam.filter((q) => typeof payload.answers[q.id] === 'string' && payload.answers[q.id].trim().length > 0);
+    const answeredCount = answeredEntries.length;
+    const correctCount = answeredEntries.filter((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase()).length;
+    const accuracy = answeredCount > 0 ? correctCount / answeredCount : 0;
+    const minimumAnswered = Math.min(3, track.exam.length);
+    const examPass = priorDivisionCertified || (answeredCount >= minimumAnswered && accuracy >= 0.8);
 
     if (!(rankOk && officerOk && highOk && examPass)) {
+      const missingQuestionIds = track.exam
+        .filter((q) => !payload.answers[q.id] || payload.answers[q.id].trim().length === 0)
+        .map((q) => q.id)
+        .slice(0, 8);
+
       const failedReasons = [
         rankOk ? null : `Rank minimal belum terpenuhi (butuh ${track.minRankIndex})`,
         officerOk ? null : 'Sertifikasi Officer Academy tidak terdeteksi (academy tier/inventory)',
         highOk ? null : 'Sertifikasi High Command tidak terdeteksi (academy tier/inventory)',
-        examPass ? null : 'Ujian track belum lulus dan belum ada sertifikasi divisi sebelumnya'
+        examPass
+          ? null
+          : `Ujian track belum lulus (answered=${answeredCount}, correct=${correctCount}, accuracy=${Math.round(accuracy * 100)}%, minimumAnswered=${minimumAnswered})`
       ].filter(Boolean);
 
       return {
@@ -1198,7 +1211,13 @@ export async function runRecruitmentApply(
             officerOk,
             highOk,
             examPass,
-            priorDivisionCertified
+            priorDivisionCertified,
+            answeredCount,
+            correctCount,
+            accuracy,
+            minimumAnswered,
+            expectedQuestionIds: track.exam.map((q) => q.id),
+            missingQuestionIds
           }
         }
       };
