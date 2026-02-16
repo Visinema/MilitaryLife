@@ -1,5 +1,5 @@
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
-import type { CeremonyReport, CeremonyRecipient } from '@mls/shared/game-types';
+import type { CeremonyReport, CeremonyRecipient, MissionParticipantStats } from '@mls/shared/game-types';
 import type { DbGameStateRow } from './repo.js';
 
 const MEDALS = [
@@ -72,6 +72,28 @@ function pickUniqueAward(state: DbGameStateRow, candidateName: string, seed: num
   return { medalName, ribbonName };
 }
 
+function topMissionContributorsByField(state: DbGameStateRow): Array<{ field: keyof Pick<MissionParticipantStats, 'tactical' | 'support' | 'leadership' | 'resilience'>; label: string; winner: { name: string; total: number } | null; winnerScore: number }> {
+  const missionStatsPool = (state.active_mission?.participantStats ?? []).slice();
+  const fieldConfig = [
+    { field: 'tactical', label: 'tactical execution' },
+    { field: 'support', label: 'support logistics' },
+    { field: 'leadership', label: 'leadership command' },
+    { field: 'resilience', label: 'resilience under fire' }
+  ] as const;
+
+  return fieldConfig.map((entry) => {
+    const rankedByField = missionStatsPool
+      .slice()
+      .sort((a, b) => b[entry.field] - a[entry.field]);
+    return {
+      field: entry.field,
+      label: entry.label,
+      winner: rankedByField[0] ? { name: rankedByField[0].name, total: rankedByField[0].total } : null,
+      winnerScore: rankedByField[0]?.[entry.field] ?? 0
+    };
+  });
+}
+
 export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const currentCeremonyDay = ceremonyDay(state.current_day);
   const previousCeremonyDay = Math.max(15, currentCeremonyDay - 15);
@@ -119,23 +141,7 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const baseQuota = Math.floor(chief.competenceScore / 28);
   const quota = hasMissionPrestasi ? Math.max(1, Math.min(8, baseQuota + Math.floor(highPerformers / 6) - awardSaturation - strictnessPenalty)) : 0;
 
-  const missionStatsPool = (state.active_mission?.participantStats ?? []).slice();
-  const missionStatsLeaderByField = [
-    { field: 'tactical', label: 'tactical execution' },
-    { field: 'support', label: 'support logistics' },
-    { field: 'leadership', label: 'leadership command' },
-    { field: 'resilience', label: 'resilience under fire' }
-  ].map((entry) => {
-    const rankedByField = missionStatsPool
-      .slice()
-      .sort((a, b) => (Number((b as Record<string, unknown>)[entry.field]) || 0) - (Number((a as Record<string, unknown>)[entry.field]) || 0));
-    return {
-      field: entry.field,
-      label: entry.label,
-      winner: rankedByField[0] ?? null,
-      winnerScore: Number((rankedByField[0] as Record<string, unknown> | undefined)?.[entry.field]) || 0
-    };
-  });
+  const missionStatsLeaderByField = topMissionContributorsByField(state);
 
   const recipients: CeremonyRecipient[] = [];
   const awarded = new Set<string>();

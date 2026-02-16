@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
-import type { AcademyCertificate, ActiveMissionState, CeremonyRecipient, MilitaryLawEntry, RaiderCasualty } from '@mls/shared/game-types';
+import type { AcademyCertificate, ActiveMissionState, CeremonyRecipient, MilitaryLawEntry, MissionParticipantStats, RaiderCasualty } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -279,12 +279,10 @@ function parseActiveMission(value: unknown): ActiveMissionState | null {
       : [],
     participantStats: Array.isArray((mission as { participantStats?: unknown }).participantStats)
       ? ((mission as { participantStats: unknown[] }).participantStats
-          .filter((item): item is { name: string; role: 'PLAYER' | 'NPC'; tactical: number; support: number; leadership: number; resilience: number; total: number } => (
-            Boolean(item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string')
-          ))
+          .filter(isMissionParticipantStatsRow)
           .map((item) => ({
             name: item.name,
-            role: item.role === 'PLAYER' ? 'PLAYER' : 'NPC',
+            role: (item.role === 'PLAYER' ? 'PLAYER' : 'NPC') as 'PLAYER' | 'NPC',
             tactical: Number(item.tactical) || 0,
             support: Number(item.support) || 0,
             leadership: Number(item.leadership) || 0,
@@ -296,6 +294,20 @@ function parseActiveMission(value: unknown): ActiveMissionState | null {
     plan: normalizedPlan,
     archivedUntilCeremonyDay: typeof mission.archivedUntilCeremonyDay === 'number' ? mission.archivedUntilCeremonyDay : null
   };
+}
+
+function isMissionParticipantStatsRow(value: unknown): value is MissionParticipantStats {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Partial<MissionParticipantStats>;
+  return (
+    typeof row.name === 'string' &&
+    (row.role === 'PLAYER' || row.role === 'NPC') &&
+    typeof row.tactical === 'number' &&
+    typeof row.support === 'number' &&
+    typeof row.leadership === 'number' &&
+    typeof row.resilience === 'number' &&
+    typeof row.total === 'number'
+  );
 }
 
 export async function getProfileIdByUserId(client: PoolClient, userId: string): Promise<string | null> {

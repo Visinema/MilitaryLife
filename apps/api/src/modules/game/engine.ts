@@ -594,6 +594,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     ceremonyRecentAwards: state.ceremony_recent_awards,
     playerMedals: state.player_medals,
     playerRibbons: state.player_ribbons,
+    npcAwardHistory: state.npc_award_history,
     playerPosition: state.player_position,
     playerDivision: state.player_division,
     raiderLastAttackDay: state.raider_last_attack_day,

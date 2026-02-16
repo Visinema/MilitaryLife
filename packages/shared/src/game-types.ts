@@ -205,6 +205,7 @@ export interface GameSnapshot {
   playerRibbons: string[];
   playerPosition: string;
   playerDivision: string;
+  npcAwardHistory?: Record<string, { medals: string[]; ribbons: string[] }>;
   raiderLastAttackDay: number;
   raiderCasualties: RaiderCasualty[];
   nationalStability: number;

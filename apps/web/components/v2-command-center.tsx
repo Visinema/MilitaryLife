@@ -18,6 +18,11 @@ type CommandPanelTab = 'status' | 'command' | 'location';
 
 export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
   const [mobileTab, setMobileTab] = useState<'overview' | 'mission'>('overview');
+  const quickTabs = [
+    { key: 'status', label: 'Status Cepat' },
+    { key: 'command', label: 'Perintah Cepat' },
+    { key: 'location', label: 'Semua Tabs' }
+  ] as const;
   const [panelTab, setPanelTab] = useState<CommandPanelTab>('status');
   const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
   const [showHierarchy, setShowHierarchy] = useState(false);
@@ -58,20 +63,20 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
 
   return (
     <div className="space-y-1.5">
-      <div className="grid grid-cols-2 gap-1.5 md:hidden">
+      <div className="sticky top-1 z-20 grid grid-cols-2 gap-1.5 rounded-md border-2 border-border bg-panel p-1 shadow-panel md:hidden">
         {(['overview', 'mission'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setMobileTab(tab)}
-            className={`rounded border px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] ${mobileTab === tab ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
+            className={`rounded border px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${mobileTab === tab ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
           >
             {tab}
           </button>
         ))}
       </div>
 
-      <section className="cyber-panel p-2">
-        <p className="text-[11px] uppercase tracking-[0.12em] text-muted">UI V3 · Compact Theater</p>
+      <section className="cyber-panel border-2 border-border/90 p-2">
+        <p className="text-[11px] uppercase tracking-[0.12em] text-muted">UI V4 · Reworked Layout</p>
         <div className="mt-1.5 grid gap-1.5 xl:grid-cols-[1.3fr,1fr]">
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
@@ -92,23 +97,22 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             />
           </div>
 
-          <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border border-border/70 bg-bg/70 p-2`}>
+          <div className={`${mobileTab !== 'mission' ? 'hidden md:block' : ''} rounded-md border-2 border-border/85 bg-bg/70 p-2.5`}>
             <p className="text-xs uppercase tracking-[0.12em] text-muted">Indikator status negara dan militer</p>
 
-            <div className="mt-2 grid grid-cols-3 gap-1">
-              {([
-                ['status', 'Status'],
-                ['command', 'Perintah'],
-                ['location', 'Pindah Lokasi']
-              ] as const).map(([key, label]) => (
+            <div className="mt-2 rounded border-2 border-border/80 bg-panel/70 p-1">
+              <p className="mb-1 px-1 text-[10px] uppercase tracking-[0.12em] text-muted">Quick Tabs</p>
+              <div className="grid grid-cols-3 gap-1">
+              {quickTabs.map(({ key, label }) => (
                 <button
                   key={key}
                   onClick={() => setPanelTab(key)}
-                  className={`rounded border px-2 py-1 text-[11px] ${panelTab === key ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
+                  className={`rounded border px-2 py-1 text-[11px] font-medium ${panelTab === key ? 'border-accent bg-accent/20 text-text' : 'border-border bg-panel text-muted'}`}
                 >
                   {label}
                 </button>
               ))}
+              </div>
             </div>
 
             {panelTab === 'status' ? (
@@ -188,7 +192,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                         maxLength={240}
                       />
                     </div>
-                    <div className="mt-1 grid grid-cols-3 gap-1">
+                    <div className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-3">
                       <button onClick={() => void runCommandAction('PLAN_MISSION')} disabled={Boolean(commandBusy)} className="rounded border border-accent bg-accent/20 px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'PLAN_MISSION' ? 'Planning...' : 'Plan Mission'}</button>
                       <button onClick={() => void runCommandAction('ISSUE_PROMOTION')} disabled={Boolean(commandBusy)} className="rounded border border-border bg-panel px-1.5 py-1 text-[11px] text-text disabled:opacity-60">{commandBusy === 'ISSUE_PROMOTION' ? 'Issuing...' : 'Promote NPC'}</button>
                       <button onClick={() => void runCommandAction('ISSUE_SANCTION')} disabled={Boolean(commandBusy)} className="rounded border border-danger/60 bg-danger/10 px-1.5 py-1 text-[11px] text-danger disabled:opacity-60">{commandBusy === 'ISSUE_SANCTION' ? 'Issuing...' : 'Sanction NPC'}</button>
@@ -202,19 +206,23 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             ) : null}
 
             {panelTab === 'location' ? (
-              <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
-                <p className="text-xs uppercase tracking-[0.1em] text-muted">Kategori & Tabs (Pindah Lokasi)</p>
+              <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2.5">
+                <p className="text-xs uppercase tracking-[0.1em] text-muted">Navigasi Cepat Dashboard</p>
                 <p className="mt-1 text-[10px] text-muted">Divisi terdaftar: {REGISTERED_DIVISIONS.map((item) => item.name).join(' · ')}</p>
-                <div className="mt-1 grid grid-cols-3 gap-1">
+                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Inti</p>
+                <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
                   <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
                   <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
                   <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>
                   <Link href="/dashboard/decision-log" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Decision Log</Link>
                   <Link href="/dashboard/ceremony" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Upacara Medal</Link>
                   <Link href="/dashboard/recruitment" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Rekrutmen</Link>
+                </div>
+                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Lanjutan</p>
+                <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
                   <Link href="/dashboard/raider-attack" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Raider Alert</Link>
                   <Link href="/dashboard/news" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">News</Link>
-                  <Link href="/dashboard/medals" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Medals V3</Link>
+                  <Link href="/dashboard/medals" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Medals</Link>
                   <Link href="/dashboard/division-ops" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Division Ops</Link>
                   <Link href="/dashboard/military-court" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Pending Sidang</Link>
                   <Link href="/dashboard/military-law" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Military Law</Link>

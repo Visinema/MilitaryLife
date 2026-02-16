@@ -70,7 +70,7 @@ function DeploymentPageContent() {
     };
 
     syncSnapshot();
-    const timer = window.setInterval(syncSnapshot, snapshot?.gameTimeScale === 3 ? 850 : 3000);
+    const timer = window.setInterval(syncSnapshot, snapshot?.gameTimeScale === 3 ? 1200 : 3000);
     window.addEventListener('focus', syncSnapshot);
     window.addEventListener('visibilitychange', syncSnapshot);
     return () => {

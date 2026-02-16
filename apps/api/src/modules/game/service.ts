@@ -194,6 +194,17 @@ function isLmcEligibleRank(state: DbGameStateRow): boolean {
   return currentRank.includes('major') || currentRank.includes('mayor') || currentRank.includes('colonel') || currentRank.includes('kolonel') || currentRank.includes('general') || state.rank_index >= 7;
 }
 
+function computeCouncilVoteDistribution(state: DbGameStateRow, members: number, initiatedByPlayer: boolean): { votesFor: number; votesAgainst: number } {
+  const stabilityMomentum = (state.national_stability + state.military_stability) / 2;
+  const trustBonus = initiatedByPlayer ? Math.min(14, Math.max(0, state.rank_index - 4) * 2) : 8;
+  const supportPct = Math.max(52, Math.min(89, Math.round(52 + stabilityMomentum * 0.22 + trustBonus - state.corruption_risk * 0.15)));
+  const votesFor = Math.max(Math.floor(members / 2) + 1, Math.round((members * supportPct) / 100));
+  return {
+    votesFor: Math.min(members, votesFor),
+    votesAgainst: Math.max(0, members - votesFor)
+  };
+}
+
 function scheduledSelectionForDay(day: number): MilitaryLawDraftSelection {
   return {
     chiefTermOptionId: MILITARY_LAW_CHIEF_TERM_OPTIONS[Math.max(0, day) % MILITARY_LAW_CHIEF_TERM_OPTIONS.length]?.id ?? 'TERM_60',
@@ -248,8 +259,7 @@ function composeMilitaryLawEntry(
 
 function enactMilitaryLawByNpc(state: DbGameStateRow, selection: MilitaryLawDraftSelection, nowDay: number): MilitaryLawEntry {
   const members = mlcEligibleMembers(state);
-  const votesFor = Math.max(Math.ceil(members * 0.65), Math.floor(members / 2) + 1);
-  const votesAgainst = Math.max(0, members - votesFor);
+  const { votesFor, votesAgainst } = computeCouncilVoteDistribution(state, members, false);
   const enacted = composeMilitaryLawEntry(state, selection, votesFor, votesAgainst, `Highrank NPC Council Day-${nowDay}`);
   state.military_law_current = enacted;
   state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
@@ -304,6 +314,39 @@ function militaryLawCouncilStatus(state: DbGameStateRow): {
     note: state.current_day < 3
       ? `Rapat NPC highrank sedang berlangsung (${meetingDay}/3 hari) untuk konfigurasi pasal terjadwal.`
       : 'Rapat NPC highrank telah selesai untuk konfigurasi pasal terjadwal.'
+  };
+}
+
+function evaluateMilitaryLawVoteAccess(state: DbGameStateRow): { ok: true } | { ok: false; statusCode: 403 | 409; error: string } {
+  if (!isLmcEligibleRank(state)) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: 'Perubahan Military Law hanya dapat diajukan oleh rank Major atau lebih tinggi.'
+    };
+  }
+
+  if (!state.military_law_current && state.current_day < 3) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: 'Rapat NPC highrank untuk Military Law awal sedang berlangsung 3 hari. Tunggu hingga rapat selesai.'
+    };
+  }
+
+  return { ok: true };
+}
+
+function computeMilitaryLawVotes(state: DbGameStateRow): { members: number; votesFor: number; votesAgainst: number } {
+  const members = mlcEligibleMembers(state);
+  const stabilityBias = Math.max(-0.08, Math.min(0.08, (state.military_stability - 50) / 500));
+  const confidenceBias = Math.max(-0.05, Math.min(0.05, (state.morale - 50) / 600));
+  const approvalRatio = Math.max(0.52, Math.min(0.82, 0.6 + stabilityBias + confidenceBias));
+  const votesFor = Math.max(Math.ceil(members * approvalRatio), Math.floor(members / 2) + 1);
+  return {
+    members,
+    votesFor,
+    votesAgainst: Math.max(0, members - votesFor)
   };
 }
 
@@ -710,12 +753,25 @@ function ensureNoPendingDecision(state: DbGameStateRow): string | null {
 
 function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boolean): Array<{ name: string; role: 'PLAYER' | 'NPC' }> {
   const casualtySlots = new Set((state.raider_casualties ?? []).map((item) => item.slot));
-  const activeNpcRoster = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS)
-    .filter((npc) => !casualtySlots.has(npc.slot));
-  const dynamicSeat = Math.max(4, Math.min(8, activeNpcRoster.length));
-  const npcParticipants = activeNpcRoster
+  const activeNpcRoster = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS).filter((npc) => !casualtySlots.has(npc.slot));
+  const freeTimeRoster = activeNpcRoster.filter((npc) => {
+    const cycleSeed = state.current_day + state.mission_call_issued_day + state.last_mission_day + npc.slot * 3;
+    return cycleSeed % 4 !== 0;
+  });
+  const sourceRoster = freeTimeRoster.length >= 4 ? freeTimeRoster : activeNpcRoster;
+  const dynamicSeat = Math.max(4, Math.min(8, sourceRoster.length));
+  const startOffset = sourceRoster.length === 0
+    ? 0
+    : Math.abs(state.current_day * 11 + state.rank_index * 7 + state.mission_call_issued_day * 5) % sourceRoster.length;
+
+  const rotatedRoster = sourceRoster.length === 0
+    ? []
+    : [...sourceRoster.slice(startOffset), ...sourceRoster.slice(0, startOffset)];
+
+  const npcParticipants = rotatedRoster
     .slice(0, dynamicSeat)
     .map((npc) => ({ name: npc.name, role: 'NPC' as const }));
+
   if (!playerParticipates) {
     return npcParticipants;
   }
@@ -863,7 +919,9 @@ export async function runDeployment(
 
     const mission = generateMission(state);
     const action = applyDeploymentAction(state, missionType, mission);
-    const advancedDays = advanceGameDays(state, missionDurationDays);
+    const durationMultiplier = state.game_time_scale === 3 ? 3 : 1;
+    const effectiveMissionDurationDays = Math.max(1, Math.ceil(missionDurationDays / durationMultiplier));
+    const advancedDays = advanceGameDays(state, effectiveMissionDurationDays);
     state.last_mission_day = state.current_day;
     if (state.active_mission?.status === 'ACTIVE' && state.active_mission.playerParticipates) {
       state.active_mission = {
@@ -882,7 +940,7 @@ export async function runDeployment(
         ...action.details,
         promoted,
         rankCode: snapshot.rankCode,
-        missionDurationDays,
+        missionDurationDays: effectiveMissionDurationDays,
         advancedDays,
         nextMissionInDays: missionCooldownDays,
         terrain: mission.terrain,
@@ -1018,6 +1076,12 @@ export async function runMilitaryAcademy(
           : ['Company Ops Lead', 'Junior Division Liaison'];
 
     state.preferred_division = preferredDivision && allowedDivisions.includes(preferredDivision) ? preferredDivision : allowedDivisions[0];
+    const primaryDivision = state.preferred_division ?? allowedDivisions[0] ?? 'Nondivisi';
+    const primaryDivisionHead = evaluateDivisionHead(state, primaryDivision);
+    const logisticsDivisionHead = evaluateDivisionHead(state, 'Engineer Command HQ');
+    const medicalDivisionHead = evaluateDivisionHead(state, 'Medical Command HQ');
+    const cyberDivisionHead = evaluateDivisionHead(state, 'Signal Cyber HQ');
+    const legalDivisionHead = evaluateDivisionHead(state, 'Military Court Division');
 
     const grade: 'A' | 'B' | 'C' | 'D' = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
     const freedomLevel: 'LIMITED' | 'STANDARD' | 'ADVANCED' | 'ELITE' =
@@ -1036,24 +1100,24 @@ export async function runMilitaryAcademy(
       score,
       grade,
       divisionFreedomLevel: freedomLevel,
-      trainerName: tier === 2 ? 'Lt. Gen. Michael Anderson' : 'Col. Daniel Hayes',
+      trainerName: primaryDivisionHead.name,
       issuedAtDay: state.current_day,
-      message: 'Congratulations on your successful completion of the academy assessment phase.',
-      assignedDivision: state.preferred_division ?? allowedDivisions[0]
+      message: `Congratulations on your successful completion of the academy assessment phase. Signed by ${primaryDivisionHead.name}, Acting Head of ${primaryDivision}.`,
+      assignedDivision: primaryDivision
     };
 
     const specializationCertificates = [
       {
         id: `${state.profile_id}-${Date.now()}-${tier}-spec-core`,
         tier,
-        academyName: `Operational Certification · ${state.preferred_division ?? allowedDivisions[0]} Core`,
+        academyName: `Operational Certification · ${primaryDivision} Core`,
         score: Math.max(70, score - 5),
         grade,
         divisionFreedomLevel: freedomLevel,
-        trainerName: 'Certification Board Alpha',
+        trainerName: primaryDivisionHead.name,
         issuedAtDay: state.current_day,
         message: 'Specialized certification for divisional role standards.',
-        assignedDivision: state.preferred_division ?? allowedDivisions[0]
+        assignedDivision: primaryDivision
       },
       {
         id: `${state.profile_id}-${Date.now()}-${tier}-spec-log`,
@@ -1062,7 +1126,7 @@ export async function runMilitaryAcademy(
         score: Math.max(72, score - 4),
         grade,
         divisionFreedomLevel: freedomLevel,
-        trainerName: 'Logistics Board Sigma',
+        trainerName: logisticsDivisionHead.name,
         issuedAtDay: state.current_day,
         message: 'Supply tempo, budget control, and convoy resilience.',
         assignedDivision: 'Engineer Command HQ'
@@ -1074,7 +1138,7 @@ export async function runMilitaryAcademy(
         score: Math.max(71, score - 4),
         grade,
         divisionFreedomLevel: freedomLevel,
-        trainerName: 'Medical Board Delta',
+        trainerName: medicalDivisionHead.name,
         issuedAtDay: state.current_day,
         message: 'Combat triage command and evacuation corridor protocol.',
         assignedDivision: 'Medical Command HQ'
@@ -1087,10 +1151,10 @@ export async function runMilitaryAcademy(
             score: Math.max(75, score - 2),
             grade,
             divisionFreedomLevel: freedomLevel,
-            trainerName: 'Joint Staff Evaluation Board',
+            trainerName: primaryDivisionHead.name,
             issuedAtDay: state.current_day,
             message: 'Joint-task-force command certification.',
-            assignedDivision: state.preferred_division ?? allowedDivisions[0]
+            assignedDivision: primaryDivision
           }, {
             id: `${state.profile_id}-${Date.now()}-${tier}-spec-cyber`,
             tier,
@@ -1098,7 +1162,7 @@ export async function runMilitaryAcademy(
             score: Math.max(76, score - 1),
             grade,
             divisionFreedomLevel: freedomLevel,
-            trainerName: 'Cyber Command Board',
+            trainerName: cyberDivisionHead.name,
             issuedAtDay: state.current_day,
             message: 'Advanced threat containment and resilient command-network doctrine.',
             assignedDivision: 'Signal Cyber HQ'
@@ -1109,7 +1173,7 @@ export async function runMilitaryAcademy(
             score: Math.max(74, score - 2),
             grade,
             divisionFreedomLevel: freedomLevel,
-            trainerName: 'Military Court Evaluation Board',
+            trainerName: legalDivisionHead.name,
             issuedAtDay: state.current_day,
             message: 'Command accountability and tribunal-grade evidence discipline.',
             assignedDivision: 'Military Court Division'
@@ -1479,6 +1543,15 @@ export async function runSocialInteraction(
 }
 
 
+function mergeAwardList(current: string[], incoming: string | null | undefined, limit: number): string[] {
+  if (!incoming) return current.slice(0, limit);
+  return Array.from(new Set([...current, incoming])).slice(-limit);
+}
+
+function buildRecipientKey(name: string, position: string): string {
+  return `${name.trim().toLowerCase()}::${position.trim().toLowerCase()}`;
+}
+
 export async function completeCeremony(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
     if (!ceremonyPending(state)) {
@@ -1486,25 +1559,19 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     }
 
     const report = buildCeremonyReport(state);
-    const playerRecipient = report.recipients.find((item: CeremonyRecipient) => item.npcName === state.player_name && item.position === state.player_position) ?? null;
+    const playerKey = buildRecipientKey(state.player_name, state.player_position);
+    const playerRecipient = report.recipients.find((item: CeremonyRecipient) => buildRecipientKey(item.npcName, item.position) === playerKey) ?? null;
     const awardedToPlayer = Boolean(playerRecipient);
 
-    const playerMedals = awardedToPlayer
-      ? [...state.player_medals, playerRecipient!.medalName]
-      : state.player_medals;
-    const playerRibbons = awardedToPlayer
-      ? [...state.player_ribbons, playerRecipient!.ribbonName]
-      : state.player_ribbons;
-
-    state.player_medals = Array.from(new Set(playerMedals)).slice(-24);
-    state.player_ribbons = Array.from(new Set(playerRibbons)).slice(-24);
+    state.player_medals = mergeAwardList(state.player_medals, playerRecipient?.medalName, 24);
+    state.player_ribbons = mergeAwardList(state.player_ribbons, playerRecipient?.ribbonName, 24);
 
     const nextHistory = { ...state.npc_award_history };
     for (const recipient of report.recipients) {
-      if (recipient.npcName === state.player_name) continue;
+      if (buildRecipientKey(recipient.npcName, recipient.position) === playerKey) continue;
       const row = nextHistory[recipient.npcName] ?? { medals: [], ribbons: [] };
-      row.medals = Array.from(new Set([...row.medals, recipient.medalName])).slice(-12);
-      row.ribbons = Array.from(new Set([...row.ribbons, recipient.ribbonName])).slice(-12);
+      row.medals = mergeAwardList(row.medals, recipient.medalName, 12);
+      row.ribbons = mergeAwardList(row.ribbons, recipient.ribbonName, 12);
       nextHistory[recipient.npcName] = row;
     }
 
@@ -2304,31 +2371,20 @@ export async function voteMilitaryLaw(
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
     maybeAutoGovernMilitaryLaw(state);
 
-    if (!isLmcEligibleRank(state)) {
+    const voteAccess = evaluateMilitaryLawVoteAccess(state);
+    if (!voteAccess.ok) {
       return {
-        statusCode: 403,
+        statusCode: voteAccess.statusCode,
         payload: {
-          error: 'Perubahan Military Law hanya dapat diajukan oleh rank Major atau lebih tinggi.',
+          error: voteAccess.error,
           snapshot: buildSnapshot(state, nowMs)
         }
       };
     }
 
-    if (!state.military_law_current && state.current_day < 3) {
-      return {
-        statusCode: 409,
-        payload: {
-          error: 'Rapat NPC highrank untuk Military Law awal sedang berlangsung 3 hari. Tunggu hingga rapat selesai.',
-          snapshot: buildSnapshot(state, nowMs)
-        }
-      };
-    }
-
-    const members = mlcEligibleMembers(state);
-    const votesFor = Math.max(Math.ceil(members * 0.6), Math.floor(members / 2) + 1);
-    const votesAgainst = Math.max(0, members - votesFor);
+    const votes = computeMilitaryLawVotes(state);
     const nextSelection = applyArticleVoteToSelection(selectionFromCurrentLaw(state), payload);
-    const enacted = composeMilitaryLawEntry(state, nextSelection, votesFor, votesAgainst, state.player_name);
+    const enacted = composeMilitaryLawEntry(state, nextSelection, votes.votesFor, votes.votesAgainst, state.player_name);
     state.military_law_current = enacted;
     state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
 

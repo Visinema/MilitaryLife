@@ -260,13 +260,26 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
 
   const awardsByNpc = new Map<string, Array<{ medalName: string; ribbonName: string }>>();
+  const history = snapshot.npcAwardHistory ?? {};
+  for (const [npcName, row] of Object.entries(history)) {
+    const medals = Array.isArray(row?.medals) ? row.medals : [];
+    const ribbons = Array.isArray(row?.ribbons) ? row.ribbons : [];
+    const length = Math.min(medals.length, ribbons.length);
+    if (length === 0) continue;
+    const merged = Array.from({ length }, (_, idx) => ({
+      medalName: medals[idx] ?? 'Meritorious Service Medal',
+      ribbonName: ribbons[idx] ?? 'Ribbon-2'
+    }));
+    awardsByNpc.set(npcName, merged);
+  }
+
   for (const item of snapshot.ceremonyRecentAwards ?? []) {
     const isPlayerAward = item.npcName === snapshot.playerName && item.position === snapshot.playerPosition;
     if (isPlayerAward) continue;
 
     const row = awardsByNpc.get(item.npcName) ?? [];
     row.push({ medalName: item.medalName, ribbonName: item.ribbonName });
-    awardsByNpc.set(item.npcName, row);
+    awardsByNpc.set(item.npcName, row.slice(-12));
   }
   const casualtyBySlot = new Map((snapshot.raiderCasualties ?? []).map((item) => [item.slot, { role: item.role }]));
   const registry = buildNpcRegistry(snapshot.branch, MAX_NPCS);

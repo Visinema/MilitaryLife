@@ -445,7 +445,7 @@ export function DashboardShell() {
     };
 
     tickMission();
-    const timer = window.setInterval(tickMission, snapshot.gameTimeScale === 3 ? 320 : 900);
+    const timer = window.setInterval(tickMission, snapshot.gameTimeScale === 3 ? 450 : 900);
     return () => {
       window.clearInterval(timer);
     };
@@ -584,7 +584,7 @@ export function DashboardShell() {
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       <TopbarTime
         snapshot={snapshot}
         clockOffsetMs={clockOffsetMs}
@@ -594,8 +594,9 @@ export function DashboardShell() {
         onToggleTimeScale={() => void toggleTimeScale()}
         timeScaleBusy={timeScaleBusy}
       />
+      <div className="rounded-md border border-border/60 bg-panel/60 px-3 py-1.5 text-[11px] text-muted">Navigasi V4: gunakan Quick Tabs untuk akses Status, Perintah, dan semua halaman dashboard lebih cepat.</div>
       <V2CommandCenter snapshot={snapshot} />
-      <div className="cyber-panel space-y-1.5 p-2">
+      <div className="cyber-panel space-y-2 p-2.5">
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-5">
           {TRAVEL_PLACES.map((entry) => (
             <button
@@ -713,7 +714,7 @@ export function DashboardShell() {
       ) : null}
 
       {inventoryOpen ? (
-        <div className="cyber-panel space-y-1.5 p-2">
+        <div className="cyber-panel space-y-2 p-2.5">
           <p className="text-xs uppercase tracking-[0.1em] text-muted">Inventory · Certificates</p>
           <div className="grid gap-1 md:grid-cols-2">
             {safeCertificates.length === 0 ? (
