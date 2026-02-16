@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { usePathname, useRouter } from 'next/navigation';
 import { api, ApiError, type TravelPlace } from '@/lib/api-client';
 import type { CountryCode } from '@mls/shared/constants';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { deriveLiveGameDay } from '@/lib/clock';
 import { useGameStore } from '@/store/game-store';
@@ -44,7 +45,7 @@ const ACADEMY_QUESTIONS: Array<{ prompt: string; options: string[] }> = [
   }
 ];
 
-const DIVISION_OPTIONS = ['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER'] as const;
+const DIVISION_OPTIONS = REGISTERED_DIVISIONS.map((item) => item.name);
 
 type AcademyOutcome = {
   passed: boolean;
@@ -81,7 +82,7 @@ export function DashboardShell() {
   const [academyOpen, setAcademyOpen] = useState(false);
   const [academyTierDraft, setAcademyTierDraft] = useState<1 | 2>(1);
   const [academyAnswers, setAcademyAnswers] = useState<number[]>([1, 1, 1, 1, 1]);
-  const [divisionDraft, setDivisionDraft] = useState<(typeof DIVISION_OPTIONS)[number]>('INFANTRY');
+  const [divisionDraft, setDivisionDraft] = useState<string>(DIVISION_OPTIONS[0] ?? 'Special Operations Division');
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
@@ -600,7 +601,7 @@ export function DashboardShell() {
               </select>
             </label>
             <label className="text-[11px] text-muted md:col-span-2">Preferred Division
-              <select className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-[11px] text-text" value={divisionDraft} onChange={(e) => setDivisionDraft(e.target.value as (typeof DIVISION_OPTIONS)[number])}>
+              <select className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-[11px] text-text" value={divisionDraft} onChange={(e) => setDivisionDraft(e.target.value)}>
                 {DIVISION_OPTIONS.map((division) => (
                   <option key={division} value={division}>{division}</option>
                 ))}

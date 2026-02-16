@@ -1,6 +1,6 @@
 import type { BranchCode } from './constants.js';
 
-export const MAX_ACTIVE_NPCS = 30;
+export const MAX_ACTIVE_NPCS = 50;
 
 export interface NpcIdentity {
   slot: number;

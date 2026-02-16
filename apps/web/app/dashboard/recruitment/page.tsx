@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api-client';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { useGameStore } from '@/store/game-store';
 
 type Question = {
@@ -195,6 +196,9 @@ const TRACKS: Track[] = [
 
 ];
 
+const REGISTERED_DIVISION_SET = new Set(REGISTERED_DIVISIONS.map((item) => item.name));
+const RECRUITMENT_TRACKS = TRACKS.filter((track) => REGISTERED_DIVISION_SET.has(track.internalHierarchy[0]?.name ?? track.name));
+
 function rotateChoices(choices: string[], seed: number): string[] {
   if (choices.length <= 1) return choices;
   const shift = Math.abs(seed) % choices.length;
@@ -205,7 +209,7 @@ export default function RecruitmentPage() {
   const router = useRouter();
   const snapshot = useGameStore((s) => s.snapshot);
   const setSnapshot = useGameStore((s) => s.setSnapshot);
-  const [selected, setSelected] = useState(TRACKS[0].id);
+  const [selected, setSelected] = useState(RECRUITMENT_TRACKS[0]?.id ?? TRACKS[0].id);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<Record<string, unknown> | null>(null);
@@ -216,7 +220,7 @@ export default function RecruitmentPage() {
     api.snapshot().then((res) => setSnapshot(res.snapshot)).catch(() => null);
   }, [setSnapshot, snapshot]);
 
-  const track = useMemo(() => TRACKS.find((x) => x.id === selected) ?? TRACKS[0], [selected]);
+  const track = useMemo(() => RECRUITMENT_TRACKS.find((x) => x.id === selected) ?? RECRUITMENT_TRACKS[0] ?? TRACKS[0], [selected]);
 
   const dynamicQuestions = useMemo(() => {
     const seed = (snapshot?.gameDay ?? 0) + track.id.length;

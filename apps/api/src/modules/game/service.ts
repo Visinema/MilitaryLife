@@ -66,6 +66,16 @@ const RECRUITMENT_TRACKS: RecruitmentTrack[] = [
 ];
 
 
+
+const REGISTERED_DIVISION_NAMES = Array.from(new Set(RECRUITMENT_TRACKS.map((track) => track.division)));
+
+function academyAllowedDivisions(divisionFreedomScore: number): string[] {
+  if (divisionFreedomScore >= 80) return REGISTERED_DIVISION_NAMES;
+  if (divisionFreedomScore >= 60) return REGISTERED_DIVISION_NAMES.slice(0, Math.max(6, REGISTERED_DIVISION_NAMES.length - 1));
+  if (divisionFreedomScore >= 40) return REGISTERED_DIVISION_NAMES.slice(0, Math.max(4, Math.ceil(REGISTERED_DIVISION_NAMES.length / 2)));
+  return REGISTERED_DIVISION_NAMES.slice(0, 3);
+}
+
 const MEDAL_CATALOG: MedalCatalogItem[] = [
   {
     code: 'STAR_OF_VALOR',
@@ -561,7 +571,7 @@ export async function runMilitaryAcademy(
   payload: {
     tier: 1 | 2;
     answers: number[] | null;
-    preferredDivision?: 'INFANTRY' | 'INTEL' | 'LOGISTICS' | 'CYBER';
+    preferredDivision?: string;
   }
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
@@ -631,21 +641,14 @@ export async function runMilitaryAcademy(
     const freedomIncrement = Math.max(10, Math.floor(score / 2));
     state.division_freedom_score = Math.min(100, state.division_freedom_score + freedomIncrement);
 
-    const allowedDivisions =
-      state.division_freedom_score >= 80
-        ? ['INFANTRY', 'INTEL', 'LOGISTICS', 'CYBER']
-        : state.division_freedom_score >= 60
-          ? ['INFANTRY', 'INTEL', 'LOGISTICS']
-          : state.division_freedom_score >= 40
-            ? ['INFANTRY', 'LOGISTICS']
-            : ['INFANTRY'];
+    const allowedDivisions = academyAllowedDivisions(state.division_freedom_score);
 
     const divisionRoleUnlocks =
       state.division_freedom_score >= 80
-        ? ['Division Commander Track', 'Joint Task Force Chief', 'Strategic Operations Staff']
+        ? ['Division Commander Track', 'Joint Task Force Chief', 'Strategic Operations Staff', 'Cross-Corps Command Integrator']
         : state.division_freedom_score >= 60
-          ? ['Brigade Operations Officer', 'Division Staff Planner']
-          : ['Company Ops Lead'];
+          ? ['Brigade Operations Officer', 'Division Staff Planner', 'Inter-Unit Doctrine Coordinator']
+          : ['Company Ops Lead', 'Junior Division Liaison'];
 
     state.preferred_division = preferredDivision && allowedDivisions.includes(preferredDivision) ? preferredDivision : allowedDivisions[0];
 
@@ -669,21 +672,45 @@ export async function runMilitaryAcademy(
       trainerName: tier === 2 ? 'Lt. Gen. Michael Anderson' : 'Col. Daniel Hayes',
       issuedAtDay: state.current_day,
       message: 'Congratulations on your successful completion of the academy assessment phase.',
-      assignedDivision: state.preferred_division ?? "INFANTRY"
+      assignedDivision: state.preferred_division ?? allowedDivisions[0]
     };
 
     const specializationCertificates = [
       {
         id: `${state.profile_id}-${Date.now()}-${tier}-spec-core`,
         tier,
-        academyName: `Operational Certification · ${state.preferred_division ?? 'INFANTRY'} Core`,
+        academyName: `Operational Certification · ${state.preferred_division ?? allowedDivisions[0]} Core`,
         score: Math.max(70, score - 5),
         grade,
         divisionFreedomLevel: freedomLevel,
         trainerName: 'Certification Board Alpha',
         issuedAtDay: state.current_day,
         message: 'Specialized certification for divisional role standards.',
-        assignedDivision: state.preferred_division ?? 'INFANTRY'
+        assignedDivision: state.preferred_division ?? allowedDivisions[0]
+      },
+      {
+        id: `${state.profile_id}-${Date.now()}-${tier}-spec-log`,
+        tier,
+        academyName: 'Logistics Throughput Certification',
+        score: Math.max(72, score - 4),
+        grade,
+        divisionFreedomLevel: freedomLevel,
+        trainerName: 'Logistics Board Sigma',
+        issuedAtDay: state.current_day,
+        message: 'Supply tempo, budget control, and convoy resilience.',
+        assignedDivision: 'Engineer Command HQ'
+      },
+      {
+        id: `${state.profile_id}-${Date.now()}-${tier}-spec-med`,
+        tier,
+        academyName: 'Field Medical Coordination Certification',
+        score: Math.max(71, score - 4),
+        grade,
+        divisionFreedomLevel: freedomLevel,
+        trainerName: 'Medical Board Delta',
+        issuedAtDay: state.current_day,
+        message: 'Combat triage command and evacuation corridor protocol.',
+        assignedDivision: 'Medical Command HQ'
       },
       ...(tier === 2
         ? [{
@@ -696,7 +723,29 @@ export async function runMilitaryAcademy(
             trainerName: 'Joint Staff Evaluation Board',
             issuedAtDay: state.current_day,
             message: 'Joint-task-force command certification.',
-            assignedDivision: state.preferred_division ?? 'INFANTRY'
+            assignedDivision: state.preferred_division ?? allowedDivisions[0]
+          }, {
+            id: `${state.profile_id}-${Date.now()}-${tier}-spec-cyber`,
+            tier,
+            academyName: 'Cyber Defense Operations Certification',
+            score: Math.max(76, score - 1),
+            grade,
+            divisionFreedomLevel: freedomLevel,
+            trainerName: 'Cyber Command Board',
+            issuedAtDay: state.current_day,
+            message: 'Advanced threat containment and resilient command-network doctrine.',
+            assignedDivision: 'Signal Cyber HQ'
+          }, {
+            id: `${state.profile_id}-${Date.now()}-${tier}-spec-legal`,
+            tier,
+            academyName: 'Military Law & Tribunal Procedure Certification',
+            score: Math.max(74, score - 2),
+            grade,
+            divisionFreedomLevel: freedomLevel,
+            trainerName: 'Military Court Evaluation Board',
+            issuedAtDay: state.current_day,
+            message: 'Command accountability and tribunal-grade evidence discipline.',
+            assignedDivision: 'Military Court Division'
           }]
         : [])
     ];
@@ -1448,6 +1497,14 @@ export async function runRecruitmentApply(
     state.player_position = assignedRole;
     state.player_division = track.division;
 
+    const npcRecruitmentWave = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS)
+      .slice(0, 10)
+      .map((npc, idx) => ({
+        npcName: npc.name,
+        assignedDivision: track.division,
+        assignedRole: track.rolePool[(state.current_day + idx) % track.rolePool.length] ?? 'Division Support Officer'
+      }));
+
     const certificate = {
       id: `${state.profile_id}-recruit-${Date.now()}`,
       tier: state.academy_tier >= 2 ? 2 as const : 1 as const,
@@ -1472,6 +1529,7 @@ export async function runRecruitmentApply(
         details: {
           accepted: true,
           certificate,
+          npcRecruitmentWave,
           redirectTo: '/dashboard'
         }
       } as ActionResult

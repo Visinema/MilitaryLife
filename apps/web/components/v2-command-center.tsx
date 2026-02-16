@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { api, ApiError, type CommandAction } from '@/lib/api-client';
 import { buildWorldV2 } from '@/lib/world-v2';
 import { useGameStore } from '@/store/game-store';
@@ -203,6 +204,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             {panelTab === 'location' ? (
               <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
                 <p className="text-xs uppercase tracking-[0.1em] text-muted">Kategori & Tabs (Pindah Lokasi)</p>
+                <p className="mt-1 text-[10px] text-muted">Divisi terdaftar: {REGISTERED_DIVISIONS.map((item) => item.name).join(' · ')}</p>
                 <div className="mt-1 grid grid-cols-3 gap-1">
                   <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
                   <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
