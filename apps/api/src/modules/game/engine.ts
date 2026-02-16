@@ -58,23 +58,32 @@ function rankInfluence(state: DbGameStateRow): number {
 }
 
 
-function computeCertificatePromotionBoost(state: DbGameStateRow): { chanceBoost: number; roleUnlocks: string[] } {
+function computeCertificatePromotionBoost(state: DbGameStateRow): { chanceBoost: number; roleUnlocks: string[]; totalCertificates: number } {
   const certificates = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
   if (certificates.length === 0) {
-    return { chanceBoost: 0, roleUnlocks: [] };
+    return { chanceBoost: 0, roleUnlocks: [], totalCertificates: 0 };
   }
 
+  const totalCertificates = certificates.length;
   const highestTier = certificates.reduce((max, cert) => Math.max(max, Number(cert?.tier ?? 0)), 0);
-  const hasEliteGrade = certificates.some((cert) => cert?.grade === 'A' || cert?.grade === 'B');
-  const chanceBoost = clamp((highestTier >= 2 ? 0.08 : 0.04) + (hasEliteGrade ? 0.04 : 0.01), 0.02, 0.14);
+  const eliteCount = certificates.filter((cert) => cert?.grade === 'A' || cert?.grade === 'B').length;
+  const specializationCount = certificates.filter((cert) => String(cert?.academyName ?? '').toLowerCase().includes('certification')).length;
+  const divisionDiversity = new Set(certificates.map((cert) => String(cert?.assignedDivision ?? '').toUpperCase()).filter(Boolean)).size;
+
+  const chanceBoost = clamp(
+    (highestTier >= 2 ? 0.07 : 0.03) + eliteCount * 0.008 + specializationCount * 0.01 + Math.min(0.03, divisionDiversity * 0.007),
+    0.02,
+    0.24
+  );
 
   const roleUnlocks = [
     'Division Staff Planner',
     'Task Force Coordinator',
-    ...(highestTier >= 2 ? ['Strategic Command Staff', 'Joint Operations Controller'] : [])
+    ...(highestTier >= 2 ? ['Strategic Command Staff', 'Joint Operations Controller'] : []),
+    ...(specializationCount >= 2 ? ['Board Priority Candidate'] : [])
   ];
 
-  return { chanceBoost, roleUnlocks };
+  return { chanceBoost, roleUnlocks, totalCertificates };
 }
 
 export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgorithmResult {
@@ -108,9 +117,10 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
   const highCommandAcademyOk = !requiresHighCommandAcademy || state.academy_tier >= 2;
 
   const certificateBoost = computeCertificatePromotionBoost(state);
+  const npcCompetition = clamp(0.28 + ((state.current_day + state.rank_index * 17) % 35) / 100, 0.22, 0.7);
   const vacancyChance = clamp(
-    0.28 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015 + certificateBoost.chanceBoost,
-    0.12,
+    0.3 + state.morale * 0.003 + state.health * 0.002 + state.rank_index * 0.015 - npcCompetition * 0.18 + certificateBoost.chanceBoost,
+    0.1,
     0.95
   );
   const vacancyAvailabilityPercent = Math.round(vacancyChance * 100);
@@ -120,7 +130,8 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
 
   const serviceRatio = serviceYears / Math.max(minimumServiceYears, 0.1);
   const meritRatio = meritPoints / Math.max(minimumMeritPoints, 1);
-  const score = serviceRatio * 0.45 + meritRatio * 0.45 + vacancyChance * 0.1;
+  const certificateMerit = 1 + Math.min(0.3, certificateBoost.totalCertificates * 0.015);
+  const score = serviceRatio * 0.42 + meritRatio * 0.4 + vacancyChance * 0.1 + certificateMerit * 0.08;
   const recommendation: PromotionRecommendation =
     score >= 1.25 ? 'STRONG_RECOMMEND' : score >= 1.02 ? 'RECOMMEND' : score >= 0.82 ? 'HOLD' : 'NOT_RECOMMENDED';
 
@@ -135,7 +146,7 @@ export function evaluatePromotionAlgorithm(state: DbGameStateRow): PromotionAlgo
     ? null
     : `Promotion Board Notice: Promotion request cannot be approved this cycle due to ${
         rejectionReasons.join(', ') || 'administrative restrictions'
-      }. Certificate benefit bonus applied: +${Math.round(certificateBoost.chanceBoost * 100)}% vacancy chance. Please continue service and re-apply in a future board session.`;
+      }. Competition pressure: ${Math.round(npcCompetition * 100)}%, certificate bonus: +${Math.round(certificateBoost.chanceBoost * 100)}%. Please continue service and re-apply in a future board session.`;
 
   return {
     approved,
@@ -445,7 +456,7 @@ function normalizeCertificateInventory(rawValue: unknown): AcademyCertificate[] 
           typeof (item as { trainerName?: unknown }).trainerName === 'string'
       );
     })
-    .slice(0, 20);
+    .slice(0, 40);
 }
 
 function getDivisionAccessProfile(state: DbGameStateRow): GameSnapshot['divisionAccess'] {

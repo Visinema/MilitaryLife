@@ -53,7 +53,7 @@ export const socialInteractionSchema = z.object({
 
 export const recruitmentApplySchema = z.object({
   trackId: z.string().min(2).max(64),
-  answers: z.record(z.string(), z.string().min(1).max(120)).default({})
+  answers: z.record(z.string(), z.string().max(120)).default({})
 });
 
 export const newsQuerySchema = z.object({

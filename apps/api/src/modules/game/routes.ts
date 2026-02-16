@@ -209,7 +209,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post('/actions/v3-mission', async (request, reply) => {
     try {
       const body = parseOrThrow(v3MissionSchema, request.body ?? {});
-      await runV3Mission(request, reply, body);
+      await runV3Mission(request, reply, { missionType: body.missionType, dangerTier: body.dangerTier ?? 'MEDIUM', playerParticipates: body.playerParticipates ?? false });
     } catch (err) {
       sendValidationError(reply, err);
     }
