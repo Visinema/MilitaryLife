@@ -35,7 +35,7 @@ export async function dbPlugin(app: FastifyInstance): Promise<void> {
 
   const pool = new Pool({
     connectionString: app.env.DATABASE_URL,
-    max: 5,
+    max: app.env.DB_POOL_MAX,
     idleTimeoutMillis: 10_000,
     allowExitOnIdle: false,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined

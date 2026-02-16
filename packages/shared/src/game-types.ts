@@ -244,3 +244,159 @@ export interface ActionResult {
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }
+
+export type NpcRuntimeStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE' | 'RECRUITING';
+
+export interface NpcRuntimeState {
+  npcId: string;
+  slotNo: number;
+  generation: number;
+  name: string;
+  division: string;
+  unit: string;
+  position: string;
+  status: NpcRuntimeStatus;
+  joinedDay: number;
+  deathDay: number | null;
+  tactical: number;
+  support: number;
+  leadership: number;
+  resilience: number;
+  fatigue: number;
+  trauma: number;
+  xp: number;
+  promotionPoints: number;
+  relationToPlayer: number;
+  lastTask: string | null;
+  updatedAtMs: number;
+}
+
+export interface NpcLifecycleEvent {
+  id: number;
+  npcId: string;
+  eventType:
+    | 'PROMOTION'
+    | 'ACADEMY_PASS'
+    | 'ACADEMY_FAIL'
+    | 'CERTIFICATION_EARNED'
+    | 'KIA'
+    | 'REPLACEMENT_QUEUED'
+    | 'REPLACEMENT_JOINED'
+    | 'DISCIPLINARY';
+  day: number;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface MissionInstanceV5 {
+  missionId: string;
+  status: 'PLANNED' | 'ACTIVE' | 'RESOLVED';
+  issuedDay: number;
+  missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY';
+  dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  plan: {
+    strategy: string;
+    objective: string;
+    prepChecklist: string[];
+    chainQuality: number;
+    logisticReadiness: number;
+  } | null;
+  execution: {
+    success: boolean;
+    successScore: number;
+    casualties: number;
+    moraleDelta: number;
+    healthDelta: number;
+    fundDeltaCents: number;
+  } | null;
+  updatedAtMs: number;
+}
+
+export interface CeremonyCycleV5 {
+  cycleId: string;
+  ceremonyDay: number;
+  status: 'PENDING' | 'COMPLETED';
+  completedAtMs: number | null;
+  summary: {
+    attendance: number;
+    kiaMemorialCount: number;
+    commandRotationApplied: boolean;
+  };
+  awards: Array<{
+    orderNo: number;
+    npcId: string | null;
+    recipientName: string;
+    medal: string;
+    ribbon: string;
+    reason: string;
+  }>;
+}
+
+export interface CertificationRecordV5 {
+  certId: string;
+  holderType: 'PLAYER' | 'NPC';
+  npcId: string | null;
+  certCode: string;
+  track: string;
+  tier: 1 | 2 | 3;
+  grade: 'A' | 'B' | 'C' | 'D';
+  issuedDay: number;
+  expiresDay: number;
+  valid: boolean;
+}
+
+export interface WorldDelta {
+  fromVersion: number;
+  toVersion: number;
+  currentDay: number;
+  player: {
+    moneyCents: number;
+    morale: number;
+    health: number;
+    rankIndex: number;
+    assignment: string;
+    commandAuthority: number;
+  };
+  activeNpcCount: number;
+  changedNpcIds: string[];
+  changedNpcStates: NpcRuntimeState[];
+  activeMission: MissionInstanceV5 | null;
+  pendingCeremony: CeremonyCycleV5 | null;
+  recruitmentQueue: Array<{
+    slotNo: number;
+    dueDay: number;
+    generationNext: number;
+    status: 'QUEUED' | 'FULFILLED' | 'CANCELLED';
+  }>;
+  recentLifecycleEvents: NpcLifecycleEvent[];
+}
+
+export interface GameSnapshotV5 {
+  serverNowMs: number;
+  stateVersion: number;
+  world: {
+    currentDay: number;
+    gameTimeScale: 1 | 3;
+    sessionActiveUntilMs: number | null;
+  };
+  player: {
+    playerName: string;
+    branch: BranchCode;
+    rankIndex: number;
+    moneyCents: number;
+    morale: number;
+    health: number;
+    assignment: string;
+    commandAuthority: number;
+  };
+  npcSummary: {
+    total: number;
+    active: number;
+    injured: number;
+    reserve: number;
+    kia: number;
+    recruiting: number;
+  };
+  activeMission: MissionInstanceV5 | null;
+  pendingCeremony: CeremonyCycleV5 | null;
+}

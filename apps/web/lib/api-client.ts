@@ -1,5 +1,25 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, MilitaryLawCabinetOptionId, MilitaryLawChiefTermOptionId, MilitaryLawEntry, MilitaryLawOptionalPostOptionId, NewsItem, NewsType } from '@mls/shared/game-types';
+import type {
+  ActionResult,
+  CeremonyCycleV5,
+  CeremonyReport,
+  CertificationRecordV5,
+  DecisionResult,
+  GameSnapshot,
+  GameSnapshotV5,
+  MedalCatalogItem,
+  MilitaryLawCabinetOptionId,
+  MilitaryLawChiefTermOptionId,
+  MilitaryLawEntry,
+  MilitaryLawOptionalPostOptionId,
+  MissionInstanceV5,
+  NewsItem,
+  NewsType,
+  NpcLifecycleEvent,
+  NpcRuntimeState,
+  NpcRuntimeStatus,
+  WorldDelta
+} from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -152,6 +172,61 @@ export const api = {
   },
   me() {
     return request<AuthMeResponse>('/auth/me', 'GET');
+  },
+  buildMeta() {
+    return request<{ version: string; commitShaShort: string | null; builtAt: string }>('/meta/build', 'GET', undefined, {
+      cache: 'no-store'
+    });
+  },
+  v5SessionStart(payload?: { resetWorld?: boolean }) {
+    return request<{ started: boolean; resetApplied: boolean; snapshot: GameSnapshotV5 | null }>('/game/v5/session/start', 'POST', payload ?? {});
+  },
+  v5SessionHeartbeat(payload?: { sessionTtlMs?: number }) {
+    return request<{ ok: boolean; snapshot: GameSnapshotV5 | null }>('/game/v5/session/heartbeat', 'POST', payload ?? {});
+  },
+  v5SessionSync(sinceVersion?: number) {
+    const query = typeof sinceVersion === 'number' ? `?sinceVersion=${sinceVersion}` : '';
+    return request<{ fullSync: boolean; snapshot: GameSnapshotV5 | null; delta: WorldDelta | null }>(`/game/v5/session/sync${query}`, 'GET');
+  },
+  v5Npcs(query?: { status?: NpcRuntimeStatus; cursor?: number; limit?: number }) {
+    const params = new URLSearchParams();
+    if (query?.status) params.set('status', query.status);
+    if (typeof query?.cursor === 'number') params.set('cursor', String(query.cursor));
+    if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return request<{ items: NpcRuntimeState[]; nextCursor: number | null }>(`/game/v5/npcs${suffix}`, 'GET');
+  },
+  v5NpcDetail(npcId: string) {
+    return request<{ npc: NpcRuntimeState; lifecycleEvents: NpcLifecycleEvent[]; certifications: CertificationRecordV5[] }>(`/game/v5/npcs/${encodeURIComponent(npcId)}`, 'GET');
+  },
+  v5MissionPlan(payload: {
+    missionType: MissionInstanceV5['missionType'];
+    dangerTier: MissionInstanceV5['dangerTier'];
+    strategy: string;
+    objective: string;
+    prepChecklist: string[];
+    participantNpcIds: string[];
+  }) {
+    return request<{ mission: MissionInstanceV5; snapshot: GameSnapshotV5 | null }>('/game/v5/missions/plan', 'POST', payload);
+  },
+  v5MissionExecute(payload: { missionId: string; playerParticipates?: boolean }) {
+    return request<{ mission: MissionInstanceV5; snapshot: GameSnapshotV5 | null }>('/game/v5/missions/execute', 'POST', payload);
+  },
+  v5CeremonyCurrent() {
+    return request<{ ceremony: CeremonyCycleV5 | null; snapshot: GameSnapshotV5 | null }>('/game/v5/ceremony/current', 'GET');
+  },
+  v5CeremonyComplete() {
+    return request<{ ceremony: CeremonyCycleV5 | null; snapshot: GameSnapshotV5 | null }>('/game/v5/ceremony/complete', 'POST', {});
+  },
+  v5AcademyEnroll(payload: { enrolleeType: 'PLAYER' | 'NPC'; npcId?: string; track: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 'TRIBUNAL' | 'CYBER'; tier: number }) {
+    return request<{ enrollmentId: number; passed: boolean; score: number; snapshot: GameSnapshotV5 | null }>('/game/v5/academy/enroll', 'POST', payload);
+  },
+  v5CertificationExam(payload: { holderType: 'PLAYER' | 'NPC'; npcId?: string; certCode: string; score: number }) {
+    return request<{ passed: boolean; grade: 'A' | 'B' | 'C' | 'D'; certifications: CertificationRecordV5[]; snapshot: GameSnapshotV5 | null }>(
+      '/game/v5/certifications/exam',
+      'POST',
+      payload
+    );
   },
   createProfile(payload: { name: string; startAge: number; country: 'US'; branch: string }) {
     return request<{ profileId: string }>('/profile/create', 'POST', payload);

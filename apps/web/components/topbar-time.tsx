@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { deriveLiveGameDay, inGameDateFromDay } from '@/lib/clock';
+import { api } from '@/lib/api-client';
 
 interface TopbarTimeProps {
   snapshot: GameSnapshot;
@@ -16,12 +17,26 @@ interface TopbarTimeProps {
 
 export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy, onToggleTimeScale, timeScaleBusy }: TopbarTimeProps) {
   const [, setTick] = useState(0);
-  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '4.0.0';
+  const [appVersion, setAppVersion] = useState(process.env.NEXT_PUBLIC_APP_VERSION ?? '5.0.0');
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), snapshot.gameTimeScale === 3 ? 650 : 2000);
     return () => window.clearInterval(timer);
   }, [snapshot.gameTimeScale]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .buildMeta()
+      .then((meta) => {
+        if (cancelled) return;
+        if (meta.version) setAppVersion(meta.version);
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const day = deriveLiveGameDay(snapshot, clockOffsetMs);
   const date = inGameDateFromDay(day);

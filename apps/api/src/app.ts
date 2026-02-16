@@ -8,7 +8,10 @@ import { rateLimitPlugin } from './plugins/rate-limit.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { profileRoutes } from './modules/profile/routes.js';
 import { gameRoutes } from './modules/game/routes.js';
+import { gameV5Routes } from './modules/game-v5/routes.js';
+import { registerV5TickScheduler } from './modules/game-v5/service.js';
 import { eventsRoutes } from './modules/events/routes.js';
+import { metaRoutes } from './modules/meta/routes.js';
 import { isServiceUnavailableError, toServiceUnavailableResponse } from './utils/errors.js';
 import { probeDatabase } from './utils/db.js';
 
@@ -74,7 +77,10 @@ export async function buildApp() {
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(profileRoutes, { prefix: '/api/v1/profile' });
   await app.register(gameRoutes, { prefix: '/api/v1/game' });
+  await app.register(gameV5Routes, { prefix: '/api/v1/game/v5' });
   await app.register(eventsRoutes, { prefix: '/api/v1/events' });
+  await app.register(metaRoutes, { prefix: '/api/v1/meta' });
+  registerV5TickScheduler(app);
 
   let healthCache:
     | {

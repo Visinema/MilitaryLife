@@ -190,6 +190,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 <p className="mt-1 text-[10px] text-muted">Divisi terdaftar: {REGISTERED_DIVISIONS.map((item) => item.name).join(' · ')}</p>
                 <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Inti</p>
                 <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
+                  <Link href="/dashboard/v5" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">Dashboard V5</Link>
                   <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
                   <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
                   <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>

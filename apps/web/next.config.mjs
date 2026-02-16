@@ -47,6 +47,14 @@ function positiveIntegerString(input) {
   return trimmed;
 }
 
+function shortSha(input) {
+  const trimmed = input?.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^[0-9a-fA-F]{7,40}$/);
+  if (!match) return null;
+  return trimmed.slice(0, 7).toLowerCase();
+}
+
 function gitHeadCommitTimestamp() {
   try {
     const output = execSync('git show -s --format=%ct HEAD', {
@@ -60,26 +68,39 @@ function gitHeadCommitTimestamp() {
   }
 }
 
+function gitHeadCommitShortSha() {
+  try {
+    const output = execSync('git rev-parse --short=7 HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+      .toString()
+      .trim();
+    return shortSha(output);
+  } catch {
+    return null;
+  }
+}
+
 function resolveAutoVersion() {
-  const overrideVersion = semverLike(process.env.NEXT_PUBLIC_APP_VERSION_OVERRIDE);
-  if (overrideVersion && overrideVersion.patch !== null) {
-    return `${overrideVersion.major}.${overrideVersion.minor}.${overrideVersion.patch}`;
+  const overrideVersion = process.env.NEXT_PUBLIC_APP_VERSION_OVERRIDE?.trim();
+  if (overrideVersion) {
+    return overrideVersion;
   }
 
   const requestedBase = semverLike(process.env.NEXT_PUBLIC_APP_VERSION);
-  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '4.0';
+  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '5.0';
 
-  // Prefer CI build numbers when available (monotonic by pipeline run).
-  const buildCounterFromEnv =
-    positiveIntegerString(process.env.BUILD_NUMBER) ||
-    positiveIntegerString(process.env.GITHUB_RUN_NUMBER) ||
-    positiveIntegerString(process.env.VERCEL_GIT_COMMIT_TIMESTAMP);
-  if (buildCounterFromEnv) {
-    return `${baseVersion}.${buildCounterFromEnv}`;
+  const runNumber = positiveIntegerString(process.env.GITHUB_RUN_NUMBER) || positiveIntegerString(process.env.BUILD_NUMBER);
+  if (runNumber) {
+    return `${baseVersion}.${runNumber}`;
   }
 
-  // Works reliably even on shallow clones where `git rev-list --count` is often fixed at 1.
-  const commitTimestamp = gitHeadCommitTimestamp();
+  const commitShaShort = shortSha(process.env.VERCEL_GIT_COMMIT_SHA) || gitHeadCommitShortSha();
+  if (commitShaShort) {
+    return `${baseVersion}.${commitShaShort}`;
+  }
+
+  const commitTimestamp = positiveIntegerString(process.env.VERCEL_GIT_COMMIT_TIMESTAMP) || gitHeadCommitTimestamp();
   if (commitTimestamp) {
     return `${baseVersion}.${commitTimestamp}`;
   }

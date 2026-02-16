@@ -1,7 +1,7 @@
 import type { BranchCode } from './constants.js';
 import { DIVISION_REFERENCE_PROFILES } from './division-registry.js';
 
-export const MAX_ACTIVE_NPCS = 50;
+export const MAX_ACTIVE_NPCS = 80;
 
 export interface NpcIdentity {
   slot: number;

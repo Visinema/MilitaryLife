@@ -101,6 +101,21 @@ Game:
 - `POST /game/decisions/:eventId/choose`
 - `GET /game/decision-logs?cursor=&limit=`
 - `GET /game/config`
+- `GET /meta/build`
+
+Game V5:
+
+- `POST /game/v5/session/start`
+- `POST /game/v5/session/heartbeat`
+- `GET /game/v5/session/sync?sinceVersion=`
+- `GET /game/v5/npcs?status=&cursor=&limit=`
+- `GET /game/v5/npcs/:npcId`
+- `POST /game/v5/missions/plan`
+- `POST /game/v5/missions/execute`
+- `GET /game/v5/ceremony/current`
+- `POST /game/v5/ceremony/complete`
+- `POST /game/v5/academy/enroll`
+- `POST /game/v5/certifications/exam`
 
 Events:
 
@@ -199,6 +214,7 @@ Backend:
 - `AUTO_MIGRATE_STRICT` (default `true`, fail startup if migration fails)
 - `DB_HEALTHCHECK_TIMEOUT_MS` (default `5000`)
 - `DB_HEALTHCHECK_INTERVAL_MS` (default `5000`)
+- `DB_POOL_MAX` (default `20`)
 - `DB_SSL_MODE` (`auto` default, set `require` for managed PostgreSQL providers like Railway)
 - `STARTUP_DB_CHECK_STRICT` (default `false`, if `true` API exits when first DB probe fails)
 
@@ -255,8 +271,8 @@ corepack pnpm --filter @mls/api migrate
 3. Add env vars:
    - `BACKEND_ORIGIN=https://<railway-api-domain>` (scheme recommended; config auto-normalizes if omitted)
    - `NEXT_PUBLIC_API_BASE=/api/v1`
-   - Optional: `NEXT_PUBLIC_APP_VERSION=4.0` (major.minor base; patch auto-generated every build/push)
-   - Optional (manual lock): `NEXT_PUBLIC_APP_VERSION_OVERRIDE=4.0.0` (use only if you intentionally want fixed version text)
+   - Optional: `NEXT_PUBLIC_APP_VERSION=5.0` (major.minor base; patch auto-generated every build/push)
+   - Optional (manual lock): `NEXT_PUBLIC_APP_VERSION_OVERRIDE=5.0.0` (use only if you intentionally want fixed version text)
 4. Deploy.
 
 Next.js rewrite proxies `/api/*` to Railway so cookie auth remains first-party from browser perspective.

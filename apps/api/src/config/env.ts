@@ -113,6 +113,7 @@ const envSchema = z.object({
   AUTO_MIGRATE_STRICT: booleanFromEnv.default(true),
   DB_HEALTHCHECK_TIMEOUT_MS: z.coerce.number().int().min(250).max(20_000).default(5000),
   DB_HEALTHCHECK_INTERVAL_MS: z.coerce.number().int().min(500).max(60_000).default(5000),
+  DB_POOL_MAX: z.coerce.number().int().min(2).max(60).default(20),
   DB_SSL_MODE: z.enum(['auto', 'disable', 'require']).default('auto'),
   STARTUP_DB_CHECK_STRICT: booleanFromEnv.default(false)
 });

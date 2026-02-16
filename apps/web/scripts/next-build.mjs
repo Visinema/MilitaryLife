@@ -28,6 +28,7 @@ function ensureWasmFallbackBundle() {
 }
 
 process.env.npm_config_user_agent = 'npm';
+process.env.NEXT_DISABLE_SWC_NATIVE = '1';
 ensureWasmFallbackBundle();
 
 const nextCli = require.resolve('next/dist/bin/next');
