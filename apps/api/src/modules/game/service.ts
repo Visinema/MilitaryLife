@@ -131,6 +131,36 @@ function fallbackSelection(): MilitaryLawDraftSelection {
   };
 }
 
+function selectionFromCurrentLaw(state: DbGameStateRow): MilitaryLawDraftSelection {
+  const current = state.military_law_current?.articleSelection;
+  if (current) {
+    return {
+      chiefTermOptionId: current.chiefTermOptionId,
+      cabinetOptionId: current.cabinetOptionId,
+      optionalPostOptionId: current.optionalPostOptionId
+    };
+  }
+  return fallbackSelection();
+}
+
+function applyArticleVoteToSelection(
+  base: MilitaryLawDraftSelection,
+  payload:
+    | { articleKey: 'chiefTerm'; optionId: MilitaryLawDraftSelection['chiefTermOptionId']; rationale?: string }
+    | { articleKey: 'cabinet'; optionId: MilitaryLawDraftSelection['cabinetOptionId']; rationale?: string }
+    | { articleKey: 'optionalPosts'; optionId: MilitaryLawDraftSelection['optionalPostOptionId']; rationale?: string }
+): MilitaryLawDraftSelection {
+  if (payload.articleKey === 'chiefTerm') {
+    return { ...base, chiefTermOptionId: payload.optionId };
+  }
+
+  if (payload.articleKey === 'cabinet') {
+    return { ...base, cabinetOptionId: payload.optionId };
+  }
+
+  return { ...base, optionalPostOptionId: payload.optionId };
+}
+
 function buildMilitaryLawArticleOptions() {
   return {
     chiefTerm: MILITARY_LAW_CHIEF_TERM_OPTIONS.map((item) => ({ id: item.id, label: item.label, valueDays: item.value })),
@@ -1976,7 +2006,10 @@ export async function getMilitaryLawState(request: FastifyRequest, reply: Fastif
 export async function voteMilitaryLaw(
   request: FastifyRequest,
   reply: FastifyReply,
-  payload: { chiefTermOptionId: MilitaryLawDraftSelection['chiefTermOptionId']; cabinetOptionId: MilitaryLawDraftSelection['cabinetOptionId']; optionalPostOptionId: MilitaryLawDraftSelection['optionalPostOptionId']; rationale?: string }
+  payload:
+    | { articleKey: 'chiefTerm'; optionId: MilitaryLawDraftSelection['chiefTermOptionId']; rationale?: string }
+    | { articleKey: 'cabinet'; optionId: MilitaryLawDraftSelection['cabinetOptionId']; rationale?: string }
+    | { articleKey: 'optionalPosts'; optionId: MilitaryLawDraftSelection['optionalPostOptionId']; rationale?: string }
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
     maybeAutoGovernMilitaryLaw(state);
@@ -2004,7 +2037,8 @@ export async function voteMilitaryLaw(
     const members = mlcEligibleMembers(state);
     const votesFor = Math.max(Math.ceil(members * 0.6), Math.floor(members / 2) + 1);
     const votesAgainst = Math.max(0, members - votesFor);
-    const enacted = composeMilitaryLawEntry(state, { chiefTermOptionId: payload.chiefTermOptionId, cabinetOptionId: payload.cabinetOptionId, optionalPostOptionId: payload.optionalPostOptionId }, votesFor, votesAgainst, state.player_name);
+    const nextSelection = applyArticleVoteToSelection(selectionFromCurrentLaw(state), payload);
+    const enacted = composeMilitaryLawEntry(state, nextSelection, votesFor, votesAgainst, state.player_name);
     state.military_law_current = enacted;
     state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
 
@@ -2015,6 +2049,8 @@ export async function voteMilitaryLaw(
     const details = {
       approved: true,
       rationale: payload.rationale?.trim() ?? null,
+      changedArticle: payload.articleKey,
+      changedOptionId: payload.optionId,
       law: enacted,
       activeOptionalPosts: enacted.rules.optionalPosts,
       effect: {

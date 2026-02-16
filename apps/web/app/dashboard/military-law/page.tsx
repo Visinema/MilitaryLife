@@ -107,12 +107,12 @@ export default function MilitaryLawPage() {
     setBusyArticle(article);
     setMessage('');
     try {
-      const res = await api.militaryLawVote({
-        chiefTermOptionId: selection.chiefTermOptionId,
-        cabinetOptionId: selection.cabinetOptionId,
-        optionalPostOptionId: selection.optionalPostOptionId,
-        rationale: `Update pasal ${article}`
-      });
+      const payload = article === 'chief'
+        ? { articleKey: 'chiefTerm' as const, optionId: selection.chiefTermOptionId, rationale: 'Update Pasal 1' }
+        : article === 'cabinet'
+          ? { articleKey: 'cabinet' as const, optionId: selection.cabinetOptionId, rationale: 'Update Pasal 2' }
+          : { articleKey: 'optionalPosts' as const, optionId: selection.optionalPostOptionId, rationale: 'Update Pasal 3' };
+      const res = await api.militaryLawVote(payload);
 
       setSnapshot(res.snapshot);
       setData((prev) => {

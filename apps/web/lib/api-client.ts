@@ -8,12 +8,22 @@ export type CommandAction = 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION
 export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
 
 
-export type MilitaryLawProposalPayload = {
-  chiefTermOptionId: MilitaryLawChiefTermOptionId;
-  cabinetOptionId: MilitaryLawCabinetOptionId;
-  optionalPostOptionId: MilitaryLawOptionalPostOptionId;
-  rationale?: string;
-};
+export type MilitaryLawProposalPayload =
+  | {
+      articleKey: 'chiefTerm';
+      optionId: MilitaryLawChiefTermOptionId;
+      rationale?: string;
+    }
+  | {
+      articleKey: 'cabinet';
+      optionId: MilitaryLawCabinetOptionId;
+      rationale?: string;
+    }
+  | {
+      articleKey: 'optionalPosts';
+      optionId: MilitaryLawOptionalPostOptionId;
+      rationale?: string;
+    };
 
 type RequestOptions = {
   cache?: RequestCache;
