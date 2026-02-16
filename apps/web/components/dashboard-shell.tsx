@@ -440,7 +440,7 @@ export function DashboardShell() {
       setSnapshot(response.snapshot);
       setError(null);
       if (participate) {
-        router.push('/dashboard/deployment?missionCall=1');
+        router.push('/dashboard/deployment');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal merespons panggilan misi');

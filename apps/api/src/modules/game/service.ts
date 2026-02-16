@@ -670,6 +670,11 @@ function currentCeremonyCycleDay(gameDay: number): number {
   return Math.floor(gameDay / 15) * 15;
 }
 
+function nextCeremonyDayFrom(gameDay: number): number {
+  if (gameDay < 15) return 15;
+  return gameDay % 15 === 0 ? gameDay + 15 : gameDay + (15 - (gameDay % 15));
+}
+
 function ceremonyPending(state: DbGameStateRow): boolean {
   const cycleDay = currentCeremonyCycleDay(state.current_day);
   return cycleDay >= 15 && state.ceremony_completed_day < cycleDay;
@@ -718,7 +723,7 @@ function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinu
     participants: buildMissionParticipants(state, false)
   };
   state.mission_call_issued_day = state.current_day;
-  if (!state.pending_event_id) {
+  if (state.pause_reason !== 'DECISION') {
     pauseState(state, 'MODAL', nowMs, timeoutMinutes);
   }
 }
@@ -799,7 +804,8 @@ export async function runDeployment(
     if (state.active_mission?.status === 'ACTIVE' && state.active_mission.playerParticipates) {
       state.active_mission = {
         ...state.active_mission,
-        status: 'RESOLVED'
+        status: 'RESOLVED',
+        archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day)
       };
     }
     const promoted = tryPromotion(state);
@@ -1442,6 +1448,14 @@ export async function completeCeremony(request: FastifyRequest, reply: FastifyRe
     state.ceremony_recent_awards = report.recipients;
     state.ceremony_completed_day = report.ceremonyDay;
 
+    if (
+      state.active_mission &&
+      state.active_mission.status === 'RESOLVED' &&
+      (state.active_mission.archivedUntilCeremonyDay ?? 0) <= report.ceremonyDay
+    ) {
+      state.active_mission = null;
+    }
+
     if (state.pause_reason === 'SUBPAGE' && state.paused_at_ms) {
       resumeState(state, nowMs);
       synchronizeProgress(state, nowMs);
@@ -1964,7 +1978,11 @@ export async function runV3Mission(
     state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
     state.last_mission_day = state.current_day;
     if (state.active_mission) {
-      state.active_mission = { ...state.active_mission, status: 'RESOLVED' };
+      state.active_mission = {
+        ...state.active_mission,
+        status: 'RESOLVED',
+        archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day)
+      };
     }
     if (state.paused_at_ms && state.pause_reason === 'MODAL') {
       resumeState(state, nowMs);
@@ -2041,7 +2059,7 @@ export async function respondMissionCall(
     state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
     state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
     state.last_mission_day = state.current_day;
-    state.active_mission = { ...state.active_mission, status: 'RESOLVED' };
+    state.active_mission = { ...state.active_mission, status: 'RESOLVED', archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day) };
 
     if (state.paused_at_ms && state.pause_reason === 'MODAL') {
       resumeState(state, nowMs);
@@ -2059,6 +2077,49 @@ export async function respondMissionCall(
           dangerTier: missionPayload.dangerTier,
           playerParticipates: missionPayload.playerParticipates,
           autoTriggered: true
+        }
+      } as ActionResult
+    };
+  });
+}
+
+
+export async function saveMissionPlan(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { strategy: string; objective: string; prepChecklist: string[] }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const activeMission = state.active_mission;
+    if (!activeMission || activeMission.status !== 'ACTIVE' || !activeMission.playerParticipates) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Belum ada misi aktif yang Anda ikuti untuk disusun rencananya.',
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
+    }
+
+    state.active_mission = {
+      ...activeMission,
+      plan: {
+        strategy: payload.strategy,
+        objective: payload.objective,
+        prepChecklist: payload.prepChecklist.slice(0, 4),
+        plannedBy: state.player_name,
+        plannedAtDay: state.current_day
+      }
+    };
+
+    return {
+      payload: {
+        type: 'COMMAND',
+        snapshot: buildSnapshot(state, nowMs),
+        details: {
+          saved: true,
+          missionId: state.active_mission.missionId,
+          plan: state.active_mission.plan
         }
       } as ActionResult
     };

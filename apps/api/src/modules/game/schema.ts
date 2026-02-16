@@ -101,6 +101,12 @@ export const missionCallResponseSchema = z.object({
   participate: z.boolean()
 });
 
+export const missionPlanSchema = z.object({
+  strategy: z.string().min(2).max(32),
+  objective: z.string().min(4).max(220),
+  prepChecklist: z.array(z.string().min(2).max(64)).max(4).default([])
+});
+
 export const gameTimeScaleSchema = z.object({
   scale: z.union([z.literal(1), z.literal(3)]).default(1)
 });

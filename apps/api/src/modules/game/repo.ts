@@ -251,6 +251,20 @@ function parseActiveMission(value: unknown): ActiveMissionState | null {
   if (typeof value !== 'object' || Array.isArray(value)) return null;
   const mission = value as Partial<ActiveMissionState>;
   if (typeof mission.missionId !== 'string' || typeof mission.issuedDay !== 'number') return null;
+  const rawPlan = mission.plan;
+  const normalizedPlan =
+    rawPlan && typeof rawPlan === 'object' && !Array.isArray(rawPlan)
+      ? {
+          strategy: typeof (rawPlan as { strategy?: unknown }).strategy === 'string' ? (rawPlan as { strategy: string }).strategy : 'layered',
+          objective: typeof (rawPlan as { objective?: unknown }).objective === 'string' ? (rawPlan as { objective: string }).objective : '',
+          prepChecklist: Array.isArray((rawPlan as { prepChecklist?: unknown }).prepChecklist)
+            ? (rawPlan as { prepChecklist: unknown[] }).prepChecklist.filter((item): item is string => typeof item === 'string').slice(0, 4)
+            : [],
+          plannedBy: typeof (rawPlan as { plannedBy?: unknown }).plannedBy === 'string' ? (rawPlan as { plannedBy: string }).plannedBy : '',
+          plannedAtDay: typeof (rawPlan as { plannedAtDay?: unknown }).plannedAtDay === 'number' ? (rawPlan as { plannedAtDay: number }).plannedAtDay : 0
+        }
+      : null;
+
   return {
     missionId: mission.missionId,
     issuedDay: mission.issuedDay,
@@ -262,7 +276,9 @@ function parseActiveMission(value: unknown): ActiveMissionState | null {
       ? mission.participants
           .filter((item): item is { name: string; role: 'PLAYER' | 'NPC' } => Boolean(item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'))
           .map((item) => ({ name: item.name, role: item.role === 'PLAYER' ? 'PLAYER' : 'NPC' }))
-      : []
+      : [],
+    plan: normalizedPlan,
+    archivedUntilCeremonyDay: typeof mission.archivedUntilCeremonyDay === 'number' ? mission.archivedUntilCeremonyDay : null
   };
 }
 

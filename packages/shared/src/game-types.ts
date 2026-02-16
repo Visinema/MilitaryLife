@@ -57,6 +57,15 @@ export interface MissionParticipant {
   role: 'PLAYER' | 'NPC';
 }
 
+
+export interface MissionPlanState {
+  strategy: string;
+  objective: string;
+  prepChecklist: string[];
+  plannedBy: string;
+  plannedAtDay: number;
+}
+
 export interface ActiveMissionState {
   missionId: string;
   issuedDay: number;
@@ -65,6 +74,8 @@ export interface ActiveMissionState {
   playerParticipates: boolean;
   status: 'ACTIVE' | 'RESOLVED';
   participants: MissionParticipant[];
+  plan?: MissionPlanState | null;
+  archivedUntilCeremonyDay?: number | null;
 }
 
 

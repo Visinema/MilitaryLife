@@ -242,6 +242,9 @@ export const api = {
   respondMissionCall(participate: boolean) {
     return request<ActionResult>('/game/actions/mission-call-response', 'POST', { participate });
   },
+  missionPlan(payload: { strategy: string; objective: string; prepChecklist: string[] }) {
+    return request<ActionResult>('/game/actions/mission-plan', 'POST', payload);
+  },
   appointSecretary(npcName: string) {
     return request<ActionResult>('/game/actions/appoint-secretary', 'POST', { npcName });
   },
