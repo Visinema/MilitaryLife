@@ -36,6 +36,7 @@ export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
 
 type RequestOptions = {
   cache?: RequestCache;
+  timeoutMs?: number;
 };
 
 class ApiError extends Error {
@@ -80,7 +81,7 @@ const REQUEST_TIMEOUT_MS: Record<HttpMethod, number> = {
 
 async function request<T>(path: string, method: HttpMethod, body?: unknown, options?: RequestOptions): Promise<T> {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS[method]);
+  const timeout = globalThis.setTimeout(() => controller.abort(), options?.timeoutMs ?? REQUEST_TIMEOUT_MS[method]);
 
   let response: Response;
   try {
@@ -739,7 +740,7 @@ export const api = {
     return request<ActionResult>('/game/actions/social-interaction', 'POST', { npcId, interaction, note });
   },
   restartWorld() {
-    return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {});
+    return request<{ ok: boolean; snapshot: GameSnapshot }>('/game/actions/restart-world', 'POST', {}, { timeoutMs: 30_000 });
   },
   chooseDecision(eventId: number, optionId: string) {
     return request<{ result: DecisionResult | null; snapshot: GameSnapshot; conflict?: boolean; reason?: string }>(`/game/decisions/${eventId}/choose`, 'POST', {

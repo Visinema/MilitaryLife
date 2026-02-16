@@ -89,6 +89,7 @@ export function DashboardShell() {
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
+  const [snapshotHydrated, setSnapshotHydrated] = useState(false);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
@@ -96,7 +97,10 @@ export function DashboardShell() {
   const snapshotLoadInFlightRef = useRef(false);
   const expansionEndpointErrorShownRef = useRef(false);
 
-  const loadSnapshot = useCallback(async () => {
+  const loadSnapshot = useCallback(async (options?: { force?: boolean }) => {
+    if (resetBusy && !options?.force) {
+      return;
+    }
     if (snapshotLoadInFlightRef.current) {
       return;
     }
@@ -112,6 +116,7 @@ export function DashboardShell() {
       }
 
       setSnapshot(snapshotResult.value.snapshot);
+      setSnapshotHydrated(true);
       if (expansionResult.status === 'fulfilled') {
         setExpansionState(expansionResult.value.state);
         expansionEndpointErrorShownRef.current = false;
@@ -159,13 +164,14 @@ export function DashboardShell() {
     } finally {
       snapshotLoadInFlightRef.current = false;
     }
-  }, [router, setError, setLoading, setSnapshot]);
+  }, [resetBusy, router, setError, setLoading, setSnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
   }, [loadSnapshot]);
 
   useEffect(() => {
+    if (resetBusy) return;
     if (noProfile) return;
     if (!snapshot) return;
 
@@ -186,6 +192,7 @@ export function DashboardShell() {
     schedule();
 
     const onVisible = () => {
+      if (resetBusy) return;
       if (document.visibilityState === 'visible') {
         void loadSnapshot();
       }
@@ -200,7 +207,7 @@ export function DashboardShell() {
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [expansionState?.academyLockActive, loadSnapshot, noProfile, snapshot]);
+  }, [expansionState?.academyLockActive, loadSnapshot, noProfile, resetBusy, snapshot]);
 
   useEffect(() => {
     if (!expansionState?.academyLockActive) return;
@@ -373,6 +380,8 @@ export function DashboardShell() {
     try {
       const response = await api.restartWorld();
       setSnapshot(response.snapshot);
+      setSnapshotHydrated(true);
+      await loadSnapshot({ force: true });
       setError(null);
       setSettingsOpen(false);
     } catch (err) {
@@ -380,7 +389,7 @@ export function DashboardShell() {
     } finally {
       setResetBusy(false);
     }
-  }, [setError, setSnapshot]);
+  }, [loadSnapshot, setError, setSnapshot]);
 
   const branchOptions = useMemo(() => BRANCH_OPTIONS[profileForm.country], [profileForm.country]);
   const [pageReady, setPageReady] = useState(false);
@@ -400,6 +409,8 @@ export function DashboardShell() {
 
   useEffect(() => {
     if (!snapshot) return;
+    if (!snapshotHydrated) return;
+    if (resetBusy) return;
     if (!pageReady) return;
     if (typeof window === 'undefined') return;
     if (document.visibilityState !== 'visible') return;
@@ -441,10 +452,11 @@ export function DashboardShell() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [clockOffsetMs, pageReady, pathname, router, setError, setSnapshot, snapshot]);
+  }, [clockOffsetMs, pageReady, pathname, resetBusy, router, setError, setSnapshot, snapshot, snapshotHydrated]);
 
   useEffect(() => {
     if (!snapshot) return;
+    if (resetBusy) return;
     if (!pageReady) return;
     if (typeof window === 'undefined') return;
 
@@ -477,11 +489,13 @@ export function DashboardShell() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [clockOffsetMs, pageReady, setError, setSnapshot, snapshot]);
+  }, [clockOffsetMs, pageReady, resetBusy, setError, setSnapshot, snapshot]);
 
 
   useEffect(() => {
     if (!snapshot?.ceremonyDue) return;
+    if (!snapshotHydrated) return;
+    if (resetBusy) return;
     if (!pageReady) return;
     if (typeof window === 'undefined') return;
     if (document.visibilityState !== 'visible') return;
@@ -498,7 +512,7 @@ export function DashboardShell() {
         ceremonyRedirectFrameRef.current = null;
       }
     };
-  }, [pageReady, pathname, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
+  }, [pageReady, pathname, resetBusy, router, snapshot?.ceremonyDue, snapshot?.gameDay, snapshotHydrated]);
 
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 
