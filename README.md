@@ -255,6 +255,8 @@ corepack pnpm --filter @mls/api migrate
 3. Add env vars:
    - `BACKEND_ORIGIN=https://<railway-api-domain>` (scheme recommended; config auto-normalizes if omitted)
    - `NEXT_PUBLIC_API_BASE=/api/v1`
+   - Optional: `NEXT_PUBLIC_APP_VERSION=4.0` (major.minor base; patch auto-generated every build/push)
+   - Optional (manual lock): `NEXT_PUBLIC_APP_VERSION_OVERRIDE=4.0.0` (use only if you intentionally want fixed version text)
 4. Deploy.
 
 Next.js rewrite proxies `/api/*` to Railway so cookie auth remains first-party from browser perspective.

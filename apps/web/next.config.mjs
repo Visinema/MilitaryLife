@@ -21,43 +21,67 @@ function normalizeBackendOrigin(rawValue) {
   }
 }
 
-function resolveAutoVersion() {
-  const explicitVersion = process.env.NEXT_PUBLIC_APP_VERSION?.trim();
-  const explicitParts = explicitVersion ? explicitVersion.split('.') : [];
-  const explicitHasPatch = explicitParts.length >= 3 && explicitParts.every((part) => /^\d+$/.test(part));
-  const baseVersion = explicitParts.length >= 2 && explicitParts.slice(0, 2).every((part) => /^\d+$/.test(part))
-    ? `${explicitParts[0]}.${explicitParts[1]}`
-    : '4.0';
-
-  if (explicitHasPatch) {
-    return explicitVersion;
+function semverLike(input) {
+  const trimmed = input?.trim();
+  if (!trimmed) {
+    return null;
   }
 
-  const buildCounterFromEnv = process.env.BUILD_NUMBER?.trim() || process.env.GITHUB_RUN_NUMBER?.trim();
-  if (buildCounterFromEnv) {
-    return `${baseVersion}.${buildCounterFromEnv}`;
+  const match = trimmed.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
+  if (!match) {
+    return null;
   }
 
+  return {
+    major: match[1],
+    minor: match[2],
+    patch: match[3] ?? null
+  };
+}
+
+function positiveIntegerString(input) {
+  const trimmed = input?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function gitHeadCommitTimestamp() {
   try {
-    const commitCount = execSync('git rev-list --count HEAD', {
+    const output = execSync('git show -s --format=%ct HEAD', {
       stdio: ['ignore', 'pipe', 'ignore']
     })
       .toString()
       .trim();
-
-    if (commitCount) {
-      return `${baseVersion}.${commitCount}`;
-    }
+    return positiveIntegerString(output);
   } catch {
-    // fallback below
+    return null;
+  }
+}
+
+function resolveAutoVersion() {
+  const overrideVersion = semverLike(process.env.NEXT_PUBLIC_APP_VERSION_OVERRIDE);
+  if (overrideVersion && overrideVersion.patch !== null) {
+    return `${overrideVersion.major}.${overrideVersion.minor}.${overrideVersion.patch}`;
   }
 
-  const commitSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim() || process.env.SOURCE_VERSION?.trim();
-  if (commitSha) {
-    const numericFromSha = Number.parseInt(commitSha.slice(0, 8), 16);
-    if (Number.isFinite(numericFromSha) && numericFromSha > 0) {
-      return `${baseVersion}.${numericFromSha}`;
-    }
+  const requestedBase = semverLike(process.env.NEXT_PUBLIC_APP_VERSION);
+  const baseVersion = requestedBase ? `${requestedBase.major}.${requestedBase.minor}` : '4.0';
+
+  // Prefer CI build numbers when available (monotonic by pipeline run).
+  const buildCounterFromEnv =
+    positiveIntegerString(process.env.BUILD_NUMBER) ||
+    positiveIntegerString(process.env.GITHUB_RUN_NUMBER) ||
+    positiveIntegerString(process.env.VERCEL_GIT_COMMIT_TIMESTAMP);
+  if (buildCounterFromEnv) {
+    return `${baseVersion}.${buildCounterFromEnv}`;
+  }
+
+  // Works reliably even on shallow clones where `git rev-list --count` is often fixed at 1.
+  const commitTimestamp = gitHeadCommitTimestamp();
+  if (commitTimestamp) {
+    return `${baseVersion}.${commitTimestamp}`;
   }
 
   return `${baseVersion}.${Math.floor(Date.now() / 1000)}`;
