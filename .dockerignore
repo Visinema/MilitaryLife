@@ -11,6 +11,10 @@ apps/web
 apps/web/.next
 apps/web/out
 apps/api/dist
+README.md
+vercel.json
+.editorconfig
+.env.example
 coverage
 *.log
 .env

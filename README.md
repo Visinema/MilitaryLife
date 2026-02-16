@@ -242,6 +242,7 @@ Railway deploy behavior is pinned via `railway.toml` to use the repo `Dockerfile
 Important build-context guardrail:
 - Keep `apps/web` excluded in `.dockerignore` for API service deploy to reduce context size and lower registry push failure risk.
 - Keep `.nixpacks/` available in context as fallback safety if builder mode is switched back to Nixpacks.
+- Dockerfile runtime uses `pnpm deploy --prod` for `@mls/api`, so final image only contains API runtime files + production dependencies (smaller blobs, safer registry push).
 
 ## A. Railway (Backend + PostgreSQL)
 
