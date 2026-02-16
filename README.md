@@ -243,6 +243,7 @@ Important build-context guardrail:
 - Do **not** exclude `.nixpacks/` in `.dockerignore`.
 - Railway-generated Dockerfile copies `.nixpacks/nixpkgs-*.nix`; excluding that folder causes build failure:
   `failed to compute cache key ... "/.nixpacks/nixpkgs-*.nix": not found`.
+- For API service deploy, exclude `apps/web` from Docker context (`.dockerignore`) to keep image layers small and reduce registry push instability on monorepo builds.
 
 ## A. Railway (Backend + PostgreSQL)
 
