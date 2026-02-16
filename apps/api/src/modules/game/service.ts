@@ -1151,16 +1151,66 @@ function hasRecruitmentPrereqFromInventory(state: DbGameStateRow, minTier: 1 | 2
   return certs.some((cert) => {
     if (!cert || typeof cert !== 'object') return false;
     const tier = typeof cert.tier === 'number' ? cert.tier : 0;
-    return tier >= minTier;
+    if (tier >= minTier) {
+      return true;
+    }
+
+    const academyName = String((cert as { academyName?: unknown }).academyName ?? '').toLowerCase();
+    if (minTier === 1) {
+      return academyName.includes('officer') || academyName.includes('academy');
+    }
+
+    return academyName.includes('high command') || academyName.includes('command staff');
   });
 }
 
+function normalizeDivisionToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function hasDivisionCertificate(state: DbGameStateRow, division: string): boolean {
+  const target = normalizeDivisionToken(division);
   const certs = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
   return certs.some((cert) => {
     if (!cert || typeof cert !== 'object') return false;
-    return String(cert.assignedDivision ?? '').toLowerCase() === division.toLowerCase();
+
+    const candidates = [
+      String((cert as { assignedDivision?: unknown }).assignedDivision ?? ''),
+      String((cert as { division?: unknown }).division ?? ''),
+      String((cert as { divisionName?: unknown }).divisionName ?? ''),
+      String((cert as { academyName?: unknown }).academyName ?? ''),
+      String((cert as { message?: unknown }).message ?? '')
+    ]
+      .map(normalizeDivisionToken)
+      .filter(Boolean);
+
+    return candidates.some((candidate) => candidate === target || candidate.includes(target) || target.includes(candidate));
   });
+}
+
+function scoreRecruitmentExam(track: RecruitmentTrack, answers: Record<string, string>): {
+  examPass: boolean;
+  answeredCount: number;
+  correctCount: number;
+  requiredCorrect: number;
+  missingQuestionIds: string[];
+} {
+  const normalizedAnswers = Object.fromEntries(
+    Object.entries(answers).map(([id, value]) => [id, value.trim().toLowerCase()])
+  );
+
+  const expected = track.exam.map((item) => ({ id: item.id, answer: item.answer.trim().toLowerCase() }));
+  const answeredExpected = expected.filter((item) => Boolean(normalizedAnswers[item.id]));
+  const correctCount = answeredExpected.filter((item) => normalizedAnswers[item.id] === item.answer).length;
+  const answeredCount = answeredExpected.length;
+  const requiredCorrect = Math.max(2, Math.ceil(expected.length * 0.66));
+  const missingQuestionIds = expected.filter((item) => !normalizedAnswers[item.id]).map((item) => item.id);
+  const examPass = answeredCount >= 2 && correctCount >= requiredCorrect;
+
+  return { examPass, answeredCount, correctCount, requiredCorrect, missingQuestionIds };
 }
 
 export async function runRecruitmentApply(
@@ -1178,19 +1228,14 @@ export async function runRecruitmentApply(
     const officerOk = !track.needOfficerCert || state.academy_tier >= 1 || hasRecruitmentPrereqFromInventory(state, 1);
     const highOk = !track.needHighCommandCert || state.academy_tier >= 2 || hasRecruitmentPrereqFromInventory(state, 2);
     const priorDivisionCertified = hasDivisionCertificate(state, track.division);
-
-    const answeredEntries = track.exam.filter((q) => typeof payload.answers[q.id] === 'string' && payload.answers[q.id].trim().length > 0);
-    const answeredCount = answeredEntries.length;
-    const correctCount = answeredEntries.filter((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase()).length;
-    const accuracy = answeredCount > 0 ? correctCount / answeredCount : 0;
-    const minimumAnswered = Math.min(3, track.exam.length);
-    const examPass = priorDivisionCertified || (answeredCount >= minimumAnswered && accuracy >= 0.8);
+    const examScore = scoreRecruitmentExam(track, payload.answers);
+    const examPass = priorDivisionCertified || examScore.examPass;
 
     if (!(rankOk && officerOk && highOk && examPass)) {
-      const missingQuestionIds = track.exam
-        .filter((q) => !payload.answers[q.id] || payload.answers[q.id].trim().length === 0)
-        .map((q) => q.id)
-        .slice(0, 8);
+      const certs = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
+      const answeredCount = examScore.answeredCount;
+      const correctCount = examScore.correctCount;
+      const accuracy = answeredCount > 0 ? correctCount / answeredCount : 0;
 
       const failedReasons = [
         rankOk ? null : `Rank minimal belum terpenuhi (butuh ${track.minRankIndex})`,
@@ -1198,7 +1243,9 @@ export async function runRecruitmentApply(
         highOk ? null : 'Sertifikasi High Command tidak terdeteksi (academy tier/inventory)',
         examPass
           ? null
-          : `Ujian track belum lulus (answered=${answeredCount}, correct=${correctCount}, accuracy=${Math.round(accuracy * 100)}%, minimumAnswered=${minimumAnswered})`
+          : priorDivisionCertified
+            ? `Ujian track belum lulus (answered=${answeredCount}, correct=${correctCount}, accuracy=${Math.round(accuracy * 100)}%, requiredCorrect=${examScore.requiredCorrect})`
+            : 'Ujian track belum lulus dan sertifikasi divisi sebelumnya belum terdeteksi'
       ].filter(Boolean);
 
       return {
@@ -1212,12 +1259,18 @@ export async function runRecruitmentApply(
             highOk,
             examPass,
             priorDivisionCertified,
-            answeredCount,
-            correctCount,
-            accuracy,
-            minimumAnswered,
-            expectedQuestionIds: track.exam.map((q) => q.id),
-            missingQuestionIds
+            trackDivision: track.division,
+            detectedDivisions: certs
+              .map((cert) => String((cert as { assignedDivision?: unknown }).assignedDivision ?? (cert as { division?: unknown }).division ?? ''))
+              .filter(Boolean),
+            exam: {
+              answeredCount: examScore.answeredCount,
+              correctCount: examScore.correctCount,
+              requiredCorrect: examScore.requiredCorrect,
+              expectedQuestionIds: track.exam.map((q) => q.id),
+              missingQuestionIds: examScore.missingQuestionIds,
+              accuracy
+            }
           }
         }
       };

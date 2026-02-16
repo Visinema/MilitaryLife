@@ -187,6 +187,7 @@ export default function RecruitmentPage() {
   const [selected, setSelected] = useState(TRACKS[0].id);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<Record<string, unknown> | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -211,6 +212,7 @@ export default function RecruitmentPage() {
   useEffect(() => {
     setAnswers({});
     setResult(null);
+    setErrorDetails(null);
     setExpandedNodes(() => {
       const first = track.internalHierarchy[0]?.name;
       return first ? { [first]: true } : {};
@@ -225,6 +227,7 @@ export default function RecruitmentPage() {
         answers
       });
       setSnapshot(response.snapshot);
+      setErrorDetails(null);
       setResult(`LULUS: ${snapshot.playerName} diterima ke ${track.name}. Sertifikasi + surat mutasi masuk inventori.`);
       window.setTimeout(() => router.replace('/dashboard'), 450);
     } catch (err) {
@@ -243,6 +246,8 @@ export default function RecruitmentPage() {
       }
 
       const message = err instanceof Error ? err.message : 'Gagal memproses rekrutmen';
+      const details = err instanceof ApiError && err.details && typeof err.details === 'object' ? (err.details as Record<string, unknown>) : null;
+      setErrorDetails(details);
       setResult(`GAGAL: ${snapshot.playerName} belum memenuhi syarat (${message}).`);
     }
   };
@@ -321,6 +326,18 @@ export default function RecruitmentPage() {
 
         <button onClick={() => void submit()} className="rounded border border-accent bg-accent/20 px-3 py-1 text-text">Submit Ujian Rekrutmen</button>
         {result ? <p className="text-muted">{result}</p> : null}
+        {errorDetails ? (
+          <div className="rounded border border-danger/50 bg-danger/5 p-2 text-[11px] text-muted">
+            <p className="font-semibold text-text">Detail validasi backend:</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {Object.entries(errorDetails).map(([key, value]) => (
+                <li key={key}>
+                  <span className="text-text">{key}</span>: {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </div>
   );
