@@ -28,6 +28,10 @@
     "./npc-registry": {
       "types": "./dist/npc-registry.d.ts",
       "default": "./dist/npc-registry.js"
+    },
+    "./division-registry": {
+      "types": "./dist/division-registry.d.ts",
+      "default": "./dist/division-registry.js"
     }
   },
   "scripts": {
