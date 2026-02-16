@@ -136,10 +136,10 @@ function mlcEligibleMembers(state: DbGameStateRow): number {
   return Math.max(5, Math.min(MAX_ACTIVE_NPCS, base + rankFactor));
 }
 
-function isColonelOrHigher(state: DbGameStateRow): boolean {
+function isLmcEligibleRank(state: DbGameStateRow): boolean {
   const ranks = BRANCH_CONFIG[state.branch].ranks;
   const currentRank = (ranks[state.rank_index] ?? '').toLowerCase();
-  return currentRank.includes('colonel') || currentRank.includes('kolonel') || currentRank.includes('general') || state.rank_index >= 9;
+  return currentRank.includes('major') || currentRank.includes('mayor') || currentRank.includes('colonel') || currentRank.includes('kolonel') || currentRank.includes('general') || state.rank_index >= 7;
 }
 
 function scheduledPresetIdForDay(day: number): MilitaryLawPresetId {
@@ -185,19 +185,19 @@ function militaryLawCouncilStatus(state: DbGameStateRow): {
 } {
   if (state.military_law_current) {
     return {
-      canPlayerVote: isColonelOrHigher(state),
+      canPlayerVote: isLmcEligibleRank(state),
       meetingActive: false,
       meetingDay: 3,
       totalMeetingDays: 3,
       scheduledPresetId: null,
-      note: 'Military Law aktif. Perubahan dapat diajukan melalui voting MLC oleh pejabat minimal Kolonel.'
+      note: 'Military Law aktif. Perubahan dapat diajukan melalui voting LMC oleh pejabat minimal Major.'
     };
   }
 
   const meetingDay = Math.min(3, Math.max(1, state.current_day + 1));
   const scheduledPresetId = scheduledPresetIdForDay(state.current_day);
   return {
-    canPlayerVote: isColonelOrHigher(state),
+    canPlayerVote: isLmcEligibleRank(state),
     meetingActive: state.current_day < 3,
     meetingDay,
     totalMeetingDays: 3,
@@ -1936,11 +1936,11 @@ export async function voteMilitaryLaw(
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
     maybeAutoGovernMilitaryLaw(state);
 
-    if (!isColonelOrHigher(state)) {
+    if (!isLmcEligibleRank(state)) {
       return {
         statusCode: 403,
         payload: {
-          error: 'Perubahan Military Law hanya dapat diajukan oleh rank Kolonel atau lebih tinggi.',
+          error: 'Perubahan Military Law hanya dapat diajukan oleh rank Major atau lebih tinggi.',
           snapshot: buildSnapshot(state, nowMs)
         }
       };
