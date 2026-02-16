@@ -23,13 +23,19 @@ function normalizeBackendOrigin(rawValue) {
 
 function resolveAutoVersion() {
   const explicitVersion = process.env.NEXT_PUBLIC_APP_VERSION?.trim();
-  if (explicitVersion) {
+  const explicitParts = explicitVersion ? explicitVersion.split('.') : [];
+  const explicitHasPatch = explicitParts.length >= 3 && explicitParts.every((part) => /^\d+$/.test(part));
+  const baseVersion = explicitParts.length >= 2 && explicitParts.slice(0, 2).every((part) => /^\d+$/.test(part))
+    ? `${explicitParts[0]}.${explicitParts[1]}`
+    : '4.0';
+
+  if (explicitHasPatch) {
     return explicitVersion;
   }
 
   const buildCounterFromEnv = process.env.BUILD_NUMBER?.trim() || process.env.GITHUB_RUN_NUMBER?.trim();
   if (buildCounterFromEnv) {
-    return `4.0.${buildCounterFromEnv}`;
+    return `${baseVersion}.${buildCounterFromEnv}`;
   }
 
   try {
@@ -40,7 +46,7 @@ function resolveAutoVersion() {
       .trim();
 
     if (commitCount) {
-      return `4.0.${commitCount}`;
+      return `${baseVersion}.${commitCount}`;
     }
   } catch {
     // fallback below
@@ -50,11 +56,11 @@ function resolveAutoVersion() {
   if (commitSha) {
     const numericFromSha = Number.parseInt(commitSha.slice(0, 8), 16);
     if (Number.isFinite(numericFromSha) && numericFromSha > 0) {
-      return `4.0.${numericFromSha}`;
+      return `${baseVersion}.${numericFromSha}`;
     }
   }
 
-  return `4.0.${Math.floor(Date.now() / 1000)}`;
+  return `${baseVersion}.${Math.floor(Date.now() / 1000)}`;
 }
 
 const nextConfig = {

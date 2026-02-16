@@ -30,12 +30,11 @@ export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualCon
     <div className="rounded-md border-2 border-border bg-panel px-3 py-2 shadow-panel">
       <div className="mb-1 flex items-center justify-between">
         <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Command Header</p>
-        <p className="text-[10px] text-muted">Version v{appVersion}</p>
+        <p className="text-[10px] uppercase tracking-[0.08em] text-muted">Build v{appVersion}</p>
       </div>
 
       <div className="grid grid-cols-[1fr,1fr,auto] items-center gap-2">
       <div>
-        <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Build Version v{appVersion}</p>
         <p className="text-xs uppercase tracking-[0.12em] text-muted">In-Game Date</p>
         <p className="text-base font-semibold text-text">{date}</p>
       </div>
