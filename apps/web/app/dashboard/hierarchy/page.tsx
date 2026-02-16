@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { GameSnapshot } from '@mls/shared/game-types';
+import type { CommandChainOrder, GameSnapshot } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 import { buildWorldV2 } from '@/lib/world-v2';
 import { resolvePlayerAssignment } from '@/lib/player-assignment';
@@ -71,6 +71,13 @@ export default function HierarchyPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('RANK_DESC');
   const [expandedFrames, setExpandedFrames] = useState<Record<string, boolean>>({});
+  const [chainOrders, setChainOrders] = useState<CommandChainOrder[]>([]);
+  const [chainLoading, setChainLoading] = useState(false);
+  const [chainError, setChainError] = useState<string | null>(null);
+  const [chainBusyOrderId, setChainBusyOrderId] = useState<string | null>(null);
+  const [newOrderMessage, setNewOrderMessage] = useState('Instruksi patroli berjenjang: jaga perimeter dan laporkan tiap hop.');
+  const [newOrderPriority, setNewOrderPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH'>('MEDIUM');
+  const [newOrderAckWindowDays, setNewOrderAckWindowDays] = useState<number>(2);
 
   useEffect(() => {
     if (storeSnapshot) {
@@ -168,6 +175,90 @@ export default function HierarchyPage() {
       .catch((err: Error) => setError(err.message));
   };
 
+  const loadCommandOrders = () => {
+    setChainLoading(true);
+    setChainError(null);
+    api
+      .v5CommandChainOrders({ limit: 12 })
+      .then((res) => {
+        setChainOrders(res.orders);
+      })
+      .catch((err: Error) => {
+        setChainError(err.message);
+      })
+      .finally(() => {
+        setChainLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    loadCommandOrders();
+  }, []);
+
+  const createCommandOrder = () => {
+    setChainBusyOrderId('NEW');
+    setChainError(null);
+    api
+      .v5CommandChainCreate({
+        message: newOrderMessage,
+        priority: newOrderPriority,
+        ackWindowDays: newOrderAckWindowDays
+      })
+      .then(() => {
+        loadCommandOrders();
+      })
+      .catch((err: Error) => {
+        setChainError(err.message);
+      })
+      .finally(() => {
+        setChainBusyOrderId(null);
+      });
+  };
+
+  const forwardOrder = (order: CommandChainOrder) => {
+    const forwardedToNpcId = order.targetNpcId;
+    if (!forwardedToNpcId) {
+      setChainError('Order ini tidak memiliki target NPC untuk forward.');
+      return;
+    }
+    setChainBusyOrderId(order.orderId);
+    setChainError(null);
+    api
+      .v5CommandChainForward({
+        orderId: order.orderId,
+        forwardedToNpcId,
+        note: `Forward oleh player ke ${forwardedToNpcId}.`
+      })
+      .then(() => {
+        loadCommandOrders();
+      })
+      .catch((err: Error) => {
+        setChainError(err.message);
+      })
+      .finally(() => {
+        setChainBusyOrderId(null);
+      });
+  };
+
+  const ackOrder = (orderId: string) => {
+    setChainBusyOrderId(orderId);
+    setChainError(null);
+    api
+      .v5CommandChainAck({
+        orderId,
+        note: 'ACK oleh player command.'
+      })
+      .then(() => {
+        loadCommandOrders();
+      })
+      .catch((err: Error) => {
+        setChainError(err.message);
+      })
+      .finally(() => {
+        setChainBusyOrderId(null);
+      });
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 cyber-panel p-3">
@@ -246,6 +337,92 @@ export default function HierarchyPage() {
           </div>
         </section>
       ) : null}
+
+      <section className="cyber-panel p-2 text-xs space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Command Chain Forwarding</p>
+          <button onClick={loadCommandOrders} className="rounded border border-border bg-bg px-2 py-1 text-[10px] text-text">
+            Refresh Chain
+          </button>
+        </div>
+
+        <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-muted">Create Order</p>
+          <textarea
+            value={newOrderMessage}
+            onChange={(e) => setNewOrderMessage(e.target.value)}
+            className="min-h-16 w-full rounded border border-border bg-panel px-2 py-1 text-[11px] text-text"
+          />
+          <div className="grid gap-1 sm:grid-cols-3">
+            <label className="text-[10px] text-muted">
+              Priority
+              <select
+                value={newOrderPriority}
+                onChange={(e) => setNewOrderPriority(e.target.value as 'LOW' | 'MEDIUM' | 'HIGH')}
+                className="mt-1 w-full rounded border border-border bg-panel px-2 py-1 text-[11px] text-text"
+              >
+                <option value="LOW">LOW</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="HIGH">HIGH</option>
+              </select>
+            </label>
+            <label className="text-[10px] text-muted">
+              Ack Window (day)
+              <input
+                type="number"
+                min={1}
+                max={7}
+                value={newOrderAckWindowDays}
+                onChange={(e) => setNewOrderAckWindowDays(Number(e.target.value))}
+                className="mt-1 w-full rounded border border-border bg-panel px-2 py-1 text-[11px] text-text"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                onClick={createCommandOrder}
+                disabled={chainBusyOrderId === 'NEW'}
+                className="w-full rounded border border-accent bg-accent/20 px-2 py-1 text-[11px] text-text disabled:opacity-60"
+              >
+                {chainBusyOrderId === 'NEW' ? 'Creating...' : 'Create Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {chainLoading ? <p className="text-muted">Loading command-chain orders...</p> : null}
+        {chainError ? <p className="text-danger">{chainError}</p> : null}
+        {!chainLoading && !chainError && chainOrders.length === 0 ? <p className="text-muted">Belum ada order command-chain.</p> : null}
+        <div className="space-y-1">
+          {chainOrders.map((order) => {
+            const chainPath = Array.isArray(order.commandPayload.chainPathNpcIds)
+              ? order.commandPayload.chainPathNpcIds.filter((item): item is string => typeof item === 'string')
+              : [];
+            const open = order.status === 'PENDING' || order.status === 'FORWARDED';
+            return (
+              <div key={order.orderId} className={`rounded border px-2 py-1 ${order.status === 'BREACHED' ? 'border-danger/70 bg-danger/10' : 'border-border/60 bg-bg/70'}`}>
+                <p className="text-text">{order.orderId} · {order.priority} · {order.status}</p>
+                <p className="text-muted text-[10px]">Due Day {order.ackDueDay} | Target {order.targetNpcId ?? '-'} | Path {chainPath.join(' -> ') || '-'}</p>
+                <div className="mt-1 flex gap-1">
+                  <button
+                    onClick={() => ackOrder(order.orderId)}
+                    disabled={!open || chainBusyOrderId === order.orderId}
+                    className="rounded border border-border bg-panel px-2 py-0.5 text-[10px] text-text disabled:opacity-60"
+                  >
+                    ACK
+                  </button>
+                  <button
+                    onClick={() => forwardOrder(order)}
+                    disabled={!open || !order.targetNpcId || chainBusyOrderId === order.orderId}
+                    className="rounded border border-accent bg-accent/20 px-2 py-0.5 text-[10px] text-text disabled:opacity-60"
+                  >
+                    Forward
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

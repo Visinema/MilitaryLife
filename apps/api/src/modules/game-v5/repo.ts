@@ -4,8 +4,17 @@ import { randomUUID } from 'node:crypto';
 import type {
   AcademyBatchState,
   AcademyBatchStanding,
+  CommandChainAck,
+  CommandChainOrder,
+  CouncilState,
+  CourtCaseV2,
+  DomOperationCycle,
+  DomOperationSession,
   DivisionQuotaState,
+  EducationTitle,
   ExpansionStateV51,
+  MailboxMessage,
+  RecruitmentPipelineState,
   RecruitmentCompetitionEntry,
   CeremonyCycleV5,
   CertificationRecordV5,
@@ -14,6 +23,7 @@ import type {
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
+  SocialTimelineEvent,
   WorldDelta
 } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
@@ -55,6 +65,16 @@ function parseString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseTimestamp(value: unknown, fallback = new Date(0).toISOString()): string {
+  if (typeof value === 'string' && value) return value;
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
+  return fallback;
+}
+
 function parseNpcStatus(value: unknown): NpcRuntimeStatus {
   const candidate = parseString(value, 'ACTIVE');
   if (candidate === 'INJURED' || candidate === 'KIA' || candidate === 'RESERVE' || candidate === 'RECRUITING') return candidate;
@@ -81,6 +101,11 @@ function mapNpcRow(row: Record<string, unknown>): NpcRuntimeState {
     support: parseNumber(row.support, 50),
     leadership: parseNumber(row.leadership, 50),
     resilience: parseNumber(row.resilience, 50),
+    intelligence: parseNumber(row.intelligence, 50),
+    competence: parseNumber(row.competence, 50),
+    loyalty: parseNumber(row.loyalty, 60),
+    integrityRisk: parseNumber(row.integrity_risk, 12),
+    betrayalRisk: parseNumber(row.betrayal_risk, 8),
     fatigue: parseNumber(row.fatigue, 0),
     trauma: parseNumber(row.trauma, 0),
     xp: parseNumber(row.xp, 0),
@@ -120,6 +145,19 @@ export async function clearV5World(client: PoolClient, profileId: string): Promi
   );
 
   const tablesWithProfileId = [
+    'command_chain_acks',
+    'command_chain_orders',
+    'council_votes',
+    'councils',
+    'court_cases_v2',
+    'dom_operation_sessions',
+    'dom_operation_cycles',
+    'recruitment_pipeline_applications',
+    'personnel_assignment_history',
+    'personnel_rank_history',
+    'mailbox_messages',
+    'social_timeline_events',
+    'npc_trait_memory',
     'quota_decision_logs',
     'recruitment_applications_v51',
     'academy_batches',
@@ -189,8 +227,12 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
 
     await client.query(
       `
-        INSERT INTO npc_stats (profile_id, npc_id, tactical, support, leadership, resilience, fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task)
-        VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, 0, NULL)
+        INSERT INTO npc_stats (
+          profile_id, npc_id, tactical, support, leadership, resilience,
+          intelligence, competence, loyalty, integrity_risk, betrayal_risk,
+          fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 0, 0, 0, $12, 0, NULL)
       `,
       [
         profile.profileId,
@@ -199,7 +241,28 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         40 + ((slotNo * 11 + seedBase) % 40),
         36 + ((slotNo * 13 + seedBase) % 45),
         45 + ((slotNo * 5 + seedBase) % 35),
+        44 + ((slotNo * 9 + seedBase) % 36),
+        46 + ((slotNo * 6 + seedBase) % 34),
+        52 + ((slotNo * 4 + seedBase) % 28),
+        8 + ((slotNo * 5 + seedBase) % 22),
+        6 + ((slotNo * 7 + seedBase) % 20),
         40 + ((slotNo * 3 + seedBase) % 32)
+      ]
+    );
+
+    await client.query(
+      `
+        INSERT INTO npc_trait_memory (profile_id, npc_id, ambition, discipline, integrity, sociability, memory)
+        VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb)
+        ON CONFLICT (profile_id, npc_id) DO NOTHING
+      `,
+      [
+        profile.profileId,
+        npcId,
+        38 + ((slotNo * 7 + seedBase) % 45),
+        44 + ((slotNo * 5 + seedBase) % 44),
+        52 + ((slotNo * 3 + seedBase) % 42),
+        34 + ((slotNo * 11 + seedBase) % 50)
       ]
     );
   }
@@ -375,6 +438,11 @@ export async function listCurrentNpcRuntime(
         s.support,
         s.leadership,
         s.resilience,
+        s.intelligence,
+        s.competence,
+        s.loyalty,
+        s.integrity_risk,
+        s.betrayal_risk,
         s.fatigue,
         s.trauma,
         s.xp,
@@ -418,6 +486,11 @@ export async function getNpcRuntimeById(client: PoolClient, profileId: string, n
         s.support,
         s.leadership,
         s.resilience,
+        s.intelligence,
+        s.competence,
+        s.loyalty,
+        s.integrity_risk,
+        s.betrayal_risk,
         s.fatigue,
         s.trauma,
         s.xp,
@@ -454,6 +527,11 @@ export async function lockCurrentNpcsForUpdate(client: PoolClient, profileId: st
         s.support,
         s.leadership,
         s.resilience,
+        s.intelligence,
+        s.competence,
+        s.loyalty,
+        s.integrity_risk,
+        s.betrayal_risk,
         s.fatigue,
         s.trauma,
         s.xp,
@@ -492,13 +570,18 @@ export async function updateNpcRuntimeState(client: PoolClient, profileId: strin
         support = $4,
         leadership = $5,
         resilience = $6,
-        fatigue = $7,
-        trauma = $8,
-        xp = $9,
-        promotion_points = $10,
-        relation_to_player = $11,
-        last_tick_day = $12,
-        last_task = $13,
+        intelligence = $7,
+        competence = $8,
+        loyalty = $9,
+        integrity_risk = $10,
+        betrayal_risk = $11,
+        fatigue = $12,
+        trauma = $13,
+        xp = $14,
+        promotion_points = $15,
+        relation_to_player = $16,
+        last_tick_day = $17,
+        last_task = $18,
         updated_at = now()
       WHERE profile_id = $1 AND npc_id = $2
     `,
@@ -509,6 +592,11 @@ export async function updateNpcRuntimeState(client: PoolClient, profileId: strin
       npc.support,
       npc.leadership,
       npc.resilience,
+      npc.intelligence,
+      npc.competence,
+      npc.loyalty,
+      npc.integrityRisk,
+      npc.betrayalRisk,
       npc.fatigue,
       npc.trauma,
       npc.xp,
@@ -628,10 +716,22 @@ export async function fulfillRecruitmentQueueItem(
   );
   await client.query(
     `
-      INSERT INTO npc_stats (profile_id, npc_id, tactical, support, leadership, resilience, fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task)
-      VALUES ($1, $2, 52, 52, 50, 55, 0, 0, 0, 0, 50, $3, 'recruitment')
+      INSERT INTO npc_stats (
+        profile_id, npc_id, tactical, support, leadership, resilience,
+        intelligence, competence, loyalty, integrity_risk, betrayal_risk,
+        fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task
+      )
+      VALUES ($1, $2, 52, 52, 50, 55, 54, 56, 60, 10, 8, 0, 0, 0, 0, 50, $3, 'recruitment')
     `,
     [input.profileId, input.npcId, input.joinedDay]
+  );
+  await client.query(
+    `
+      INSERT INTO npc_trait_memory (profile_id, npc_id, ambition, discipline, integrity, sociability, memory)
+      VALUES ($1, $2, 52, 58, 62, 50, '[]'::jsonb)
+      ON CONFLICT (profile_id, npc_id) DO NOTHING
+    `,
+    [input.profileId, input.npcId]
   );
   await client.query(`UPDATE recruitment_queue SET status = 'FULFILLED', new_npc_id = $3 WHERE id = $1 AND profile_id = $2`, [input.queueId, input.profileId, input.npcId]);
 }
@@ -974,6 +1074,7 @@ export interface AcademyBatchRecord {
   tier: number;
   startDay: number;
   endDay: number;
+  totalDays: number;
   status: 'ACTIVE' | 'GRADUATED' | 'FAILED';
   lockEnabled: boolean;
   graduationPayload: Record<string, unknown>;
@@ -1004,6 +1105,7 @@ function mapAcademyBatchRow(row: Record<string, unknown>): AcademyBatchRecord {
     tier: parseNumber(row.tier, 1),
     startDay: parseNumber(row.start_day, 0),
     endDay: parseNumber(row.end_day, 0),
+    totalDays: parseNumber(row.total_days, 8),
     status: parseString(row.status, 'ACTIVE') as AcademyBatchRecord['status'],
     lockEnabled: parseBoolean(row.lock_enabled, true),
     graduationPayload: parseJsonObject(row.graduation_payload)
@@ -1028,14 +1130,15 @@ function mapAcademyBatchMemberRow(row: Record<string, unknown>): AcademyBatchMem
 export async function getLegacyGovernanceSnapshot(
   client: PoolClient,
   profileId: string
-): Promise<{ nationalStability: number; militaryStability: number; militaryFundCents: number }> {
+): Promise<{ nationalStability: number; militaryStability: number; militaryFundCents: number; corruptionRisk: number }> {
   const result = await client.query<{
     national_stability: number | string | null;
     military_stability: number | string | null;
     military_fund_cents: number | string | null;
+    corruption_risk: number | string | null;
   }>(
     `
-      SELECT national_stability, military_stability, military_fund_cents
+      SELECT national_stability, military_stability, military_fund_cents, corruption_risk
       FROM game_states
       WHERE profile_id = $1
       LIMIT 1
@@ -1046,7 +1149,60 @@ export async function getLegacyGovernanceSnapshot(
   return {
     nationalStability: parseNumber(row?.national_stability, 72),
     militaryStability: parseNumber(row?.military_stability, 70),
-    militaryFundCents: parseNumber(row?.military_fund_cents, 250_000)
+    militaryFundCents: parseNumber(row?.military_fund_cents, 250_000),
+    corruptionRisk: parseNumber(row?.corruption_risk, 18)
+  };
+}
+
+export async function applyLegacyGovernanceDelta(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    nationalDelta?: number;
+    militaryDelta?: number;
+    fundDeltaCents?: number;
+    corruptionDelta?: number;
+  }
+): Promise<{ nationalStability: number; militaryStability: number; militaryFundCents: number; corruptionRisk: number }> {
+  const nationalDelta = Math.trunc(input.nationalDelta ?? 0);
+  const militaryDelta = Math.trunc(input.militaryDelta ?? 0);
+  const fundDeltaCents = Math.trunc(input.fundDeltaCents ?? 0);
+  const corruptionDelta = Math.trunc(input.corruptionDelta ?? 0);
+
+  if (nationalDelta === 0 && militaryDelta === 0 && fundDeltaCents === 0 && corruptionDelta === 0) {
+    return getLegacyGovernanceSnapshot(client, input.profileId);
+  }
+
+  const result = await client.query<{
+    national_stability: number | string;
+    military_stability: number | string;
+    military_fund_cents: number | string;
+    corruption_risk: number | string;
+  }>(
+    `
+      UPDATE game_states
+      SET
+        national_stability = GREATEST(0, LEAST(100, national_stability + $2)),
+        military_stability = GREATEST(0, LEAST(100, military_stability + $3)),
+        military_fund_cents = GREATEST(0, military_fund_cents + $4),
+        corruption_risk = GREATEST(0, LEAST(100, corruption_risk + $5)),
+        updated_at = now()
+      WHERE profile_id = $1
+      RETURNING national_stability, military_stability, military_fund_cents, corruption_risk
+    `,
+    [input.profileId, nationalDelta, militaryDelta, fundDeltaCents, corruptionDelta]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return getLegacyGovernanceSnapshot(client, input.profileId);
+  }
+
+  return {
+    nationalStability: parseNumber(row.national_stability, 72),
+    militaryStability: parseNumber(row.military_stability, 70),
+    militaryFundCents: parseNumber(row.military_fund_cents, 250_000),
+    corruptionRisk: parseNumber(row.corruption_risk, 18)
   };
 }
 
@@ -1239,21 +1395,30 @@ export async function createAcademyBatch(
     tier: number;
     startDay: number;
     endDay: number;
+    totalDays: number;
   }
 ): Promise<void> {
   await client.query(
     `
-      INSERT INTO academy_batches (batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload)
-      VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', TRUE, '{}'::jsonb)
+      INSERT INTO academy_batches (batch_id, profile_id, track, tier, start_day, end_day, total_days, status, lock_enabled, graduation_payload)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', TRUE, '{}'::jsonb)
     `,
-    [input.batchId, input.profileId, input.track, Math.max(1, Math.min(3, input.tier)), input.startDay, input.endDay]
+    [
+      input.batchId,
+      input.profileId,
+      input.track,
+      Math.max(1, Math.min(3, input.tier)),
+      input.startDay,
+      input.endDay,
+      Math.max(4, Math.min(12, input.totalDays))
+    ]
   );
 }
 
 export async function getActiveAcademyBatch(client: PoolClient, profileId: string): Promise<AcademyBatchRecord | null> {
   const result = await client.query(
     `
-      SELECT batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload
+      SELECT batch_id, profile_id, track, tier, start_day, end_day, total_days, status, lock_enabled, graduation_payload
       FROM academy_batches
       WHERE profile_id = $1 AND status = 'ACTIVE'
       ORDER BY created_at DESC
@@ -1268,7 +1433,7 @@ export async function getActiveAcademyBatch(client: PoolClient, profileId: strin
 export async function getLatestAcademyBatch(client: PoolClient, profileId: string): Promise<AcademyBatchRecord | null> {
   const result = await client.query(
     `
-      SELECT batch_id, profile_id, track, tier, start_day, end_day, status, lock_enabled, graduation_payload
+      SELECT batch_id, profile_id, track, tier, start_day, end_day, total_days, status, lock_enabled, graduation_payload
       FROM academy_batches
       WHERE profile_id = $1
       ORDER BY created_at DESC
@@ -1319,12 +1484,12 @@ export async function upsertAcademyBatchMember(
       input.memberKey,
       input.holderType,
       input.npcId,
-      Math.max(0, Math.min(8, input.dayProgress ?? 0)),
+      Math.max(0, Math.min(12, input.dayProgress ?? 0)),
       toJsonb(input.dailyScores ?? []),
       Math.max(0, Math.min(100, input.finalScore ?? 0)),
       Boolean(input.passed),
       Math.max(0, input.rankPosition ?? 0),
-      Math.max(0, Math.min(8, input.extraCertCount ?? 0))
+      Math.max(0, Math.min(12, input.extraCertCount ?? 0))
     ]
   );
 }
@@ -1610,5 +1775,1239 @@ export async function listActiveWorldProfilesForTick(client: PoolClient, nowMs: 
   );
 
   return result.rows.map((row) => row.profile_id);
+}
+
+function mapMailboxRow(row: Record<string, unknown>): MailboxMessage {
+  return {
+    messageId: parseString(row.message_id),
+    senderType: parseString(row.sender_type, 'SYSTEM') as MailboxMessage['senderType'],
+    senderNpcId: row.sender_npc_id == null ? null : parseString(row.sender_npc_id),
+    subject: parseString(row.subject),
+    body: parseString(row.body),
+    category: parseString(row.category, 'GENERAL') as MailboxMessage['category'],
+    relatedRef: row.related_ref == null ? null : parseString(row.related_ref),
+    createdDay: parseNumber(row.created_day, 0),
+    createdAt: parseTimestamp(row.created_at, new Date().toISOString()),
+    readAt: row.read_at == null ? null : parseTimestamp(row.read_at, new Date().toISOString()),
+    readDay: row.read_day == null ? null : parseNumber(row.read_day, 0)
+  };
+}
+
+function mapTimelineRow(row: Record<string, unknown>): SocialTimelineEvent {
+  return {
+    id: parseNumber(row.id, 0),
+    actorType: parseString(row.actor_type, 'PLAYER') === 'NPC' ? 'NPC' : 'PLAYER',
+    actorNpcId: row.actor_npc_id == null ? null : parseString(row.actor_npc_id),
+    eventType: parseString(row.event_type),
+    title: parseString(row.title),
+    detail: parseString(row.detail),
+    eventDay: parseNumber(row.event_day, 0),
+    createdAt: parseTimestamp(row.created_at, new Date().toISOString()),
+    meta: parseJsonObject(row.meta)
+  };
+}
+
+function mapRecruitmentPipelineRow(row: Record<string, unknown>): RecruitmentPipelineState {
+  return {
+    applicationId: parseString(row.application_id),
+    holderType: parseString(row.holder_type, 'PLAYER') === 'NPC' ? 'NPC' : 'PLAYER',
+    npcId: row.npc_id == null ? null : parseString(row.npc_id),
+    holderName: parseString(row.holder_name),
+    division: parseString(row.division),
+    status: parseString(row.status, 'REGISTRATION') as RecruitmentPipelineState['status'],
+    registeredDay: parseNumber(row.registered_day, 0),
+    tryoutDay: row.tryout_day == null ? null : parseNumber(row.tryout_day, 0),
+    selectionDay: row.selection_day == null ? null : parseNumber(row.selection_day, 0),
+    announcementDay: row.announcement_day == null ? null : parseNumber(row.announcement_day, 0),
+    tryoutScore: parseNumber(row.tryout_score, 0),
+    finalScore: Number(parseNumber(row.final_score, 0).toFixed(2)),
+    note: parseString(row.note)
+  };
+}
+
+function mapDomSessionRow(row: Record<string, unknown>): DomOperationSession {
+  return {
+    sessionId: parseString(row.session_id),
+    sessionNo: clamp(parseNumber(row.session_no, 1), 1, 3) as 1 | 2 | 3,
+    participantMode: parseString(row.participant_mode, 'NPC_ONLY') as DomOperationSession['participantMode'],
+    npcSlots: Math.max(1, Math.min(40, parseNumber(row.npc_slots, 8))),
+    playerJoined: parseBoolean(row.player_joined, false),
+    playerJoinDay: row.player_join_day == null ? null : parseNumber(row.player_join_day, 0),
+    status: parseString(row.status, 'PLANNED') as DomOperationSession['status'],
+    result: parseJsonObject(row.result)
+  };
+}
+
+function mapCourtCaseRow(row: Record<string, unknown>): CourtCaseV2 {
+  return {
+    caseId: parseString(row.case_id),
+    caseType: parseString(row.case_type, 'SANCTION') as CourtCaseV2['caseType'],
+    targetType: parseString(row.target_type, 'PLAYER') as CourtCaseV2['targetType'],
+    targetNpcId: row.target_npc_id == null ? null : parseString(row.target_npc_id),
+    requestedDay: parseNumber(row.requested_day, 0),
+    status: parseString(row.status, 'PENDING') as CourtCaseV2['status'],
+    verdict: row.verdict == null ? null : (parseString(row.verdict) as CourtCaseV2['verdict']),
+    decisionDay: row.decision_day == null ? null : parseNumber(row.decision_day, 0),
+    details: parseJsonObject(row.details)
+  };
+}
+
+function mapCouncilRow(row: Record<string, unknown>): CouncilState {
+  return {
+    councilId: parseString(row.council_id),
+    councilType: parseString(row.council_type, 'MLC') as CouncilState['councilType'],
+    agenda: parseString(row.agenda),
+    status: parseString(row.status, 'OPEN') as CouncilState['status'],
+    openedDay: parseNumber(row.opened_day, 0),
+    closedDay: row.closed_day == null ? null : parseNumber(row.closed_day, 0),
+    quorum: parseNumber(row.quorum, 3),
+    votes: {
+      approve: parseNumber(row.approve_votes, 0),
+      reject: parseNumber(row.reject_votes, 0),
+      abstain: parseNumber(row.abstain_votes, 0)
+    }
+  };
+}
+
+function mapCommandChainOrderRow(row: Record<string, unknown>): CommandChainOrder {
+  return {
+    orderId: parseString(row.order_id),
+    issuedDay: parseNumber(row.issued_day, 0),
+    issuerType: parseString(row.issuer_type, 'PLAYER') as CommandChainOrder['issuerType'],
+    issuerNpcId: row.issuer_npc_id == null ? null : parseString(row.issuer_npc_id),
+    targetNpcId: row.target_npc_id == null ? null : parseString(row.target_npc_id),
+    targetDivision: row.target_division == null ? null : parseString(row.target_division),
+    priority: parseString(row.priority, 'MEDIUM') as CommandChainOrder['priority'],
+    status: parseString(row.status, 'PENDING') as CommandChainOrder['status'],
+    ackDueDay: parseNumber(row.ack_due_day, 0),
+    completedDay: row.completed_day == null ? null : parseNumber(row.completed_day, 0),
+    penaltyApplied: parseBoolean(row.penalty_applied, false),
+    commandPayload: parseJsonObject(row.command_payload)
+  };
+}
+
+function mapCommandChainAckRow(row: Record<string, unknown>): CommandChainAck {
+  return {
+    id: parseNumber(row.id, 0),
+    orderId: parseString(row.order_id),
+    actorType: parseString(row.actor_type, 'PLAYER') as CommandChainAck['actorType'],
+    actorNpcId: row.actor_npc_id == null ? null : parseString(row.actor_npc_id),
+    hopNo: parseNumber(row.hop_no, 0),
+    forwardedToNpcId: row.forwarded_to_npc_id == null ? null : parseString(row.forwarded_to_npc_id),
+    ackDay: parseNumber(row.ack_day, 0),
+    note: parseString(row.note),
+    createdAt: parseTimestamp(row.created_at, new Date().toISOString())
+  };
+}
+
+export async function listEducationTitles(client: PoolClient): Promise<EducationTitle[]> {
+  const result = await client.query<{
+    title_code: string;
+    label: string;
+    mode: 'PREFIX' | 'SUFFIX';
+    source_track: string;
+    min_tier: number | string;
+    active: boolean;
+  }>(
+    `
+      SELECT title_code, label, mode, source_track, min_tier, active
+      FROM education_titles
+      WHERE active = TRUE
+      ORDER BY mode ASC, min_tier ASC, title_code ASC
+    `
+  );
+  return result.rows.map((row) => ({
+    titleCode: row.title_code,
+    label: row.label,
+    mode: row.mode,
+    sourceTrack: row.source_track,
+    minTier: clamp(parseNumber(row.min_tier, 1), 1, 3) as 1 | 2 | 3,
+    active: row.active
+  }));
+}
+
+export async function insertRankHistory(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    actorType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    oldRankIndex: number;
+    newRankIndex: number;
+    reason: string;
+    changedDay: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO personnel_rank_history (profile_id, actor_type, npc_id, old_rank_index, new_rank_index, reason, changed_day)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `,
+    [
+      input.profileId,
+      input.actorType,
+      input.npcId,
+      Math.max(0, input.oldRankIndex),
+      Math.max(0, input.newRankIndex),
+      input.reason,
+      Math.max(0, input.changedDay)
+    ]
+  );
+}
+
+export async function listRankHistory(
+  client: PoolClient,
+  profileId: string,
+  options?: { actorType?: 'PLAYER' | 'NPC'; npcId?: string; limit?: number }
+): Promise<
+  Array<{
+    id: number;
+    actorType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    oldRankIndex: number;
+    newRankIndex: number;
+    reason: string;
+    changedDay: number;
+    createdAt: string;
+  }>
+> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.actorType) {
+    values.push(options.actorType);
+    clauses.push(`actor_type = $${values.length}`);
+  }
+  if (options?.npcId) {
+    values.push(options.npcId);
+    clauses.push(`npc_id = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 100, 200)));
+  const limitPlaceholder = `$${values.length}`;
+
+  const result = await client.query<{
+    id: number;
+    actor_type: 'PLAYER' | 'NPC';
+    npc_id: string | null;
+    old_rank_index: number | string;
+    new_rank_index: number | string;
+    reason: string;
+    changed_day: number | string;
+    created_at: string;
+  }>(
+    `
+      SELECT id, actor_type, npc_id, old_rank_index, new_rank_index, reason, changed_day, created_at
+      FROM personnel_rank_history
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY changed_day DESC, id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    actorType: row.actor_type,
+    npcId: row.npc_id,
+    oldRankIndex: parseNumber(row.old_rank_index, 0),
+    newRankIndex: parseNumber(row.new_rank_index, 0),
+    reason: row.reason,
+    changedDay: parseNumber(row.changed_day, 0),
+    createdAt: parseTimestamp(row.created_at, new Date().toISOString())
+  }));
+}
+
+export async function insertAssignmentHistory(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    actorType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    oldDivision: string;
+    newDivision: string;
+    oldPosition: string;
+    newPosition: string;
+    reason: string;
+    changedDay: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO personnel_assignment_history (
+        profile_id, actor_type, npc_id, old_division, new_division,
+        old_position, new_position, reason, changed_day
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `,
+    [
+      input.profileId,
+      input.actorType,
+      input.npcId,
+      input.oldDivision,
+      input.newDivision,
+      input.oldPosition,
+      input.newPosition,
+      input.reason,
+      Math.max(0, input.changedDay)
+    ]
+  );
+}
+
+export async function listAssignmentHistory(
+  client: PoolClient,
+  profileId: string,
+  options?: { actorType?: 'PLAYER' | 'NPC'; npcId?: string; limit?: number }
+): Promise<
+  Array<{
+    id: number;
+    actorType: 'PLAYER' | 'NPC';
+    npcId: string | null;
+    oldDivision: string;
+    newDivision: string;
+    oldPosition: string;
+    newPosition: string;
+    reason: string;
+    changedDay: number;
+    createdAt: string;
+  }>
+> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.actorType) {
+    values.push(options.actorType);
+    clauses.push(`actor_type = $${values.length}`);
+  }
+  if (options?.npcId) {
+    values.push(options.npcId);
+    clauses.push(`npc_id = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 100, 200)));
+  const limitPlaceholder = `$${values.length}`;
+
+  const result = await client.query<{
+    id: number;
+    actor_type: 'PLAYER' | 'NPC';
+    npc_id: string | null;
+    old_division: string;
+    new_division: string;
+    old_position: string;
+    new_position: string;
+    reason: string;
+    changed_day: number | string;
+    created_at: string;
+  }>(
+    `
+      SELECT
+        id, actor_type, npc_id, old_division, new_division, old_position, new_position,
+        reason, changed_day, created_at
+      FROM personnel_assignment_history
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY changed_day DESC, id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    actorType: row.actor_type,
+    npcId: row.npc_id,
+    oldDivision: row.old_division,
+    newDivision: row.new_division,
+    oldPosition: row.old_position,
+    newPosition: row.new_position,
+    reason: row.reason,
+    changedDay: parseNumber(row.changed_day, 0),
+    createdAt: parseTimestamp(row.created_at, new Date().toISOString())
+  }));
+}
+
+export async function insertMailboxMessage(
+  client: PoolClient,
+  input: {
+    messageId: string;
+    profileId: string;
+    senderType: MailboxMessage['senderType'];
+    senderNpcId: string | null;
+    subject: string;
+    body: string;
+    category: MailboxMessage['category'];
+    relatedRef: string | null;
+    createdDay: number;
+  }
+): Promise<MailboxMessage> {
+  const result = await client.query(
+    `
+      INSERT INTO mailbox_messages (
+        message_id, profile_id, sender_type, sender_npc_id, subject, body, category, related_ref, created_day
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING
+        message_id, sender_type, sender_npc_id, subject, body, category, related_ref,
+        created_day, created_at, read_at, read_day
+    `,
+    [
+      input.messageId,
+      input.profileId,
+      input.senderType,
+      input.senderNpcId,
+      input.subject,
+      input.body,
+      input.category,
+      input.relatedRef,
+      Math.max(0, input.createdDay)
+    ]
+  );
+  return mapMailboxRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function listMailboxMessages(
+  client: PoolClient,
+  profileId: string,
+  options?: { unreadOnly?: boolean; limit?: number; cursorDay?: number }
+): Promise<MailboxMessage[]> {
+  const values: unknown[] = [profileId];
+  const clauses: string[] = ['profile_id = $1'];
+  if (options?.unreadOnly) {
+    clauses.push('read_at IS NULL');
+  }
+  if (typeof options?.cursorDay === 'number') {
+    values.push(options.cursorDay);
+    clauses.push(`created_day <= $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 40, 200)));
+  const limitPlaceholder = `$${values.length}`;
+
+  const result = await client.query(
+    `
+      SELECT
+        message_id, sender_type, sender_npc_id, subject, body, category, related_ref,
+        created_day, created_at, read_at, read_day
+      FROM mailbox_messages
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY created_day DESC, created_at DESC, message_id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapMailboxRow(row as Record<string, unknown>));
+}
+
+export async function getMailboxSummary(
+  client: PoolClient,
+  profileId: string
+): Promise<{ unreadCount: number; latest: MailboxMessage | null }> {
+  const unread = await client.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM mailbox_messages WHERE profile_id = $1 AND read_at IS NULL`,
+    [profileId]
+  );
+  const latest = await listMailboxMessages(client, profileId, { limit: 1 });
+  return {
+    unreadCount: parseNumber(unread.rows[0]?.count, 0),
+    latest: latest[0] ?? null
+  };
+}
+
+export async function markMailboxMessageRead(
+  client: PoolClient,
+  input: { profileId: string; messageId: string; readDay: number }
+): Promise<MailboxMessage | null> {
+  const result = await client.query(
+    `
+      UPDATE mailbox_messages
+      SET read_at = COALESCE(read_at, now()), read_day = COALESCE(read_day, $3)
+      WHERE profile_id = $1 AND message_id = $2
+      RETURNING
+        message_id, sender_type, sender_npc_id, subject, body, category, related_ref,
+        created_day, created_at, read_at, read_day
+    `,
+    [input.profileId, input.messageId, Math.max(0, input.readDay)]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapMailboxRow(row) : null;
+}
+
+export async function insertSocialTimelineEvent(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    actorType: 'PLAYER' | 'NPC';
+    actorNpcId: string | null;
+    eventType: string;
+    title: string;
+    detail: string;
+    eventDay: number;
+    meta?: Record<string, unknown>;
+  }
+): Promise<SocialTimelineEvent> {
+  const result = await client.query(
+    `
+      INSERT INTO social_timeline_events (
+        profile_id, actor_type, actor_npc_id, event_type, title, detail, event_day, meta
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      RETURNING id, actor_type, actor_npc_id, event_type, title, detail, event_day, meta, created_at
+    `,
+    [
+      input.profileId,
+      input.actorType,
+      input.actorNpcId,
+      input.eventType,
+      input.title,
+      input.detail,
+      Math.max(0, input.eventDay),
+      toJsonb(input.meta ?? {})
+    ]
+  );
+  return mapTimelineRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function listSocialTimelineEvents(
+  client: PoolClient,
+  profileId: string,
+  options?: { actorType?: 'PLAYER' | 'NPC'; actorNpcId?: string; limit?: number }
+): Promise<SocialTimelineEvent[]> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.actorType) {
+    values.push(options.actorType);
+    clauses.push(`actor_type = $${values.length}`);
+  }
+  if (options?.actorNpcId) {
+    values.push(options.actorNpcId);
+    clauses.push(`actor_npc_id = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 80, 250)));
+  const limitPlaceholder = `$${values.length}`;
+  const result = await client.query(
+    `
+      SELECT id, actor_type, actor_npc_id, event_type, title, detail, event_day, meta, created_at
+      FROM social_timeline_events
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY event_day DESC, id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapTimelineRow(row as Record<string, unknown>));
+}
+
+export async function getLatestSocialTimelineEventByType(
+  client: PoolClient,
+  profileId: string,
+  eventType: string
+): Promise<SocialTimelineEvent | null> {
+  const result = await client.query(
+    `
+      SELECT id, actor_type, actor_npc_id, event_type, title, detail, event_day, meta, created_at
+      FROM social_timeline_events
+      WHERE profile_id = $1 AND event_type = $2
+      ORDER BY event_day DESC, id DESC
+      LIMIT 1
+    `,
+    [profileId, eventType]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapTimelineRow(row) : null;
+}
+
+export async function upsertRecruitmentPipelineApplication(
+  client: PoolClient,
+  input: RecruitmentPipelineState & { profileId: string }
+): Promise<RecruitmentPipelineState> {
+  const result = await client.query(
+    `
+      INSERT INTO recruitment_pipeline_applications (
+        application_id, profile_id, holder_type, npc_id, holder_name, division, status,
+        registered_day, tryout_day, selection_day, announcement_day, tryout_score, final_score, note
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (application_id) DO UPDATE
+      SET
+        holder_type = EXCLUDED.holder_type,
+        npc_id = EXCLUDED.npc_id,
+        holder_name = EXCLUDED.holder_name,
+        division = EXCLUDED.division,
+        status = EXCLUDED.status,
+        registered_day = EXCLUDED.registered_day,
+        tryout_day = EXCLUDED.tryout_day,
+        selection_day = EXCLUDED.selection_day,
+        announcement_day = EXCLUDED.announcement_day,
+        tryout_score = EXCLUDED.tryout_score,
+        final_score = EXCLUDED.final_score,
+        note = EXCLUDED.note,
+        updated_at = now()
+      RETURNING
+        application_id, holder_type, npc_id, holder_name, division, status,
+        registered_day, tryout_day, selection_day, announcement_day, tryout_score, final_score, note
+    `,
+    [
+      input.applicationId,
+      input.profileId,
+      input.holderType,
+      input.npcId,
+      input.holderName,
+      input.division,
+      input.status,
+      Math.max(0, input.registeredDay),
+      input.tryoutDay == null ? null : Math.max(0, input.tryoutDay),
+      input.selectionDay == null ? null : Math.max(0, input.selectionDay),
+      input.announcementDay == null ? null : Math.max(0, input.announcementDay),
+      clamp(input.tryoutScore, 0, 100),
+      Number(clamp(input.finalScore, 0, 100).toFixed(2)),
+      input.note
+    ]
+  );
+  return mapRecruitmentPipelineRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getRecruitmentPipelineApplication(
+  client: PoolClient,
+  profileId: string,
+  applicationId: string
+): Promise<RecruitmentPipelineState | null> {
+  const result = await client.query(
+    `
+      SELECT
+        application_id, holder_type, npc_id, holder_name, division, status, registered_day,
+        tryout_day, selection_day, announcement_day, tryout_score, final_score, note
+      FROM recruitment_pipeline_applications
+      WHERE profile_id = $1 AND application_id = $2
+      LIMIT 1
+    `,
+    [profileId, applicationId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapRecruitmentPipelineRow(row) : null;
+}
+
+export async function listRecruitmentPipelineApplications(
+  client: PoolClient,
+  profileId: string,
+  options?: { division?: string; holderType?: 'PLAYER' | 'NPC'; limit?: number }
+): Promise<RecruitmentPipelineState[]> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.division) {
+    values.push(options.division);
+    clauses.push(`division = $${values.length}`);
+  }
+  if (options?.holderType) {
+    values.push(options.holderType);
+    clauses.push(`holder_type = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 80, 250)));
+  const limitPlaceholder = `$${values.length}`;
+  const result = await client.query(
+    `
+      SELECT
+        application_id, holder_type, npc_id, holder_name, division, status, registered_day,
+        tryout_day, selection_day, announcement_day, tryout_score, final_score, note
+      FROM recruitment_pipeline_applications
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY registered_day DESC, application_id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapRecruitmentPipelineRow(row as Record<string, unknown>));
+}
+
+export async function createDomOperationCycle(
+  client: PoolClient,
+  input: { cycleId: string; profileId: string; startDay: number; endDay: number; status?: 'ACTIVE' | 'COMPLETED' }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO dom_operation_cycles (cycle_id, profile_id, start_day, end_day, status)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (cycle_id) DO UPDATE
+      SET start_day = EXCLUDED.start_day, end_day = EXCLUDED.end_day, status = EXCLUDED.status, updated_at = now()
+    `,
+    [input.cycleId, input.profileId, Math.max(0, input.startDay), Math.max(0, input.endDay), input.status ?? 'ACTIVE']
+  );
+}
+
+export async function upsertDomOperationSession(
+  client: PoolClient,
+  input: {
+    sessionId: string;
+    cycleId: string;
+    profileId: string;
+    sessionNo: 1 | 2 | 3;
+    participantMode: DomOperationSession['participantMode'];
+    npcSlots: number;
+    playerJoined: boolean;
+    playerJoinDay: number | null;
+    status: DomOperationSession['status'];
+    result: Record<string, unknown>;
+  }
+): Promise<DomOperationSession> {
+  const result = await client.query(
+    `
+      INSERT INTO dom_operation_sessions (
+        session_id, cycle_id, profile_id, session_no, participant_mode, npc_slots,
+        player_joined, player_join_day, status, result
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      ON CONFLICT (session_id) DO UPDATE
+      SET
+        cycle_id = EXCLUDED.cycle_id,
+        participant_mode = EXCLUDED.participant_mode,
+        npc_slots = EXCLUDED.npc_slots,
+        player_joined = EXCLUDED.player_joined,
+        player_join_day = EXCLUDED.player_join_day,
+        status = EXCLUDED.status,
+        result = EXCLUDED.result,
+        updated_at = now()
+      RETURNING
+        session_id, session_no, participant_mode, npc_slots, player_joined, player_join_day, status, result
+    `,
+    [
+      input.sessionId,
+      input.cycleId,
+      input.profileId,
+      input.sessionNo,
+      input.participantMode,
+      clamp(input.npcSlots, 1, 40),
+      input.playerJoined,
+      input.playerJoinDay,
+      input.status,
+      toJsonb(input.result ?? {})
+    ]
+  );
+  return mapDomSessionRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getDomOperationSession(
+  client: PoolClient,
+  profileId: string,
+  sessionId: string
+): Promise<DomOperationSession | null> {
+  const result = await client.query(
+    `
+      SELECT session_id, session_no, participant_mode, npc_slots, player_joined, player_join_day, status, result
+      FROM dom_operation_sessions
+      WHERE profile_id = $1 AND session_id = $2
+      LIMIT 1
+    `,
+    [profileId, sessionId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapDomSessionRow(row) : null;
+}
+
+export async function listDomOperationSessionsByCycle(
+  client: PoolClient,
+  profileId: string,
+  cycleId: string
+): Promise<DomOperationSession[]> {
+  const result = await client.query(
+    `
+      SELECT session_id, session_no, participant_mode, npc_slots, player_joined, player_join_day, status, result
+      FROM dom_operation_sessions
+      WHERE profile_id = $1 AND cycle_id = $2
+      ORDER BY session_no ASC
+    `,
+    [profileId, cycleId]
+  );
+  return result.rows.map((row) => mapDomSessionRow(row as Record<string, unknown>));
+}
+
+export async function getCurrentDomOperationCycle(
+  client: PoolClient,
+  profileId: string
+): Promise<DomOperationCycle | null> {
+  const cycleResult = await client.query<{
+    cycle_id: string;
+    start_day: number | string;
+    end_day: number | string;
+    status: 'ACTIVE' | 'COMPLETED';
+  }>(
+    `
+      SELECT cycle_id, start_day, end_day, status
+      FROM dom_operation_cycles
+      WHERE profile_id = $1
+      ORDER BY start_day DESC, cycle_id DESC
+      LIMIT 1
+    `,
+    [profileId]
+  );
+  const cycle = cycleResult.rows[0];
+  if (!cycle) return null;
+  const sessions = await listDomOperationSessionsByCycle(client, profileId, cycle.cycle_id);
+  return {
+    cycleId: cycle.cycle_id,
+    startDay: parseNumber(cycle.start_day, 0),
+    endDay: parseNumber(cycle.end_day, 0),
+    status: cycle.status,
+    sessions
+  };
+}
+
+export async function updateDomOperationCycleStatus(
+  client: PoolClient,
+  input: { profileId: string; cycleId: string; status: 'ACTIVE' | 'COMPLETED' }
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE dom_operation_cycles
+      SET status = $3, updated_at = now()
+      WHERE profile_id = $1 AND cycle_id = $2
+    `,
+    [input.profileId, input.cycleId, input.status]
+  );
+}
+
+export async function upsertCourtCaseV2(
+  client: PoolClient,
+  input: CourtCaseV2 & { profileId: string }
+): Promise<CourtCaseV2> {
+  const result = await client.query(
+    `
+      INSERT INTO court_cases_v2 (
+        case_id, profile_id, case_type, target_type, target_npc_id, requested_day,
+        status, verdict, decision_day, details
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      ON CONFLICT (case_id) DO UPDATE
+      SET
+        case_type = EXCLUDED.case_type,
+        target_type = EXCLUDED.target_type,
+        target_npc_id = EXCLUDED.target_npc_id,
+        requested_day = EXCLUDED.requested_day,
+        status = EXCLUDED.status,
+        verdict = EXCLUDED.verdict,
+        decision_day = EXCLUDED.decision_day,
+        details = EXCLUDED.details,
+        updated_at = now()
+      RETURNING
+        case_id, case_type, target_type, target_npc_id, requested_day, status, verdict, decision_day, details
+    `,
+    [
+      input.caseId,
+      input.profileId,
+      input.caseType,
+      input.targetType,
+      input.targetNpcId,
+      Math.max(0, input.requestedDay),
+      input.status,
+      input.verdict,
+      input.decisionDay,
+      toJsonb(input.details ?? {})
+    ]
+  );
+  return mapCourtCaseRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getCourtCaseV2(
+  client: PoolClient,
+  profileId: string,
+  caseId: string
+): Promise<CourtCaseV2 | null> {
+  const result = await client.query(
+    `
+      SELECT case_id, case_type, target_type, target_npc_id, requested_day, status, verdict, decision_day, details
+      FROM court_cases_v2
+      WHERE profile_id = $1 AND case_id = $2
+      LIMIT 1
+    `,
+    [profileId, caseId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapCourtCaseRow(row) : null;
+}
+
+export async function listCourtCasesV2(
+  client: PoolClient,
+  profileId: string,
+  options?: { status?: CourtCaseV2['status']; limit?: number }
+): Promise<CourtCaseV2[]> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.status) {
+    values.push(options.status);
+    clauses.push(`status = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 100, 250)));
+  const limitPlaceholder = `$${values.length}`;
+  const result = await client.query(
+    `
+      SELECT case_id, case_type, target_type, target_npc_id, requested_day, status, verdict, decision_day, details
+      FROM court_cases_v2
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY requested_day DESC, case_id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapCourtCaseRow(row as Record<string, unknown>));
+}
+
+export async function upsertCouncilState(
+  client: PoolClient,
+  input: CouncilState & { profileId: string; metadata?: Record<string, unknown> }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO councils (
+        council_id, profile_id, council_type, agenda, status, opened_day, closed_day, quorum, metadata
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      ON CONFLICT (council_id) DO UPDATE
+      SET
+        council_type = EXCLUDED.council_type,
+        agenda = EXCLUDED.agenda,
+        status = EXCLUDED.status,
+        opened_day = EXCLUDED.opened_day,
+        closed_day = EXCLUDED.closed_day,
+        quorum = EXCLUDED.quorum,
+        metadata = EXCLUDED.metadata,
+        updated_at = now()
+    `,
+    [
+      input.councilId,
+      input.profileId,
+      input.councilType,
+      input.agenda,
+      input.status,
+      Math.max(0, input.openedDay),
+      input.closedDay,
+      Math.max(1, Math.min(50, input.quorum)),
+      toJsonb(input.metadata ?? {})
+    ]
+  );
+}
+
+export async function listCouncils(
+  client: PoolClient,
+  profileId: string,
+  options?: { status?: CouncilState['status']; limit?: number }
+): Promise<CouncilState[]> {
+  const clauses: string[] = ['c.profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.status) {
+    values.push(options.status);
+    clauses.push(`c.status = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 80, 250)));
+  const limitPlaceholder = `$${values.length}`;
+
+  const result = await client.query(
+    `
+      SELECT
+        c.council_id,
+        c.council_type,
+        c.agenda,
+        c.status,
+        c.opened_day,
+        c.closed_day,
+        c.quorum,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'APPROVE' THEN 1 ELSE 0 END), 0)::int AS approve_votes,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'REJECT' THEN 1 ELSE 0 END), 0)::int AS reject_votes,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'ABSTAIN' THEN 1 ELSE 0 END), 0)::int AS abstain_votes
+      FROM councils c
+      LEFT JOIN council_votes v ON v.council_id = c.council_id
+      WHERE ${clauses.join(' AND ')}
+      GROUP BY c.council_id, c.council_type, c.agenda, c.status, c.opened_day, c.closed_day, c.quorum
+      ORDER BY c.opened_day DESC, c.council_id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapCouncilRow(row as Record<string, unknown>));
+}
+
+export async function getCouncilState(
+  client: PoolClient,
+  profileId: string,
+  councilId: string
+): Promise<CouncilState | null> {
+  const result = await client.query(
+    `
+      SELECT
+        c.council_id,
+        c.council_type,
+        c.agenda,
+        c.status,
+        c.opened_day,
+        c.closed_day,
+        c.quorum,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'APPROVE' THEN 1 ELSE 0 END), 0)::int AS approve_votes,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'REJECT' THEN 1 ELSE 0 END), 0)::int AS reject_votes,
+        COALESCE(SUM(CASE WHEN v.vote_choice = 'ABSTAIN' THEN 1 ELSE 0 END), 0)::int AS abstain_votes
+      FROM councils c
+      LEFT JOIN council_votes v ON v.council_id = c.council_id
+      WHERE c.profile_id = $1 AND c.council_id = $2
+      GROUP BY c.council_id, c.council_type, c.agenda, c.status, c.opened_day, c.closed_day, c.quorum
+      LIMIT 1
+    `,
+    [profileId, councilId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapCouncilRow(row) : null;
+}
+
+export async function getCouncilVoteByActor(
+  client: PoolClient,
+  input: { profileId: string; councilId: string; voterType: 'PLAYER' | 'NPC'; voterNpcId: string | null }
+): Promise<{ voteChoice: 'APPROVE' | 'REJECT' | 'ABSTAIN'; votedDay: number } | null> {
+  const result = await client.query<{
+    vote_choice: 'APPROVE' | 'REJECT' | 'ABSTAIN';
+    voted_day: number | string;
+  }>(
+    `
+      SELECT vote_choice, voted_day
+      FROM council_votes
+      WHERE profile_id = $1
+        AND council_id = $2
+        AND voter_type = $3
+        AND (
+          ($3 = 'PLAYER' AND voter_npc_id IS NULL)
+          OR ($3 = 'NPC' AND voter_npc_id = $4)
+        )
+      ORDER BY id DESC
+      LIMIT 1
+    `,
+    [input.profileId, input.councilId, input.voterType, input.voterNpcId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return { voteChoice: row.vote_choice, votedDay: parseNumber(row.voted_day, 0) };
+}
+
+export async function insertCouncilVote(
+  client: PoolClient,
+  input: {
+    councilId: string;
+    profileId: string;
+    voterType: 'PLAYER' | 'NPC';
+    voterNpcId: string | null;
+    voteChoice: 'APPROVE' | 'REJECT' | 'ABSTAIN';
+    rationale: string;
+    votedDay: number;
+  }
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO council_votes (council_id, profile_id, voter_type, voter_npc_id, vote_choice, rationale, voted_day)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `,
+    [input.councilId, input.profileId, input.voterType, input.voterNpcId, input.voteChoice, input.rationale, Math.max(0, input.votedDay)]
+  );
+}
+
+export async function createCommandChainOrder(
+  client: PoolClient,
+  input: {
+    orderId: string;
+    profileId: string;
+    issuedDay: number;
+    issuerType: 'PLAYER' | 'NPC';
+    issuerNpcId: string | null;
+    targetNpcId: string | null;
+    targetDivision: string | null;
+    priority: CommandChainOrder['priority'];
+    status?: CommandChainOrder['status'];
+    ackDueDay: number;
+    completedDay?: number | null;
+    penaltyApplied?: boolean;
+    commandPayload: Record<string, unknown>;
+  }
+): Promise<CommandChainOrder> {
+  const result = await client.query(
+    `
+      INSERT INTO command_chain_orders (
+        order_id, profile_id, issued_day, issuer_type, issuer_npc_id, target_npc_id,
+        target_division, priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      ON CONFLICT (order_id) DO UPDATE
+      SET
+        issued_day = EXCLUDED.issued_day,
+        issuer_type = EXCLUDED.issuer_type,
+        issuer_npc_id = EXCLUDED.issuer_npc_id,
+        target_npc_id = EXCLUDED.target_npc_id,
+        target_division = EXCLUDED.target_division,
+        priority = EXCLUDED.priority,
+        status = EXCLUDED.status,
+        ack_due_day = EXCLUDED.ack_due_day,
+        completed_day = EXCLUDED.completed_day,
+        penalty_applied = EXCLUDED.penalty_applied,
+        command_payload = EXCLUDED.command_payload,
+        updated_at = now()
+      RETURNING
+        order_id, issued_day, issuer_type, issuer_npc_id, target_npc_id, target_division,
+        priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+    `,
+    [
+      input.orderId,
+      input.profileId,
+      Math.max(0, input.issuedDay),
+      input.issuerType,
+      input.issuerNpcId,
+      input.targetNpcId,
+      input.targetDivision,
+      input.priority,
+      input.status ?? 'PENDING',
+      Math.max(0, input.ackDueDay),
+      input.completedDay ?? null,
+      Boolean(input.penaltyApplied),
+      toJsonb(input.commandPayload)
+    ]
+  );
+  return mapCommandChainOrderRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getCommandChainOrder(
+  client: PoolClient,
+  profileId: string,
+  orderId: string
+): Promise<CommandChainOrder | null> {
+  const result = await client.query(
+    `
+      SELECT
+        order_id, issued_day, issuer_type, issuer_npc_id, target_npc_id, target_division,
+        priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+      FROM command_chain_orders
+      WHERE profile_id = $1 AND order_id = $2
+      LIMIT 1
+    `,
+    [profileId, orderId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapCommandChainOrderRow(row) : null;
+}
+
+export async function listCommandChainOrders(
+  client: PoolClient,
+  profileId: string,
+  options?: { status?: CommandChainOrder['status']; limit?: number }
+): Promise<CommandChainOrder[]> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.status) {
+    values.push(options.status);
+    clauses.push(`status = $${values.length}`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 80, 250)));
+  const limitPlaceholder = `$${values.length}`;
+  const result = await client.query(
+    `
+      SELECT
+        order_id, issued_day, issuer_type, issuer_npc_id, target_npc_id, target_division,
+        priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+      FROM command_chain_orders
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY issued_day DESC, order_id DESC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapCommandChainOrderRow(row as Record<string, unknown>));
+}
+
+export async function listCommandChainAcks(
+  client: PoolClient,
+  profileId: string,
+  orderId: string
+): Promise<CommandChainAck[]> {
+  const result = await client.query(
+    `
+      SELECT id, order_id, actor_type, actor_npc_id, hop_no, forwarded_to_npc_id, ack_day, note, created_at
+      FROM command_chain_acks
+      WHERE profile_id = $1 AND order_id = $2
+      ORDER BY hop_no ASC, id ASC
+    `,
+    [profileId, orderId]
+  );
+  return result.rows.map((row) => mapCommandChainAckRow(row as Record<string, unknown>));
+}
+
+export async function appendCommandChainAck(
+  client: PoolClient,
+  input: {
+    orderId: string;
+    profileId: string;
+    actorType: CommandChainAck['actorType'];
+    actorNpcId: string | null;
+    hopNo: number;
+    forwardedToNpcId: string | null;
+    ackDay: number;
+    note: string;
+  }
+): Promise<CommandChainAck> {
+  const result = await client.query(
+    `
+      INSERT INTO command_chain_acks (
+        order_id, profile_id, actor_type, actor_npc_id, hop_no, forwarded_to_npc_id, ack_day, note
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id, order_id, actor_type, actor_npc_id, hop_no, forwarded_to_npc_id, ack_day, note, created_at
+    `,
+    [
+      input.orderId,
+      input.profileId,
+      input.actorType,
+      input.actorNpcId,
+      Math.max(0, Math.min(60, input.hopNo)),
+      input.forwardedToNpcId,
+      Math.max(0, input.ackDay),
+      input.note
+    ]
+  );
+  return mapCommandChainAckRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function updateCommandChainOrderStatus(
+  client: PoolClient,
+  input: {
+    profileId: string;
+    orderId: string;
+    status: CommandChainOrder['status'];
+    completedDay?: number | null;
+    penaltyApplied?: boolean;
+  }
+): Promise<CommandChainOrder | null> {
+  const result = await client.query(
+    `
+      UPDATE command_chain_orders
+      SET
+        status = $3,
+        completed_day = COALESCE($4, completed_day),
+        penalty_applied = COALESCE($5, penalty_applied),
+        updated_at = now()
+      WHERE profile_id = $1 AND order_id = $2
+      RETURNING
+        order_id, issued_day, issuer_type, issuer_npc_id, target_npc_id, target_division,
+        priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+    `,
+    [input.profileId, input.orderId, input.status, input.completedDay ?? null, input.penaltyApplied ?? null]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapCommandChainOrderRow(row) : null;
+}
+
+export async function listDueCommandChainOrdersForPenalty(
+  client: PoolClient,
+  profileId: string,
+  currentDay: number,
+  limit = 20
+): Promise<CommandChainOrder[]> {
+  const result = await client.query(
+    `
+      SELECT
+        order_id, issued_day, issuer_type, issuer_npc_id, target_npc_id, target_division,
+        priority, status, ack_due_day, completed_day, penalty_applied, command_payload
+      FROM command_chain_orders
+      WHERE profile_id = $1
+        AND status IN ('PENDING', 'FORWARDED')
+        AND ack_due_day < $2
+      ORDER BY ack_due_day ASC, issued_day ASC
+      LIMIT $3
+      FOR UPDATE
+    `,
+    [profileId, Math.max(0, currentDay), Math.max(1, Math.min(200, limit))]
+  );
+  return result.rows.map((row) => mapCommandChainOrderRow(row as Record<string, unknown>));
 }
 

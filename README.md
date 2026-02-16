@@ -50,90 +50,191 @@ Key files:
 - `apps/web/components/dashboard-shell.tsx`
 - `apps/web/components/paused-route-guard.tsx`
 
-## 4. Features Implemented (MVP)
+## 4. Matrix 20 Fitur
 
-- Email/password auth with HttpOnly cookie session
-- Profile creation:
-  - name
-  - starting age (default 17)
-  - country: US / Indonesia
-  - branch mapped by country
-- Country/branch-specific systems:
-  - ranks
-  - salary scaling
-  - promotion logic (US vs ID behavior split)
-  - deployment profiles
-  - event pools
-- Dashboard:
-  - in-game date/day
-  - age
-  - rank
-  - branch
-  - money
-  - morale
-  - health
-- Decision popup system with transactional consequences
-- Decision logs with cursor pagination
-- Subpage pause guard (`SUBPAGE`) and decision pause (`DECISION`)
-- Auto-resume safety timeout: 30 minutes
-- V5.1 Academy + Recruitment expansion:
-  - 8-day academy lock flow with graduation ranking
-  - recruitment quota race with mandatory diploma + extra certifications
-  - all player/NPC start-reset path from `Nondivisi`
-  - adaptive V5 scheduler budget for 120 active NPC targets
+| # | Fitur | Status Saat Ini | Gap | Spesifikasi Final | Endpoint | Data Model | Acceptance |
+|---|---|---|---|---|---|---|---|
+| 1 | Pangkat, promosi, demosi | Parsial | Riwayat rank belum jadi source utama | Semua perubahan rank tercatat bertanggal + alasan | `GET /game/v5/personnel/rank-history` | `personnel_rank_history` | Promosi/demosi (termasuk court) masuk history |
+| 2 | Divisi, lamar divisi, jabatan | Parsial | Proses lamar belum 4 tahap formal | Catalog divisi + pipeline lamaran + mutasi jabatan | `GET /game/v5/divisions/catalog` | `recruitment_pipeline_applications`, `personnel_assignment_history` | Tidak bisa lompat tahap |
+| 3 | Akademi, ijazah, gelar prefix/suffix | Parsial | Durasi lama 8 hari statis | Tier academy `4/5/6` hari + gelar dinamis nama | `GET /game/v5/academy/programs`, `GET /game/v5/academy/titles` | `academy_batches.total_days`, `education_titles` | Tier 1=4, Tier 2=5, Tier 3=6 |
+| 4 | Hierarki + command chain forwarding | Parsial | Penalty chain break belum terstandar | Forwarding chain + ack + dampak stabilitas | `GET /game/v5/expansion/state` (ringkasan) | state runtime + timeline | Chain break menghasilkan event/penalty |
+| 5 | Pengadilan militer | Parsial | Dampak verdict belum selalu menulis state personel | Verdict formal update rank/divisi/jabatan + surat | `GET /game/v5/court/cases`, `POST /game/v5/court/cases/:caseId/verdict` | `court_cases_v2` | Verdict menutup case + update state |
+| 6 | Military Law (MLC editable) | Ada | Integrasi runtime multiplier belum penuh | Perubahan hukum lewat council vote + log | `GET /game/v5/councils`, `POST /game/v5/councils/:councilId/vote` | `councils`, `council_votes` | Quorum + eligibility vote berlaku |
+| 7 | Rekrutmen divisi 4 tahap | Parsial | Masih ada jalur instan legacy | Pipeline `REGISTRATION -> TRYOUT -> SELECTION -> ANNOUNCEMENT` | `POST /game/v5/divisions/applications/*` | `recruitment_pipeline_applications` | Announcement hanya day 4 |
+| 8 | Misi DOM 13 hari 3 sesi | Belum/Parsial | Siklus DOM belum jadi model utama | Tiap 13 hari generate 3 sesi, player hanya 1 sesi | `GET /game/v5/dom/cycle/current`, `POST /game/v5/dom/sessions/:sessionId/*` | `dom_operation_cycles`, `dom_operation_sessions` | Selalu 3 sesi per cycle |
+| 9 | Smart Human NPC | Parsial | Trait/memory belum diekspos penuh | Rule-based traits + risiko integritas/pengkhianatan | runtime tick + snapshot | `npc_stats`, `npc_trait_memory` | Perilaku berbeda antar NPC |
+| 10 | Stabilitas internal/negara | Ada | Balancing lanjut bisa dituning per patch | Stability terhubung misi/court/corruption/raider/chain-break | `GET /game/v5/expansion/state` | `game_states` (governance fields) | Nilai stabilitas bergerak by event |
+| 11 | Serangan teroris/raider | Ada | Variasi skenario serangan masih bisa ditambah | Serangan periodik + casualty permanen + replacement queue + countdown | `GET /game/v5/expansion/state`, `GET /game/v5/social/timeline` | `npc_entities`, `recruitment_queue`, `social_timeline_events` | KIA permanen + queue replacement + countdown tampil |
+| 12 | Berita + event chances | Ada | Taxonomy domain event bisa diperluas | Event bus lintas sistem + filter domain/severity + date grouping | `GET /game/v5/social/timeline` | `social_timeline_events` | Event tampil berdasarkan date + severity |
+| 13 | Kematian NPC permanen + rekrut otomatis | Ada | UX countdown replacement belum lengkap | Permanent death + auto replacement due-day | `GET /game/v5/session/sync` | `npc_entities`, `recruitment_queue` | Replacement otomatis setelah due day |
+| 14 | Upacara, medali, prestasi | Ada | Formula pool medali masih dapat di-tune | Ceremony + medal pool lintas 3 sesi DOM (kompetisi ketat) | `GET /game/v5/ceremony/current`, `GET /game/v5/dom/cycle/current` | `ceremony_cycles`, `ceremony_awards`, `dom_operation_sessions.result` | Distribusi medali berbasis hasil + pool cycle |
+| 15 | Tryout divisi/korps/satuan | Parsial | Tryout belum selalu day-gated | Tryout hanya sesudah registration (day-2) | `POST /game/v5/divisions/applications/:id/tryout` | `recruitment_pipeline_applications` | Gagal jika lompat tahap |
+| 16 | Stats health/intelligence/kompetensi + substats | Parsial | Substats integritas/loyalitas belum penuh di semua flow | Tambah intelligence/competence/loyalty/integrity/betrayal risk | `GET /game/v5/npcs` | `npc_stats` | Nilai tersimpan dan update tiap tick |
+| 17 | Rekam jejak NPC+player bertanggal | Parsial | Timeline lintas sistem belum konsisten | Timeline sosial + history rank/assignment | `GET /game/v5/social/timeline` | `social_timeline_events`, history tables | Semua mutasi penting ada timestamp |
+| 18 | Potensi korupsi & penghianatan | Parsial | Trigger investigasi otomatis belum penuh | Risk model + integrasi court/news/mailbox | `GET /game/v5/expansion/state` | `npc_stats`, `npc_trait_memory`, court | Threshold memicu case/event |
+| 19 | Dewan militer tambahan | Parsial | Council selain MLC belum standar | `MLC`, `DOM`, `Personnel Board`, `Strategic Council` | `GET /game/v5/councils` | `councils`, `council_votes` | Quorum menutup voting |
+| 20 | Mailbox + side notification NPC->player | Parsial | Surat belum persisten/mark-read merata | Mailbox persisten + unread summary | `GET /game/v5/mailbox`, `POST /game/v5/mailbox/:messageId/read` | `mailbox_messages` | Unread counter + mark-read valid |
 
-## 5. REST API (Base: `/api/v1`)
+### Delivery 3 Fase (V5-Centric)
 
-Auth:
+- Fase 1 (fondasi data + engine inti): migrasi history/title/mailbox/timeline/stats, academy tier day (`4/5/6`), pipeline rekrutmen formal, endpoint V5 dasar.
+- Fase 2 (governance + mission + smart NPC): command chain, court v2, councils, DOM cycle `13` hari `3` sesi, risk corruption/betrayal, integrasi surat + timeline.
+- Fase 3 (UX lengkap + balancing + hardening): tuning stabilitas, raid cadence, medal competition lintas DOM, feed berita/event, cutover penuh dari adapter legacy.
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/logout`
-- `GET /auth/me`
+## 5. Gameplay Rule Constants
 
-Profile:
+- Academy: Tier 1 = `4` hari, Tier 2 = `5` hari, Tier 3 = `6` hari.
+- Recruitment pipeline: total `4` hari, `4` tahap.
+- DOM operation cycle: tiap `13` hari, `3` sesi per cycle.
+- DOM session rule: player hanya bisa join `1` sesi per cycle.
 
-- `POST /profile/create`
+## 6. Public API V5 (Base `/api/v1/game/v5`)
 
-Game:
+Core session/runtime:
+- `POST /session/start`
+- `POST /session/heartbeat`
+- `GET /session/sync?sinceVersion=`
+- `GET /npcs`
+- `GET /npcs/:npcId`
+- `GET /expansion/state`
 
-- `GET /game/snapshot`
-- `POST /game/pause`
-- `POST /game/resume`
-- `POST /game/actions/training`
-- `POST /game/actions/deployment`
-- `POST /game/actions/career-review`
-- `POST /game/decisions/:eventId/choose`
-- `GET /game/decision-logs?cursor=&limit=`
-- `GET /game/config`
-- `GET /meta/build`
+Academy:
+- `POST /academy/batch/start`
+- `GET /academy/batch/current`
+- `POST /academy/batch/submit-day`
+- `POST /academy/batch/graduate`
+- `GET /academy/programs`
+- `GET /academy/titles`
 
-Game V5:
+Divisions & recruitment:
+- `GET /divisions/catalog`
+- `POST /divisions/applications/register`
+- `POST /divisions/applications/:id/tryout`
+- `POST /divisions/applications/:id/finalize`
+- `GET /divisions/applications/:id`
+- `GET /personnel/rank-history`
 
-- `POST /game/v5/session/start`
-- `POST /game/v5/session/heartbeat`
-- `GET /game/v5/session/sync?sinceVersion=`
-- `GET /game/v5/npcs?status=&cursor=&limit=`
-- `GET /game/v5/npcs/:npcId`
-- `POST /game/v5/missions/plan`
-- `POST /game/v5/missions/execute`
-- `GET /game/v5/ceremony/current`
-- `POST /game/v5/ceremony/complete`
-- `POST /game/v5/academy/enroll`
-- `POST /game/v5/certifications/exam`
-- `GET /game/v5/expansion/state`
-- `POST /game/v5/academy/batch/start`
-- `GET /game/v5/academy/batch/current`
-- `POST /game/v5/academy/batch/submit-day`
-- `POST /game/v5/academy/batch/graduate`
-- `GET /game/v5/recruitment/board`
-- `POST /game/v5/recruitment/apply`
+DOM operations:
+- `GET /dom/cycle/current`
+- `POST /dom/sessions/:sessionId/join`
+- `POST /dom/sessions/:sessionId/execute`
 
-Events:
+Command chain:
+- `GET /command-chain/orders`
+- `POST /command-chain/orders`
+- `GET /command-chain/orders/:orderId`
+- `POST /command-chain/orders/:orderId/forward`
+- `POST /command-chain/orders/:orderId/ack`
 
-- `GET /events/pool`
+Court & councils:
+- `GET /court/cases`
+- `POST /court/cases/:caseId/verdict`
+- `GET /councils`
+- `POST /councils/:councilId/vote`
 
-## 6. Database
+Mailbox & social:
+- `GET /mailbox`
+- `POST /mailbox/:messageId/read`
+- `GET /social/timeline`
+
+Legacy compatibility (tetap hidup sementara):
+- Endpoint `game`/`game v3` lama tetap tersedia sebagai compatibility layer.
+- Endpoint lama ditandai deprecated bertahap; state utama ada di jalur `game-v5`.
+- Endpoint legacy yang mulai ditinggalkan untuk dashboard utama:
+  - `GET /game/news` -> gunakan `GET /game/v5/social/timeline`
+  - `GET /game/ceremony` dan `POST /game/actions/ceremony-complete` -> gunakan jalur `game/v5/ceremony/*`
+  - `POST /game/actions/raider-defense` -> status raider otomatis via tick + `game/v5/expansion/state`
+
+## 7. Migration & Compatibility
+
+- V5 adalah jalur utama, legacy tetap kompatibel sementara.
+- Migrasi lanjutan:
+  - `018_v6_personnel_history_and_titles.sql`
+  - `019_v6_recruitment_pipeline_and_dom.sql`
+  - `020_v6_court_and_councils.sql`
+  - `021_v6_mailbox_and_social_timeline.sql`
+  - `022_v6_stats_integrity_betrayal.sql`
+  - `023_v6_command_chain_and_penalties.sql`
+- Prinsip migrasi:
+  - Idempotent (`IF NOT EXISTS`, `ON CONFLICT`).
+  - Backfill default untuk data lama.
+  - Tanpa reset profil/user.
+  - Save existing wajib migrasi aman.
+
+## 8. System Diagrams
+
+Academy state machine:
+```text
+IDLE
+ -> ACTIVE(day 1..N, N=4/5/6 by tier)
+ -> (N terpenuhi) GRADUATION
+ -> GRADUATED | FAILED
+```
+
+Recruitment pipeline state machine:
+```text
+REGISTRATION (day 1)
+ -> TRYOUT (day 2)
+ -> SELECTION (day 3)
+ -> ANNOUNCEMENT_ACCEPTED | ANNOUNCEMENT_REJECTED (day 4)
+```
+
+DOM cycle state machine:
+```text
+CYCLE(start day D, end day D+12)
+ -> SESSION #1 (PLAYER_ELIGIBLE, NPC slots=8)
+ -> SESSION #2 (NPC_ONLY)
+ -> SESSION #3 (NPC_ONLY)
+ -> CYCLE COMPLETED
+```
+
+Command chain state machine:
+```text
+PENDING -> FORWARDED -> ACKNOWLEDGED
+    |          |
+    | (due day lewat)
+    v
+ BREACHED (penalty + investigasi/sanksi)
+```
+
+Court case state machine:
+```text
+PENDING -> IN_REVIEW -> CLOSED
+verdict: UPHOLD | DISMISS | REASSIGN
+```
+
+Mailbox state machine:
+```text
+CREATED (unread) -> READ (read_at/read_day set)
+```
+
+## 9. Operational Test Checklist (20 Fitur)
+
+1. Migrasi existing DB ke versi terbaru tanpa kehilangan profil player.
+2. Academy tier 1 selesai tepat 4 hari.
+3. Academy tier 2 selesai tepat 5 hari.
+4. Academy tier 3 selesai tepat 6 hari.
+5. Graduation gagal jika progress < `total_days`.
+6. Gelar prefix/suffix tampil konsisten pada data player.
+7. Recruitment pipeline tidak bisa lompat tahap.
+8. Announcement recruitment hanya muncul day ke-4.
+9. Tryout score memengaruhi final score selection.
+10. Rank history mencatat perubahan rank + alasan.
+11. Assignment history/timeline mencatat mutasi jabatan/divisi.
+12. DOM cycle selalu 13 hari dan 3 sesi.
+13. Player tidak bisa join lebih dari 1 sesi DOM per cycle.
+14. Session player menggunakan slot NPC = 8.
+15. Court verdict menutup case dan menulis dampak state.
+16. Vote council menghormati quorum dan mencegah double vote.
+17. Mailbox menyimpan surat persisten, unread count akurat.
+18. Mark-as-read mailbox memperbarui summary.
+19. Social timeline menyimpan event bertanggal untuk player/NPC.
+20. KIA NPC permanen dan replacement queue terpenuhi otomatis.
+21. Raider threat menampilkan countdown (`daysUntilNext`) dan level ancaman.
+22. Medal pool DOM lintas 3 sesi membatasi kuota total cycle.
+23. News UI menampilkan grouping tanggal + filter domain/severity dari event bus V5.
+
+## 10. Database
 
 Schema and indexes are in:
 
@@ -154,7 +255,7 @@ Includes:
 - `JSONB` for event options and decision payload/log consequence storage
 - read-path indexes + GIN for consequences
 
-## 7. Local Setup
+## 11. Local Setup
 
 ## Prerequisites
 
@@ -204,7 +305,7 @@ corepack pnpm dev:web
 Web: `http://localhost:3000`
 API health: `http://localhost:4000/api/v1/health`
 
-## 8. Environment Variables
+## 12. Environment Variables
 
 Use `.env.example` as baseline.
 
@@ -235,7 +336,7 @@ Frontend:
 - `NEXT_PUBLIC_API_BASE` (default `/api/v1`)
 - `BACKEND_ORIGIN` (used by Next.js rewrite, e.g. Railway API URL)
 
-## 9. Deployment (Strict Free-Tier Path)
+## 13. Deployment (Strict Free-Tier Path)
 
 Railway deploy behavior is pinned via `railway.toml` to use `RAILPACK` builder, avoiding Dockerfile-path push instability seen on monorepo deployments.
 
@@ -297,7 +398,7 @@ corepack pnpm --filter @mls/api migrate
 
 Next.js rewrite proxies `/api/*` to Railway so cookie auth remains first-party from browser perspective.
 
-## 10. Free-Tier Operations Policy (`$0`)
+## 14. Free-Tier Operations Policy (`$0`)
 
 - No external paid services.
 - Rely on platform logs only (Vercel + Railway).
@@ -310,7 +411,7 @@ Official pricing pages (verify current policy before go-live):
 - Vercel: https://vercel.com/pricing
 - Railway: https://railway.com/pricing
 
-## 11. Performance Strategy
+## 15. Performance Strategy
 
 - Server components by default; client components only where interactive
 - Lazy-loaded decision modal
@@ -320,7 +421,7 @@ Official pricing pages (verify current policy before go-live):
 - Index-driven read patterns
 - Brotli/gzip compression in Fastify
 
-## 12. Time/Consistency Guarantees
+## 16. Time/Consistency Guarantees
 
 - `gameDay` computed from server reference time only
 - Pause freezes progression (`paused_at_ms`)
@@ -333,7 +434,7 @@ server_reference_time_ms += (resume_now_ms - paused_at_ms)
 - Auto-resume when pause exceeds timeout (30 minutes)
 - No client-side drift accumulators
 
-## 13. Testing & Acceptance Checklist
+## 17. Testing & Acceptance Checklist
 
 1. Register/login with cookie session.
 2. Create profile and fetch snapshot.
@@ -346,7 +447,7 @@ server_reference_time_ms += (resume_now_ms - paused_at_ms)
 9. Verify second concurrent active session gets conflict.
 10. Restart client and confirm no time drift.
 
-## 14. Runbook
+## 18. Runbook
 
 - Health check: `GET /api/v1/health`
 - Migration: `corepack pnpm --filter @mls/api migrate`
@@ -356,7 +457,7 @@ server_reference_time_ms += (resume_now_ms - paused_at_ms)
   - verify DB connectivity
   - re-run migration command (idempotent)
 
-## 15. Known Constraints (Free Tier)
+## 19. Known Constraints (Free Tier)
 
 - Idle sleep/cold starts may increase first request latency.
 - Free quotas may throttle availability under load.
@@ -369,7 +470,7 @@ Mitigation (still free-tier compatible):
 - Prefer static rendering for non-interactive pages
 - Avoid expensive DB queries and N+1 patterns
 
-## 16. Security Notes
+## 20. Security Notes
 
 - HttpOnly cookie-based session token
 - Session token stored hashed in DB
@@ -382,5 +483,5 @@ Mitigation (still free-tier compatible):
 This repository is intentionally lean for global MVP launch on strict zero-cost infrastructure while preserving clean architecture and transactional integrity.
 
 
-## Deployment Notes
+## 21. Deployment Notes
 - For Vercel monorepo deployments, this repo uses a root `vercel.json` that targets the `@mls/web` Next.js build command (`corepack pnpm --filter @mls/web build`) to avoid output-directory mismatch errors.

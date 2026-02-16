@@ -5,10 +5,16 @@ import type {
   CeremonyCycleV5,
   CeremonyReport,
   CertificationRecordV5,
+  CommandChainOrder,
+  CouncilState,
+  CourtCaseV2,
+  DomOperationCycle,
+  EducationTitle,
   ExpansionStateV51,
   DecisionResult,
   GameSnapshot,
   GameSnapshotV5,
+  MailboxMessage,
   MedalCatalogItem,
   MilitaryLawCabinetOptionId,
   MilitaryLawChiefTermOptionId,
@@ -20,7 +26,9 @@ import type {
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
+  RecruitmentPipelineState,
   RecruitmentCompetitionEntry,
+  SocialTimelineEvent,
   WorldDelta
 } from '@mls/shared/game-types';
 
@@ -356,6 +364,225 @@ export const api = {
       state: ExpansionStateV51;
       snapshot: GameSnapshotV5 | null;
     }>('/game/v5/recruitment/apply', 'POST', payload);
+  },
+  v5RankHistory() {
+    return request<{
+      items: Array<{
+        id: number;
+        actorType: 'PLAYER' | 'NPC';
+        npcId: string | null;
+        oldRankIndex: number;
+        newRankIndex: number;
+        reason: string;
+        changedDay: number;
+        createdAt: string;
+      }>;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/personnel/rank-history', 'GET');
+  },
+  v5DivisionsCatalog() {
+    return request<{
+      items: Array<{
+        id: string;
+        name: string;
+        type: 'DIVISI' | 'SATUAN_TUGAS' | 'KORPS';
+        subdivisions: string[];
+        units: string[];
+        positions: string[];
+        requirement: { label: 'STANDARD' | 'ADVANCED' | 'ELITE'; minExtraCerts: number };
+        quota: ExpansionStateV51['quotaBoard'][number] | null;
+      }>;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/divisions/catalog', 'GET');
+  },
+  v5RegisterDivisionApplication(payload: { division: string }) {
+    return request<{
+      application: RecruitmentPipelineState;
+      schedule: {
+        registrationDay: number;
+        tryoutDay: number;
+        selectionDay: number;
+        announcementDay: number;
+        totalDays: number;
+      };
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/divisions/applications/register', 'POST', payload);
+  },
+  v5TryoutDivisionApplication(applicationId: string, payload: { answers: number[] }) {
+    return request<{
+      application: RecruitmentPipelineState;
+      nextStageAvailableDay: number;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/divisions/applications/${encodeURIComponent(applicationId)}/tryout`, 'POST', payload);
+  },
+  v5FinalizeDivisionApplication(applicationId: string) {
+    return request<{
+      stage: 'SELECTION' | 'ANNOUNCEMENT';
+      accepted?: boolean;
+      application: RecruitmentPipelineState;
+      nextStageAvailableDay?: number;
+      state?: ExpansionStateV51;
+      snapshot?: GameSnapshotV5 | null;
+    }>(`/game/v5/divisions/applications/${encodeURIComponent(applicationId)}/finalize`, 'POST', {});
+  },
+  v5DivisionApplication(applicationId: string) {
+    return request<{
+      application: RecruitmentPipelineState;
+      schedule: {
+        registrationDay: number;
+        tryoutDay: number;
+        selectionDay: number;
+        announcementDay: number;
+        totalDays: number;
+      };
+      stageIndex: number;
+      currentWorldDay: number;
+      canTryout: boolean;
+      canFinalizeSelection: boolean;
+      canAnnounce: boolean;
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/divisions/applications/${encodeURIComponent(applicationId)}`, 'GET');
+  },
+  v5AcademyPrograms() {
+    return request<{
+      constants: { academyTierDays: Record<1 | 2 | 3, number> };
+      programs: Array<{ track: string; tiers: number[]; durations: number[]; description: string }>;
+      state: ExpansionStateV51;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/programs', 'GET');
+  },
+  v5AcademyTitles() {
+    return request<{
+      titles: EducationTitle[];
+      playerDisplayName: string | null;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/academy/titles', 'GET');
+  },
+  v5DomCycleCurrent() {
+    return request<{
+      constants: {
+        domCycleDays: number;
+        sessionsPerCycle: number;
+        playerSessionNo: number;
+        playerNpcSlots: number;
+      };
+      cycle: DomOperationCycle | null;
+      snapshot: GameSnapshotV5 | null;
+    }>('/game/v5/dom/cycle/current', 'GET');
+  },
+  v5DomJoinSession(sessionId: string) {
+    return request<{ session: DomOperationCycle['sessions'][number]; cycle: DomOperationCycle | null; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/dom/sessions/${encodeURIComponent(sessionId)}/join`,
+      'POST',
+      {}
+    );
+  },
+  v5DomExecuteSession(sessionId: string) {
+    return request<{ session: DomOperationCycle['sessions'][number]; cycle: DomOperationCycle | null; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/dom/sessions/${encodeURIComponent(sessionId)}/execute`,
+      'POST',
+      {}
+    );
+  },
+  v5CourtCases() {
+    return request<{ cases: CourtCaseV2[]; snapshot: GameSnapshotV5 | null }>('/game/v5/court/cases', 'GET');
+  },
+  v5CourtVerdict(payload: { caseId: string; verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN'; note?: string; newDivision?: string; newPosition?: string }) {
+    return request<{ case: CourtCaseV2; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/court/cases/${encodeURIComponent(payload.caseId)}/verdict`,
+      'POST',
+      {
+        verdict: payload.verdict,
+        note: payload.note,
+        newDivision: payload.newDivision,
+        newPosition: payload.newPosition
+      }
+    );
+  },
+  v5Councils() {
+    return request<{ councils: CouncilState[]; snapshot: GameSnapshotV5 | null }>('/game/v5/councils', 'GET');
+  },
+  v5CouncilVote(payload: { councilId: string; voteChoice: 'APPROVE' | 'REJECT' | 'ABSTAIN'; rationale?: string }) {
+    return request<{ council: CouncilState | null; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/councils/${encodeURIComponent(payload.councilId)}/vote`,
+      'POST',
+      { voteChoice: payload.voteChoice, rationale: payload.rationale }
+    );
+  },
+  v5Mailbox(query?: { unreadOnly?: boolean; limit?: number }) {
+    const params = new URLSearchParams();
+    if (typeof query?.unreadOnly === 'boolean') params.set('unreadOnly', String(query.unreadOnly));
+    if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return request<{
+      items: MailboxMessage[];
+      summary: { unreadCount: number; latest: MailboxMessage | null };
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/mailbox${suffix}`, 'GET');
+  },
+  v5MailboxRead(messageId: string) {
+    return request<{
+      message: MailboxMessage;
+      summary: { unreadCount: number; latest: MailboxMessage | null };
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/mailbox/${encodeURIComponent(messageId)}/read`, 'POST', {});
+  },
+  v5SocialTimeline(query?: { actorType?: 'PLAYER' | 'NPC'; limit?: number }) {
+    const params = new URLSearchParams();
+    if (query?.actorType) params.set('actorType', query.actorType);
+    if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return request<{ events: SocialTimelineEvent[]; snapshot: GameSnapshotV5 | null }>(`/game/v5/social/timeline${suffix}`, 'GET');
+  },
+  v5CommandChainOrders(query?: { status?: CommandChainOrder['status']; limit?: number }) {
+    const params = new URLSearchParams();
+    if (query?.status) params.set('status', query.status);
+    if (typeof query?.limit === 'number') params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return request<{
+      orders: CommandChainOrder[];
+      summary: { openOrders: number; breachedOrders: number; latest: CommandChainOrder | null };
+      snapshot: GameSnapshotV5 | null;
+    }>(`/game/v5/command-chain/orders${suffix}`, 'GET');
+  },
+  v5CommandChainOrder(orderId: string) {
+    return request<{ order: CommandChainOrder; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/command-chain/orders/${encodeURIComponent(orderId)}`,
+      'GET'
+    );
+  },
+  v5CommandChainCreate(payload: {
+    targetNpcId?: string;
+    targetDivision?: string;
+    message: string;
+    priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+    ackWindowDays?: number;
+    chainPathNpcIds?: string[];
+  }) {
+    return request<{ order: CommandChainOrder; snapshot: GameSnapshotV5 | null }>('/game/v5/command-chain/orders', 'POST', payload);
+  },
+  v5CommandChainForward(payload: { orderId: string; actorNpcId?: string; forwardedToNpcId: string; note?: string }) {
+    return request<{ order: CommandChainOrder; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/command-chain/orders/${encodeURIComponent(payload.orderId)}/forward`,
+      'POST',
+      {
+        actorNpcId: payload.actorNpcId,
+        forwardedToNpcId: payload.forwardedToNpcId,
+        note: payload.note
+      }
+    );
+  },
+  v5CommandChainAck(payload: { orderId: string; actorNpcId?: string; note?: string }) {
+    return request<{ order: CommandChainOrder; snapshot: GameSnapshotV5 | null }>(
+      `/game/v5/command-chain/orders/${encodeURIComponent(payload.orderId)}/ack`,
+      'POST',
+      {
+        actorNpcId: payload.actorNpcId,
+        note: payload.note
+      }
+    );
   },
   createProfile(payload: { name: string; startAge: number; country: 'US'; branch: string }) {
     return request<{ profileId: string }>('/profile/create', 'POST', payload);

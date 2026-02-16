@@ -1,192 +1,193 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import type { CeremonyReport } from '@mls/shared/game-types';
+import { useEffect, useMemo, useState } from 'react';
+import type { CeremonyCycleV5, DomOperationCycle, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
-import { useGameStore } from '@/store/game-store';
+
+type CeremonyViewState = {
+  ceremony: CeremonyCycleV5 | null;
+  domCycle: DomOperationCycle | null;
+  medalCompetition: ExpansionStateV51['domMedalCompetition'] | undefined;
+};
+
+function extractSessionMedalQuota(cycle: DomOperationCycle | null): number {
+  if (!cycle) return 0;
+  return cycle.sessions.reduce((sum, session) => {
+    const raw = Number(session.result?.medalQuota ?? 0);
+    if (!Number.isFinite(raw)) return sum;
+    return sum + Math.max(0, Math.floor(raw));
+  }, 0);
+}
 
 export default function CeremonyPage() {
-  const router = useRouter();
-  const [ceremony, setCeremony] = useState<CeremonyReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<CeremonyViewState>({
+    ceremony: null,
+    domCycle: null,
+    medalCompetition: undefined
+  });
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const snapshot = useGameStore((state) => state.snapshot);
-  const setSnapshot = useGameStore((state) => state.setSnapshot);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .snapshot()
-      .then((response) => {
-        if (!cancelled) setSnapshot(response.snapshot);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [ceremonyRes, domRes, expansionRes] = await Promise.all([
+        api.v5CeremonyCurrent(),
+        api.v5DomCycleCurrent(),
+        api.v5ExpansionState()
+      ]);
+      setData({
+        ceremony: ceremonyRes.ceremony,
+        domCycle: domRes.cycle,
+        medalCompetition: expansionRes.state.domMedalCompetition
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [setSnapshot]);
-
-  const ceremonyDue = Boolean(snapshot?.ceremonyDue);
-
-  useEffect(() => {
-    setError(null);
-    if (!ceremonyDue) {
-      setCeremony(null);
-      return;
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal memuat data upacara.');
+    } finally {
+      setLoading(false);
     }
-
-    let cancelled = false;
-    api
-      .ceremony()
-      .then((response) => {
-        if (!cancelled) setCeremony(response.ceremony);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ceremonyDue]);
+  };
 
   useEffect(() => {
-    if (!ceremonyDue) return;
-    let cancelled = false;
-    let pollTimer: number | null = null;
-    let inFlight = false;
-
-    const pollSnapshot = async () => {
-      if (cancelled || document.visibilityState !== 'visible' || inFlight) return;
-      inFlight = true;
-      try {
-        const res = await api.snapshot();
-        if (!cancelled) setSnapshot(res.snapshot);
-      } catch {
-        // noop
-      } finally {
-        inFlight = false;
-        if (!cancelled) {
-          pollTimer = window.setTimeout(() => {
-            void pollSnapshot();
-          }, 2200);
-        }
-      }
-    };
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void pollSnapshot();
-      }
-    };
-
-    void pollSnapshot();
-    window.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
-
-    return () => {
-      cancelled = true;
-      if (pollTimer) window.clearTimeout(pollTimer);
-      window.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
-    };
-  }, [ceremonyDue, setSnapshot]);
+    void load();
+  }, []);
 
   const completeCeremony = async () => {
-    if (!ceremonyDue || busy) return;
+    if (!data.ceremony || data.ceremony.status !== 'PENDING') return;
     setBusy(true);
     setError(null);
     try {
-      const response = await api.ceremonyComplete();
-      setSnapshot(response.snapshot);
-      setCeremony(null);
-      router.replace('/dashboard');
+      await api.v5CeremonyComplete();
+      await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara');
+      setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara.');
     } finally {
       setBusy(false);
     }
   };
 
+  const allocatedCycleMedals = useMemo(() => extractSessionMedalQuota(data.domCycle), [data.domCycle]);
+  const totalPool = data.medalCompetition?.totalQuota ?? 0;
+  const remainingPool =
+    data.medalCompetition?.remaining ?? Math.max(0, totalPool - allocatedCycleMedals);
+
   return (
     <div className="space-y-4">
       <div className="cyber-panel p-3">
-        <p className="text-xs uppercase tracking-[0.14em] text-muted">Upacara Medal</p>
-        <h1 className="text-lg font-semibold text-text">Parade 15 Harian · Pemberian Pita oleh Chief of Staff</h1>
+        <p className="text-xs uppercase tracking-[0.14em] text-muted">Ceremony V5</p>
+        <h1 className="text-lg font-semibold text-text">Upacara, Medali, dan Prestasi</h1>
         <p className="mt-1 text-xs text-muted">
-          {ceremonyDue
-            ? 'Upacara aktif dan game dipause sampai upacara diselesaikan.'
-            : `Upacara berikutnya di Day ${snapshot?.nextCeremonyDay ?? '-'}.`}
+          Medali kini memakai pool lintas 3 sesi DOM untuk memperketat kompetisi.
         </p>
         <div className="mt-2 flex gap-2">
           <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-1 text-xs text-text">
             Back Dashboard
           </Link>
           <button
-            onClick={completeCeremony}
-            disabled={!ceremonyDue || busy}
+            onClick={() => void load()}
+            disabled={loading}
+            className="rounded border border-border bg-bg px-3 py-1 text-xs text-text disabled:opacity-60"
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+          <button
+            onClick={() => void completeCeremony()}
+            disabled={busy || !data.ceremony || data.ceremony.status !== 'PENDING'}
             className="rounded border border-accent bg-accent/20 px-3 py-1 text-xs text-text disabled:opacity-60"
           >
-            {busy ? 'Menyelesaikan...' : 'Selesaikan Upacara (Unpause)'}
+            {busy ? 'Menyelesaikan...' : 'Selesaikan Upacara'}
           </button>
         </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      {ceremony ? (
-        <>
-          <section className="cyber-panel grid gap-2 p-3 text-xs sm:grid-cols-4">
-            <p>Day: <span className="text-text">{ceremony.ceremonyDay}</span></p>
-            <p>Attendance: <span className="text-text">{ceremony.attendance}</span></p>
-            <p>Medal Quota: <span className="text-text">{ceremony.medalQuota}</span></p>
-            <p>Chief Competence: <span className="text-text">{ceremony.chiefOfStaff.competenceScore}</span></p>
-          </section>
+      <section className="cyber-panel grid gap-2 p-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+        <p>
+          Status Upacara: <span className="text-text">{data.ceremony?.status ?? 'BELUM ADA'}</span>
+        </p>
+        <p>
+          Day Upacara: <span className="text-text">{data.ceremony?.ceremonyDay ?? '-'}</span>
+        </p>
+        <p>
+          Medal Pool Cycle: <span className="text-text">{totalPool}</span>
+        </p>
+        <p>
+          Sisa Medal Pool: <span className="text-text">{remainingPool}</span>
+        </p>
+      </section>
 
+      {data.ceremony ? (
+        <>
           <section className="cyber-panel p-3 text-xs">
-            <h2 className="text-sm font-semibold text-text">Chief of Staff (NPC Nama Asli)</h2>
-            <p className="mt-1 text-text">{ceremony.chiefOfStaff.name}</p>
+            <h2 className="text-sm font-semibold text-text">Ringkasan Upacara</h2>
+            <p className="mt-1 text-muted">
+              Attendance: <span className="text-text">{data.ceremony.summary.attendance}</span>
+            </p>
             <p className="text-muted">
-              {ceremony.chiefOfStaff.replacedPreviousChief
-                ? `Menggantikan ${ceremony.chiefOfStaff.previousChiefName ?? 'Chief sebelumnya'} karena progres kompetensi lebih tinggi.`
-                : 'Posisi Chief tetap dipertahankan pada siklus ini.'}
+              Memorial KIA: <span className="text-text">{data.ceremony.summary.kiaMemorialCount}</span>
+            </p>
+            <p className="text-muted">
+              Command rotation applied:{' '}
+              <span className="text-text">{data.ceremony.summary.commandRotationApplied ? 'YES' : 'NO'}</span>
             </p>
           </section>
 
           <section className="cyber-panel p-3 text-xs">
-            <h2 className="text-sm font-semibold text-text">Logs Upacara</h2>
-            <div className="mt-2 space-y-1">
-              {ceremony.logs.map((line, idx) => (
-                <p key={`log-${idx}`} className="rounded border border-border/60 bg-bg/60 px-2 py-1 text-muted">
-                  {line}
-                </p>
-              ))}
-            </div>
-          </section>
-
-          <section className="cyber-panel p-3 text-xs">
-            <h2 className="text-sm font-semibold text-text">Sesi Pemberian Medal (Satu per Satu)</h2>
-            <div className="mt-2 space-y-2">
-              {ceremony.recipients.map((recipient) => (
-                <article key={`${recipient.order}-${recipient.npcName}`} className="rounded border border-accent/40 bg-accent/10 p-2">
-                  <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Recipient #{recipient.order}</p>
-                  <p className="font-medium text-text">{recipient.npcName}</p>
-                  <p className="text-muted">{recipient.division} · {recipient.unit} · {recipient.position}</p>
-                  <p className="text-text">{recipient.medalName} / {recipient.ribbonName}</p>
-                  <p className="text-muted">{recipient.reason}</p>
-                </article>
-              ))}
-            </div>
+            <h2 className="text-sm font-semibold text-text">Daftar Penerima Medal</h2>
+            {data.ceremony.awards.length === 0 ? (
+              <p className="mt-1 text-muted">Belum ada penerima medal pada cycle ini.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {data.ceremony.awards.map((award) => (
+                  <article key={`${award.orderNo}-${award.recipientName}`} className="rounded border border-border/60 bg-bg/60 p-2">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Recipient #{award.orderNo}</p>
+                    <p className="font-medium text-text">{award.recipientName}</p>
+                    <p className="text-muted">
+                      {award.medal} / {award.ribbon}
+                    </p>
+                    <p className="text-muted">{award.reason}</p>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         </>
       ) : (
-        <p className="text-sm text-muted">{ceremonyDue ? 'Loading upacara data...' : 'Upacara belum dimulai. Tunggu hari kelipatan 15 berikutnya.'}</p>
+        <section className="cyber-panel p-3 text-xs">
+          <p className="text-muted">Belum ada upacara yang aktif/pending pada saat ini.</p>
+        </section>
       )}
+
+      <section className="cyber-panel p-3 text-xs">
+        <h2 className="text-sm font-semibold text-text">Kompetisi Medal DOM</h2>
+        {data.domCycle ? (
+          <div className="mt-2 space-y-2">
+            <p className="text-muted">
+              Cycle: <span className="text-text">{data.domCycle.cycleId}</span> (Day {data.domCycle.startDay} - {data.domCycle.endDay})
+            </p>
+            <p className="text-muted">
+              Session selesai: <span className="text-text">{data.medalCompetition?.completedSessions ?? 0}/3</span>
+            </p>
+            <div className="space-y-1">
+              {data.domCycle.sessions
+                .slice()
+                .sort((a, b) => a.sessionNo - b.sessionNo)
+                .map((session) => (
+                  <p key={session.sessionId} className="rounded border border-border/60 bg-bg/60 px-2 py-1 text-muted">
+                    Sesi #{session.sessionNo} [{session.participantMode}] - status {session.status} - medal{' '}
+                    <span className="text-text">{Number(session.result?.medalQuota ?? 0) || 0}</span>
+                  </p>
+                ))}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 text-muted">DOM cycle belum tersedia.</p>
+        )}
+      </section>
     </div>
   );
 }

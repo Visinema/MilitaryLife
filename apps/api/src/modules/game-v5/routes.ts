@@ -5,9 +5,19 @@ import {
   academyBatchSubmitDaySchemaV51,
   academyEnrollSchemaV5,
   certificationExamSchemaV5,
+  commandChainOrderAckSchemaV6,
+  commandChainOrderCreateSchemaV6,
+  commandChainOrderForwardSchemaV6,
+  commandChainOrdersQuerySchemaV6,
+  councilVoteSchemaV6,
+  courtVerdictSchemaV6,
+  divisionApplicationRegisterSchemaV6,
+  divisionApplicationTryoutSchemaV6,
+  mailboxQuerySchemaV6,
   missionExecuteSchemaV5,
   missionPlanSchemaV5,
   npcListQuerySchema,
+  socialTimelineQuerySchemaV6,
   recruitmentApplySchemaV51,
   recruitmentBoardQuerySchemaV51,
   sessionHeartbeatSchema,
@@ -15,10 +25,33 @@ import {
   sessionSyncQuerySchema
 } from './schema.js';
 import {
+  ackCommandChainOrderV5,
   applyRecruitmentV51,
+  createCommandChainOrderV5,
+  executeDomSessionV5,
+  finalizeDivisionApplicationV5,
+  getAcademyProgramsV5,
+  getAcademyTitlesV5,
   getAcademyBatchCurrentV51,
+  getDivisionsCatalogV5,
+  getDivisionApplicationV5,
+  getDomCycleCurrentV5,
+  getCommandChainOrderV5,
+  getMailboxV5,
   getExpansionStateV51,
+  getRankHistoryV5,
   getRecruitmentBoardV51,
+  getSocialTimelineV5,
+  forwardCommandChainOrderV5,
+  joinDomSessionV5,
+  listCommandChainOrdersV5,
+  listCouncilsV5,
+  listCourtCasesV5,
+  markMailboxReadV5,
+  registerDivisionApplicationV5,
+  runDivisionApplicationTryoutV5,
+  voteCouncilV5,
+  verdictCourtCaseV5,
   completeCeremonyV5,
   graduateAcademyBatchV51,
   enrollAcademyV5,
@@ -164,6 +197,159 @@ export async function gameV5Routes(app: FastifyInstance): Promise<void> {
     try {
       const body = parseOrThrow(recruitmentApplySchemaV51, request.body ?? {});
       await applyRecruitmentV51(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/personnel/rank-history', async (request, reply) => {
+    await getRankHistoryV5(request, reply);
+  });
+
+  app.get('/divisions/catalog', async (request, reply) => {
+    await getDivisionsCatalogV5(request, reply);
+  });
+
+  app.post('/divisions/applications/register', async (request, reply) => {
+    try {
+      const body = parseOrThrow(divisionApplicationRegisterSchemaV6, request.body ?? {});
+      await registerDivisionApplicationV5(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/divisions/applications/:id/tryout', async (request, reply) => {
+    try {
+      const body = parseOrThrow(divisionApplicationTryoutSchemaV6, request.body ?? {});
+      const params = request.params as { id: string };
+      await runDivisionApplicationTryoutV5(request, reply, { applicationId: params.id, answers: body.answers });
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/divisions/applications/:id/finalize', async (request, reply) => {
+    const params = request.params as { id: string };
+    await finalizeDivisionApplicationV5(request, reply, { applicationId: params.id });
+  });
+
+  app.get('/divisions/applications/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    await getDivisionApplicationV5(request, reply, params.id);
+  });
+
+  app.get('/academy/programs', async (request, reply) => {
+    await getAcademyProgramsV5(request, reply);
+  });
+
+  app.get('/academy/titles', async (request, reply) => {
+    await getAcademyTitlesV5(request, reply);
+  });
+
+  app.get('/dom/cycle/current', async (request, reply) => {
+    await getDomCycleCurrentV5(request, reply);
+  });
+
+  app.post('/dom/sessions/:sessionId/join', async (request, reply) => {
+    const params = request.params as { sessionId: string };
+    await joinDomSessionV5(request, reply, { sessionId: params.sessionId });
+  });
+
+  app.post('/dom/sessions/:sessionId/execute', async (request, reply) => {
+    const params = request.params as { sessionId: string };
+    await executeDomSessionV5(request, reply, { sessionId: params.sessionId });
+  });
+
+  app.get('/court/cases', async (request, reply) => {
+    await listCourtCasesV5(request, reply);
+  });
+
+  app.post('/court/cases/:caseId/verdict', async (request, reply) => {
+    try {
+      const body = parseOrThrow(courtVerdictSchemaV6, request.body ?? {});
+      const params = request.params as { caseId: string };
+      await verdictCourtCaseV5(request, reply, { caseId: params.caseId, ...body });
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/councils', async (request, reply) => {
+    await listCouncilsV5(request, reply);
+  });
+
+  app.post('/councils/:councilId/vote', async (request, reply) => {
+    try {
+      const body = parseOrThrow(councilVoteSchemaV6, request.body ?? {});
+      const params = request.params as { councilId: string };
+      await voteCouncilV5(request, reply, { councilId: params.councilId, ...body });
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/mailbox', async (request, reply) => {
+    try {
+      const query = parseOrThrow(mailboxQuerySchemaV6, request.query ?? {});
+      await getMailboxV5(request, reply, query);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/mailbox/:messageId/read', async (request, reply) => {
+    const params = request.params as { messageId: string };
+    await markMailboxReadV5(request, reply, params.messageId);
+  });
+
+  app.get('/social/timeline', async (request, reply) => {
+    try {
+      const query = parseOrThrow(socialTimelineQuerySchemaV6, request.query ?? {});
+      await getSocialTimelineV5(request, reply, query);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/command-chain/orders', async (request, reply) => {
+    try {
+      const query = parseOrThrow(commandChainOrdersQuerySchemaV6, request.query ?? {});
+      await listCommandChainOrdersV5(request, reply, query);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/command-chain/orders', async (request, reply) => {
+    try {
+      const body = parseOrThrow(commandChainOrderCreateSchemaV6, request.body ?? {});
+      await createCommandChainOrderV5(request, reply, body);
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.get('/command-chain/orders/:orderId', async (request, reply) => {
+    const params = request.params as { orderId: string };
+    await getCommandChainOrderV5(request, reply, params.orderId);
+  });
+
+  app.post('/command-chain/orders/:orderId/forward', async (request, reply) => {
+    try {
+      const body = parseOrThrow(commandChainOrderForwardSchemaV6, request.body ?? {});
+      const params = request.params as { orderId: string };
+      await forwardCommandChainOrderV5(request, reply, { orderId: params.orderId, ...body });
+    } catch (error) {
+      sendValidationError(reply, error);
+    }
+  });
+
+  app.post('/command-chain/orders/:orderId/ack', async (request, reply) => {
+    try {
+      const body = parseOrThrow(commandChainOrderAckSchemaV6, request.body ?? {});
+      const params = request.params as { orderId: string };
+      await ackCommandChainOrderV5(request, reply, { orderId: params.orderId, ...body });
     } catch (error) {
       sendValidationError(reply, error);
     }

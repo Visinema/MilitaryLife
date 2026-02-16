@@ -9,13 +9,19 @@ import { GAME_MS_PER_DAY } from '@mls/shared/constants';
 import { buildNpcRegistry } from '@mls/shared/npc-registry';
 import {
   V5_MAX_NPCS,
+  applyLegacyGovernanceDelta,
   appendWorldDelta,
   buildSnapshotV5,
   fulfillRecruitmentQueueItem,
   getCurrentCeremony,
+  getLatestSocialTimelineEventByType,
+  getLegacyGovernanceSnapshot,
   getLatestMission,
+  insertMailboxMessage,
   insertLifecycleEvent,
+  insertSocialTimelineEvent,
   listActiveWorldProfilesForTick,
+  listDueCommandChainOrdersForPenalty,
   listCurrentNpcRuntime,
   listDueRecruitmentQueueForUpdate,
   listRecentLifecycleEvents,
@@ -24,6 +30,8 @@ import {
   lockV5World,
   pruneWorldDeltas,
   queueNpcReplacement,
+  upsertCourtCaseV2,
+  updateCommandChainOrderStatus,
   updateNpcRuntimeState,
   updateWorldCore,
   upsertCeremonyPending
@@ -67,9 +75,43 @@ function runtimeNoise(maxAbs = 6): number {
   return Math.floor(Math.random() * (maxAbs * 2 + 1)) - maxAbs;
 }
 
-function chooseTask(seed: number): string {
-  const tasks = ['training', 'patrol', 'logistics', 'medical-support', 'intel-review', 'academy-drill'];
-  return tasks[Math.abs(seed) % tasks.length] ?? 'training';
+const TASK_POOL = ['training', 'patrol', 'logistics', 'medical-support', 'intel-review', 'academy-drill'] as const;
+type NpcTask = (typeof TASK_POOL)[number];
+
+function chooseTaskByUtility(npc: NpcRuntimeState, missionPressure: number, seed: number): NpcTask {
+  let selected: NpcTask = 'training';
+  let bestScore = -Infinity;
+
+  for (const task of TASK_POOL) {
+    const bias = ((seed + task.length * 17 + npc.slotNo * 7) % 13) - 6;
+    const fatiguePenalty = npc.fatigue * 0.45;
+    const traumaPenalty = npc.trauma * 0.32;
+    let utility = 0;
+
+    if (task === 'training') {
+      utility = npc.competence * 0.62 + npc.intelligence * 0.3 - fatiguePenalty * 0.35 + bias;
+    } else if (task === 'patrol') {
+      utility = npc.loyalty * 0.54 + npc.leadership * 0.36 + missionPressure * 6 - traumaPenalty * 0.2 + bias;
+    } else if (task === 'logistics') {
+      utility = npc.support * 0.58 + npc.competence * 0.34 + missionPressure * 3 - fatiguePenalty * 0.22 + bias;
+    } else if (task === 'medical-support') {
+      utility = npc.support * 0.48 + npc.resilience * 0.35 + npc.loyalty * 0.2 - traumaPenalty * 0.12 + bias;
+    } else if (task === 'intel-review') {
+      utility = npc.intelligence * 0.7 + npc.competence * 0.32 - fatiguePenalty * 0.18 + bias;
+    } else {
+      utility = npc.leadership * 0.44 + npc.intelligence * 0.32 + npc.competence * 0.2 - fatiguePenalty * 0.28 + bias;
+    }
+
+    const riskPenalty = npc.betrayalRisk * 0.22 + npc.integrityRisk * 0.18;
+    utility -= riskPenalty * (task === 'logistics' ? 0.35 : 0.2);
+
+    if (utility > bestScore) {
+      bestScore = utility;
+      selected = task;
+    }
+  }
+
+  return selected;
 }
 
 function bumpPosition(current: string, promotionGain: number): string {
@@ -85,6 +127,32 @@ function missionPenaltyFactor(mission: MissionInstanceV5 | null): number {
   if (mission.dangerTier === 'HIGH') return 4;
   if (mission.dangerTier === 'MEDIUM') return 2;
   return 1;
+}
+
+function computeRaiderCadenceDays(threatScore: number): number {
+  if (threatScore >= 75) return 7;
+  if (threatScore >= 50) return 9;
+  return 11;
+}
+
+function computeRaiderThreatScore(input: {
+  nationalStability: number;
+  militaryStability: number;
+  corruptionRisk: number;
+  averageIntegrityRisk: number;
+  averageBetrayalRisk: number;
+}): number {
+  const instability = ((100 - input.nationalStability) + (100 - input.militaryStability)) / 2;
+  return clamp(
+    Math.round(
+      instability * 0.32 +
+        input.corruptionRisk * 0.34 +
+        input.averageIntegrityRisk * 0.16 +
+        input.averageBetrayalRisk * 0.18
+    ),
+    0,
+    100
+  );
 }
 
 function buildCycleAwards(
@@ -141,6 +209,10 @@ export async function runWorldTick(
   const rankIndex = world.rankIndex;
   let assignment = world.assignment;
   let commandAuthority = world.commandAuthority;
+  let governanceNationalDelta = 0;
+  let governanceMilitaryDelta = 0;
+  let governanceFundDeltaCents = 0;
+  let governanceCorruptionDelta = 0;
 
   moneyCents += dayGain * (1200 + rankIndex * 170);
   morale = clamp(morale - Math.floor(dayGain / 2) + 1 - Math.floor(activeMissionPressure / 2), 0, 100);
@@ -156,7 +228,7 @@ export async function runWorldTick(
 
     const seed = hashSeed(`${profileId}:${npc.npcId}:${currentDay}`);
     const noise = runtimeNoise(7);
-    const task = chooseTask(seed + currentDay + npc.slotNo);
+    const task = chooseTaskByUtility(npc, activeMissionPressure, seed + currentDay + npc.slotNo);
     const fatigueGain = 2 + (seed % 4) + activeMissionPressure + Math.max(0, noise);
     const xpGain = 1 + (seed % 3) + (task === 'training' ? 1 : 0);
     const promotionGain = 1 + Math.floor((npc.leadership + npc.resilience + (seed % 20)) / 70);
@@ -164,9 +236,37 @@ export async function runWorldTick(
     npc.lastTask = task;
     npc.xp += xpGain;
     npc.promotionPoints += promotionGain;
+    npc.competence = clamp(
+      npc.competence + (task === 'training' ? 2 : task === 'intel-review' ? 1 : 0) - (npc.fatigue >= 86 ? 1 : 0),
+      0,
+      100
+    );
+    npc.intelligence = clamp(
+      npc.intelligence + (task === 'intel-review' ? 2 : task === 'academy-drill' ? 1 : 0) - (npc.trauma >= 80 ? 1 : 0),
+      0,
+      100
+    );
+    npc.loyalty = clamp(
+      npc.loyalty + (task === 'patrol' || task === 'medical-support' ? 1 : 0) - (activeMissionPressure >= 4 ? 1 : 0),
+      0,
+      100
+    );
     npc.fatigue = clamp(npc.fatigue + fatigueGain - (npc.status === 'RESERVE' ? 4 : 0), 0, 100);
     npc.trauma = clamp(npc.trauma + (npc.fatigue > 80 ? 2 : 0) + Math.max(0, Math.floor(noise / 3)), 0, 100);
     npc.relationToPlayer = clamp(npc.relationToPlayer + (task.includes('support') ? 1 : 0), 0, 100);
+    const integrityPressure =
+      (100 - npc.loyalty) * 0.12 +
+      npc.trauma * 0.08 +
+      npc.fatigue * 0.06 +
+      (task === 'logistics' ? 2 : 0) +
+      activeMissionPressure * 0.7;
+    npc.integrityRisk = clamp(Math.round(npc.integrityRisk + integrityPressure - npc.competence * 0.035), 0, 100);
+    const betrayalPressure =
+      npc.integrityRisk * 0.18 +
+      (100 - npc.loyalty) * 0.22 +
+      npc.trauma * 0.09 +
+      (task === 'patrol' ? -1 : 1);
+    npc.betrayalRisk = clamp(Math.round(npc.betrayalRisk + betrayalPressure - npc.intelligence * 0.03), 0, 100);
     npc.position = bumpPosition(npc.position, promotionGain);
 
     const injuryRisk = (npc.fatigue + npc.trauma + activeMissionPressure * 8 + (seed % 35) + noise) / 2;
@@ -222,6 +322,55 @@ export async function runWorldTick(
       });
     }
 
+    if (npc.betrayalRisk >= 85 || npc.integrityRisk >= 88) {
+      const caseId = `risk-${profileId.slice(0, 8)}-${npc.npcId}-${currentDay}`;
+      const caseType = npc.betrayalRisk >= 92 ? 'DEMOTION' : 'SANCTION';
+      await upsertCourtCaseV2(client, {
+        profileId,
+        caseId,
+        caseType,
+        targetType: 'NPC',
+        targetNpcId: npc.npcId,
+        requestedDay: currentDay,
+        status: 'PENDING',
+        verdict: null,
+        decisionDay: null,
+        details: {
+          source: 'NPC_RISK_MODEL',
+          betrayalRisk: npc.betrayalRisk,
+          integrityRisk: npc.integrityRisk,
+          task
+        }
+      });
+      await insertMailboxMessage(client, {
+        messageId: `mail-risk-${profileId.slice(0, 8)}-${npc.npcId}-${currentDay}`,
+        profileId,
+        senderType: 'SYSTEM',
+        senderNpcId: null,
+        subject: `Investigasi Internal: ${npc.name}`,
+        body: `Risk threshold terlampaui (integrity=${npc.integrityRisk}, betrayal=${npc.betrayalRisk}). Case ${caseId} dibuka.`,
+        category: 'SANCTION',
+        relatedRef: caseId,
+        createdDay: currentDay
+      });
+      await insertSocialTimelineEvent(client, {
+        profileId,
+        actorType: 'NPC',
+        actorNpcId: npc.npcId,
+        eventType: 'RISK_THRESHOLD_TRIGGERED',
+        title: `Risk Trigger ${npc.name}`,
+        detail: `Integrity/Betrayal melewati ambang. Court case ${caseId} dibuat.`,
+        eventDay: currentDay,
+        meta: {
+          caseId,
+          integrityRisk: npc.integrityRisk,
+          betrayalRisk: npc.betrayalRisk
+        }
+      });
+      governanceMilitaryDelta -= npc.betrayalRisk >= 92 ? 2 : 1;
+      governanceCorruptionDelta += npc.integrityRisk >= 92 ? 2 : 1;
+    }
+
     await updateNpcRuntimeState(client, profileId, npc, currentDay);
     changedNpcIds.add(npc.npcId);
     changedNpcStates.push({ ...npc, updatedAtMs: nowMs });
@@ -260,6 +409,208 @@ export async function runWorldTick(
     }
   }
 
+  const dueCommandOrders = await listDueCommandChainOrdersForPenalty(client, profileId, currentDay, 20);
+  if (dueCommandOrders.length > 0) {
+    for (const order of dueCommandOrders) {
+      const priorityPenalty = order.priority === 'HIGH' ? 5 : order.priority === 'MEDIUM' ? 3 : 2;
+      morale = clamp(morale - priorityPenalty, 0, 100);
+      commandAuthority = clamp(commandAuthority - (priorityPenalty + 1), 0, 100);
+      governanceMilitaryDelta -= priorityPenalty >= 5 ? 3 : 2;
+      governanceNationalDelta -= 1;
+      governanceCorruptionDelta += 1;
+      await updateCommandChainOrderStatus(client, {
+        profileId,
+        orderId: order.orderId,
+        status: 'BREACHED',
+        completedDay: currentDay,
+        penaltyApplied: true
+      });
+
+      await insertMailboxMessage(client, {
+        messageId: `mail-chain-break-${order.orderId}-${currentDay}`,
+        profileId,
+        senderType: 'SYSTEM',
+        senderNpcId: null,
+        subject: `Chain Break: ${order.orderId}`,
+        body: `Order command-chain melewati due day (${order.ackDueDay}) dan dikenakan penalty command.`,
+        category: 'SANCTION',
+        relatedRef: order.orderId,
+        createdDay: currentDay
+      });
+      await insertSocialTimelineEvent(client, {
+        profileId,
+        actorType: 'PLAYER',
+        actorNpcId: null,
+        eventType: 'COMMAND_CHAIN_BREAK',
+        title: 'Command Chain Break',
+        detail: `Order ${order.orderId} breached. Penalty morale/authority diterapkan.`,
+        eventDay: currentDay,
+        meta: {
+          orderId: order.orderId,
+          priority: order.priority,
+          ackDueDay: order.ackDueDay
+        }
+      });
+
+      if (order.targetNpcId) {
+        const caseId = `chain-break-${profileId.slice(0, 8)}-${order.targetNpcId}-${currentDay}`;
+        await upsertCourtCaseV2(client, {
+          profileId,
+          caseId,
+          caseType: 'SANCTION',
+          targetType: 'NPC',
+          targetNpcId: order.targetNpcId,
+          requestedDay: currentDay,
+          status: 'PENDING',
+          verdict: null,
+          decisionDay: null,
+          details: {
+            source: 'COMMAND_CHAIN_BREAK',
+            orderId: order.orderId,
+            dueDay: order.ackDueDay
+          }
+        });
+      }
+    }
+  }
+
+  const activeOrReserveNpcs = npcs.filter((item) => item.status !== 'KIA');
+  const averageIntegrityRisk =
+    activeOrReserveNpcs.length === 0
+      ? 0
+      : activeOrReserveNpcs.reduce((sum, npc) => sum + npc.integrityRisk, 0) / activeOrReserveNpcs.length;
+  const averageBetrayalRisk =
+    activeOrReserveNpcs.length === 0
+      ? 0
+      : activeOrReserveNpcs.reduce((sum, npc) => sum + npc.betrayalRisk, 0) / activeOrReserveNpcs.length;
+
+  const governance = await getLegacyGovernanceSnapshot(client, profileId);
+  const raiderThreatScore = computeRaiderThreatScore({
+    nationalStability: governance.nationalStability,
+    militaryStability: governance.militaryStability,
+    corruptionRisk: governance.corruptionRisk,
+    averageIntegrityRisk,
+    averageBetrayalRisk
+  });
+  const raiderCadenceDays = computeRaiderCadenceDays(raiderThreatScore);
+  const latestRaiderAttack = await getLatestSocialTimelineEventByType(client, profileId, 'RAIDER_ATTACK');
+  const nextRaiderAttackDay =
+    latestRaiderAttack && latestRaiderAttack.eventDay >= 0
+      ? latestRaiderAttack.eventDay + raiderCadenceDays
+      : currentDay + 3;
+
+  if (currentDay >= nextRaiderAttackDay && activeOrReserveNpcs.length > 0) {
+    const casualtyTarget =
+      raiderThreatScore >= 82
+        ? Math.min(4, 2 + Math.floor(Math.random() * 3))
+        : raiderThreatScore >= 65
+          ? Math.min(3, 1 + Math.floor(Math.random() * 2))
+          : Math.min(2, 1 + Math.floor(Math.random() * 2));
+    const casualtyCandidates = [...activeOrReserveNpcs]
+      .sort((a, b) => {
+        const scoreA = a.fatigue * 0.55 + a.trauma * 0.35 + (100 - a.resilience) * 0.1;
+        const scoreB = b.fatigue * 0.55 + b.trauma * 0.35 + (100 - b.resilience) * 0.1;
+        return scoreB - scoreA;
+      })
+      .slice(0, casualtyTarget);
+
+    const casualtyMeta: Array<{ npcId: string; name: string; slotNo: number; dueDay: number }> = [];
+    for (const npc of casualtyCandidates) {
+      npc.status = 'KIA';
+      npc.deathDay = currentDay;
+      npc.lastTask = 'raider-casualty';
+      await updateNpcRuntimeState(client, profileId, npc, currentDay);
+      changedNpcIds.add(npc.npcId);
+      changedNpcStates.push({ ...npc, updatedAtMs: nowMs });
+
+      await insertLifecycleEvent(client, {
+        profileId,
+        npcId: npc.npcId,
+        eventType: 'KIA',
+        day: currentDay,
+        details: {
+          source: 'RAIDER_ATTACK',
+          threatScore: raiderThreatScore
+        }
+      });
+
+      const dueDay = currentDay + 2 + (npc.slotNo % 5);
+      await queueNpcReplacement(client, {
+        profileId,
+        slotNo: npc.slotNo,
+        generationNext: npc.generation + 1,
+        enqueuedDay: currentDay,
+        dueDay,
+        replacedNpcId: npc.npcId
+      });
+      await insertLifecycleEvent(client, {
+        profileId,
+        npcId: npc.npcId,
+        eventType: 'REPLACEMENT_QUEUED',
+        day: currentDay,
+        details: {
+          source: 'RAIDER_ATTACK',
+          dueDay,
+          generationNext: npc.generation + 1
+        }
+      });
+      casualtyMeta.push({
+        npcId: npc.npcId,
+        name: npc.name,
+        slotNo: npc.slotNo,
+        dueDay
+      });
+    }
+
+    const casualtyCount = casualtyMeta.length;
+    morale = clamp(morale - (2 + casualtyCount * 2 + (raiderThreatScore >= 75 ? 2 : 0)), 0, 100);
+    health = clamp(health - (1 + casualtyCount), 0, 100);
+    commandAuthority = clamp(commandAuthority - (2 + casualtyCount), 0, 100);
+
+    governanceNationalDelta -= 1 + Math.floor(casualtyCount / 2);
+    governanceMilitaryDelta -= 2 + casualtyCount;
+    governanceFundDeltaCents -= casualtyCount * (raiderThreatScore >= 75 ? 4_500 : 3_000);
+    governanceCorruptionDelta += raiderThreatScore >= 75 ? 2 : 1;
+
+    const attackSeverity = raiderThreatScore >= 75 ? 'HIGH' : raiderThreatScore >= 50 ? 'MEDIUM' : 'LOW';
+    await insertMailboxMessage(client, {
+      messageId: `mail-raider-${profileId.slice(0, 8)}-${currentDay}`,
+      profileId,
+      senderType: 'SYSTEM',
+      senderNpcId: null,
+      subject: `Peringatan Raider (${attackSeverity})`,
+      body: `Serangan raider day ${currentDay}. Casualty: ${casualtyCount}. Replacement queue aktif.`,
+      category: 'SANCTION',
+      relatedRef: `raider-${currentDay}`,
+      createdDay: currentDay
+    });
+    await insertSocialTimelineEvent(client, {
+      profileId,
+      actorType: 'PLAYER',
+      actorNpcId: null,
+      eventType: 'RAIDER_ATTACK',
+      title: `Raider Attack ${attackSeverity}`,
+      detail: `Serangan raider dengan ${casualtyCount} casualty. Next cadence ${raiderCadenceDays} hari.`,
+      eventDay: currentDay,
+      meta: {
+        severity: attackSeverity,
+        threatScore: raiderThreatScore,
+        cadenceDays: raiderCadenceDays,
+        casualties: casualtyMeta,
+        nextAttackDay: currentDay + raiderCadenceDays
+      }
+    });
+  }
+
+  if (averageBetrayalRisk >= 70) {
+    governanceMilitaryDelta -= 1;
+    governanceCorruptionDelta += 1;
+  } else if (averageBetrayalRisk <= 35 && averageIntegrityRisk <= 35) {
+    governanceNationalDelta += 1;
+    governanceMilitaryDelta += 1;
+    governanceCorruptionDelta -= 1;
+  }
+
   const cycleDay = currentDay >= 15 ? currentDay - (currentDay % 15) : 0;
   const currentCeremony = await getCurrentCeremony(client, profileId);
   if (cycleDay >= 15 && (!currentCeremony || currentCeremony.ceremonyDay < cycleDay)) {
@@ -282,6 +633,21 @@ export async function runWorldTick(
 
   if (morale >= 78 && health >= 75 && assignment !== 'Command Rotation HQ') {
     assignment = 'Command Rotation HQ';
+  }
+
+  if (
+    governanceNationalDelta !== 0 ||
+    governanceMilitaryDelta !== 0 ||
+    governanceFundDeltaCents !== 0 ||
+    governanceCorruptionDelta !== 0
+  ) {
+    await applyLegacyGovernanceDelta(client, {
+      profileId,
+      nationalDelta: governanceNationalDelta,
+      militaryDelta: governanceMilitaryDelta,
+      fundDeltaCents: governanceFundDeltaCents,
+      corruptionDelta: governanceCorruptionDelta
+    });
   }
 
   const nextStateVersion = world.stateVersion + 1;

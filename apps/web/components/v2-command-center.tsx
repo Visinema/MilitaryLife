@@ -219,8 +219,10 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
                 <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
                   <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
                   <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
+                  <Link href="/dashboard/social-profile" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Social Profile</Link>
                   <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>
                   <Link href="/dashboard/decision-log" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Decision Log</Link>
+                  <Link href="/dashboard/mailbox" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Mailbox</Link>
                   <Link href="/dashboard/ceremony" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Upacara Medal</Link>
                   <Link href="/dashboard/recruitment" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Rekrutmen</Link>
                 </div>

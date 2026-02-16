@@ -21,6 +21,15 @@ export interface DivisionAccessProfile {
   dangerousMissionUnlocked: boolean;
 }
 
+export interface EducationTitle {
+  titleCode: string;
+  label: string;
+  mode: 'PREFIX' | 'SUFFIX';
+  sourceTrack: string;
+  minTier: 1 | 2 | 3;
+  active: boolean;
+}
+
 export interface AcademyCertificate {
   id: string;
   tier: 1 | 2;
@@ -262,6 +271,11 @@ export interface NpcRuntimeState {
   support: number;
   leadership: number;
   resilience: number;
+  intelligence: number;
+  competence: number;
+  loyalty: number;
+  integrityRisk: number;
+  betrayalRisk: number;
   fatigue: number;
   trauma: number;
   xp: number;
@@ -410,6 +424,122 @@ export interface RecruitmentCompetitionEntry {
   rank: number;
 }
 
+export interface RecruitmentPipelineState {
+  applicationId: string;
+  holderType: 'PLAYER' | 'NPC';
+  npcId: string | null;
+  holderName: string;
+  division: string;
+  status: 'REGISTRATION' | 'TRYOUT' | 'SELECTION' | 'ANNOUNCEMENT_ACCEPTED' | 'ANNOUNCEMENT_REJECTED';
+  registeredDay: number;
+  tryoutDay: number | null;
+  selectionDay: number | null;
+  announcementDay: number | null;
+  tryoutScore: number;
+  finalScore: number;
+  note: string;
+}
+
+export interface DomOperationSession {
+  sessionId: string;
+  sessionNo: 1 | 2 | 3;
+  participantMode: 'PLAYER_ELIGIBLE' | 'NPC_ONLY';
+  npcSlots: number;
+  playerJoined: boolean;
+  playerJoinDay: number | null;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED';
+  result: Record<string, unknown>;
+}
+
+export interface DomOperationCycle {
+  cycleId: string;
+  startDay: number;
+  endDay: number;
+  status: 'ACTIVE' | 'COMPLETED';
+  sessions: DomOperationSession[];
+}
+
+export interface CourtCaseV2 {
+  caseId: string;
+  caseType: 'DISMISSAL' | 'SANCTION' | 'DEMOTION' | 'MUTATION';
+  targetType: 'PLAYER' | 'NPC';
+  targetNpcId: string | null;
+  requestedDay: number;
+  status: 'PENDING' | 'IN_REVIEW' | 'CLOSED';
+  verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN' | null;
+  decisionDay: number | null;
+  details: Record<string, unknown>;
+}
+
+export interface CouncilState {
+  councilId: string;
+  councilType: 'MLC' | 'DOM' | 'PERSONNEL_BOARD' | 'STRATEGIC_COUNCIL';
+  agenda: string;
+  status: 'OPEN' | 'CLOSED';
+  openedDay: number;
+  closedDay: number | null;
+  quorum: number;
+  votes: {
+    approve: number;
+    reject: number;
+    abstain: number;
+  };
+}
+
+export interface MailboxMessage {
+  messageId: string;
+  senderType: 'SYSTEM' | 'NPC' | 'COUNCIL';
+  senderNpcId: string | null;
+  subject: string;
+  body: string;
+  category: 'PROMOTION' | 'DEMOTION' | 'MUTATION' | 'SANCTION' | 'COUNCIL_INVITE' | 'COURT' | 'GENERAL';
+  relatedRef: string | null;
+  createdDay: number;
+  createdAt: string;
+  readAt: string | null;
+  readDay: number | null;
+}
+
+export interface SocialTimelineEvent {
+  id: number;
+  actorType: 'PLAYER' | 'NPC';
+  actorNpcId: string | null;
+  eventType: string;
+  title: string;
+  detail: string;
+  eventDay: number;
+  createdAt: string;
+  meta: Record<string, unknown>;
+}
+
+export interface CommandChainAck {
+  id: number;
+  orderId: string;
+  actorType: 'PLAYER' | 'NPC';
+  actorNpcId: string | null;
+  hopNo: number;
+  forwardedToNpcId: string | null;
+  ackDay: number;
+  note: string;
+  createdAt: string;
+}
+
+export interface CommandChainOrder {
+  orderId: string;
+  issuedDay: number;
+  issuerType: 'PLAYER' | 'NPC';
+  issuerNpcId: string | null;
+  targetNpcId: string | null;
+  targetDivision: string | null;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: 'PENDING' | 'FORWARDED' | 'ACKNOWLEDGED' | 'BREACHED' | 'EXPIRED';
+  ackDueDay: number;
+  completedDay: number | null;
+  penaltyApplied: boolean;
+  commandPayload: Record<string, unknown>;
+  acks?: CommandChainAck[];
+}
+
 export interface ExpansionStateV51 {
   academyLockActive: boolean;
   academyLockReason: string | null;
@@ -427,6 +557,46 @@ export interface ExpansionStateV51 {
     adaptiveBudget: number;
     tickPressure: 'LOW' | 'MEDIUM' | 'HIGH';
     pollingHintMs: number;
+  };
+  recruitmentPipeline?: RecruitmentPipelineState[];
+  domCycle?: DomOperationCycle | null;
+  councils?: CouncilState[];
+  openCourtCases?: CourtCaseV2[];
+  mailboxSummary?: {
+    unreadCount: number;
+    latest: MailboxMessage | null;
+  };
+  socialTimelineSummary?: SocialTimelineEvent[];
+  commandChainSummary?: {
+    openOrders: number;
+    breachedOrders: number;
+    latest: CommandChainOrder | null;
+  };
+  governanceSummary?: {
+    nationalStability: number;
+    militaryStability: number;
+    militaryFundCents: number;
+    corruptionRisk: number;
+    riskIndex: number;
+  };
+  raiderThreat?: {
+    threatLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    threatScore: number;
+    cadenceDays: number;
+    lastAttackDay: number | null;
+    nextAttackDay: number;
+    daysUntilNext: number;
+    pendingReplacementCount: number;
+  };
+  domMedalCompetition?: {
+    cycleId: string | null;
+    totalQuota: number;
+    allocated: number;
+    remaining: number;
+    completedSessions: number;
+    pendingSessions: number;
+    playerSessionNo: 1 | 2 | 3;
+    playerNpcSlots: number;
   };
 }
 

@@ -12,7 +12,9 @@ export const DASHBOARD_LINKS: ReadonlyArray<{ href: string; label: string }> = [
   { href: '/dashboard/event-frame', label: 'Event Frame' },
   { href: '/dashboard/decision-log', label: 'Decision Log' },
   { href: '/dashboard/hierarchy', label: 'Hierarchy V2' },
-  { href: '/dashboard/people', label: 'NPC / People' }
+  { href: '/dashboard/people', label: 'NPC / People' },
+  { href: '/dashboard/mailbox', label: 'Mailbox' },
+  { href: '/dashboard/social-profile', label: 'Social Profile' }
 ];
 
 export function ActionButtons() {
@@ -26,7 +28,7 @@ export function ActionButtons() {
 
   return (
     <div className="space-y-1.5">
-      <nav aria-label="Dashboard quick navigation" className="cyber-panel grid grid-cols-2 gap-1.5 p-1.5 sm:grid-cols-5 lg:grid-cols-9">
+      <nav aria-label="Dashboard quick navigation" className="cyber-panel grid grid-cols-2 gap-1.5 p-1.5 sm:grid-cols-5 lg:grid-cols-11">
         {DASHBOARD_LINKS.map((link) => (
           <Link
             key={link.href}

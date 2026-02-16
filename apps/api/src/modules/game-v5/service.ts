@@ -4,17 +4,27 @@ import type {
   AcademyBatchState,
   AcademyBatchStanding,
   CertificationRecordV5,
+  CommandChainOrder,
+  CouncilState,
+  CourtCaseV2,
+  DomOperationCycle,
   DivisionQuotaState,
+  EducationTitle,
   ExpansionStateV51,
+  MailboxMessage,
   MissionInstanceV5,
   NpcRuntimeStatus,
+  RecruitmentPipelineState,
+  SocialTimelineEvent,
   RecruitmentCompetitionEntry
 } from '@mls/shared/game-types';
-import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
+import { DIVISION_REFERENCE_PROFILES, REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { attachAuth } from '../auth/service.js';
 import { getAdaptiveTickMetrics, mergeDeltas, runSchedulerTick, runWorldTick } from './engine.js';
 import {
   type AcademyBatchMemberRecord,
+  applyLegacyGovernanceDelta,
+  appendCommandChainAck,
   appendQuotaDecisionLog,
   buildEmptyExpansionState,
   buildSnapshotV5,
@@ -22,36 +32,70 @@ import {
   completeAcademyEnrollment,
   completeCeremonyCycle,
   createAcademyBatch,
+  createCommandChainOrder,
+  createDomOperationCycle,
   ensureV5World,
   findDivisionHeadCandidate,
   getAcademyBatchMember,
   getActiveAcademyBatch,
+  getCouncilState,
+  getCouncilVoteByActor,
+  getCourtCaseV2,
+  getCommandChainOrder,
   getCurrentCeremony,
+  getCurrentDomOperationCycle,
+  getLatestSocialTimelineEventByType,
+  getDomOperationSession,
   getLatestAcademyBatch,
   getLegacyGovernanceSnapshot,
   getLatestMission,
+  getMailboxSummary,
   getNpcRuntimeById,
   getProfileBaseByUserId,
+  getRecruitmentPipelineApplication,
   insertAcademyEnrollment,
+  insertAssignmentHistory,
+  insertCouncilVote,
+  insertMailboxMessage,
   insertMissionPlan,
+  insertRankHistory,
   insertRecruitmentApplicationV51,
+  insertSocialTimelineEvent,
   listAcademyBatchMembers,
+  listCommandChainAcks,
+  listCommandChainOrders,
+  listCouncils,
+  listCourtCasesV2,
   listCertifications,
   listCurrentNpcRuntime,
   listDivisionQuotaStates,
+  listDomOperationSessionsByCycle,
+  listEducationTitles,
+  listMailboxMessages,
+  listRankHistory,
   listRecentLifecycleEvents,
   listRecruitmentCompetitionEntries,
+  listRecruitmentPipelineApplications,
+  listRecruitmentQueue,
+  listSocialTimelineEvents,
   listWorldDeltasSince,
   lockCurrentNpcsForUpdate,
   lockV5World,
+  markMailboxMessageRead,
   queueNpcReplacement,
   resolveMission,
   setSessionActiveUntil,
+  updateCommandChainOrderStatus,
+  upsertCouncilState,
+  upsertCourtCaseV2,
+  upsertDomOperationSession,
   updateNpcRuntimeState,
   updateWorldCore,
   upsertAcademyBatchMember,
   upsertDivisionQuotaState,
+  upsertRecruitmentPipelineApplication,
   updateAcademyBatchMeta,
+  updateDomOperationCycleStatus,
   V5_MAX_NPCS,
   upsertCertification
 } from './repo.js';
@@ -122,7 +166,11 @@ function certTierFromCode(code: string): 1 | 2 | 3 {
   return 1;
 }
 
-const ACADEMY_TOTAL_DAYS = 8;
+const ACADEMY_TOTAL_DAYS_BY_TIER: Record<1 | 2 | 3, number> = {
+  1: 4,
+  2: 5,
+  3: 6
+};
 const ACADEMY_PASS_SCORE = 68;
 const ACADEMY_TRACK_OFFSETS: Record<string, number> = {
   OFFICER: 0,
@@ -203,12 +251,18 @@ function buildChoices(
   return [choices[0] ?? best, choices[1] ?? distractors[0], choices[2] ?? distractors[1], choices[3] ?? distractors[2]];
 }
 
-function buildAcademyQuestionSet(track: string, academyDay: number): {
+function academyTotalDaysForTier(tier: number): number {
+  if (tier >= 3) return ACADEMY_TOTAL_DAYS_BY_TIER[3];
+  if (tier <= 1) return ACADEMY_TOTAL_DAYS_BY_TIER[1];
+  return ACADEMY_TOTAL_DAYS_BY_TIER[2];
+}
+
+function buildAcademyQuestionSet(track: string, academyDay: number, totalDays: number): {
   setId: string;
   questions: Array<{ id: string; prompt: string; choices: [string, string, string, string] }>;
   correct: number[];
 } {
-  const dayIndex = clamp(academyDay, 1, ACADEMY_TOTAL_DAYS) - 1;
+  const dayIndex = clamp(academyDay, 1, totalDays) - 1;
   const offset = ACADEMY_TRACK_OFFSETS[track] ?? 0;
   const questions = Array.from({ length: 3 }, (_, idx) => {
     const template = ACADEMY_QUESTION_TEMPLATES[(dayIndex + idx) % ACADEMY_QUESTION_TEMPLATES.length] ?? ACADEMY_QUESTION_TEMPLATES[0];
@@ -292,7 +346,7 @@ async function guardAcademyLockResponse(
     payload: {
       error: 'ACADEMY_LOCK_ACTIVE',
       code: 'ACADEMY_LOCK_ACTIVE',
-      message: 'Batch academy aktif. Selesaikan program 8 hari di halaman Academy terlebih dahulu.',
+      message: 'Batch academy aktif. Selesaikan program sesuai durasi tier (4/5/6 hari) di halaman Academy terlebih dahulu.',
       batchId: lock.batchId
     }
   };
@@ -385,10 +439,10 @@ function mapMemberToStanding(member: AcademyBatchMemberRecord, name: string): Ac
 
 async function autoProgressNpcBatchMembers(
   client: import('pg').PoolClient,
-  batch: { batchId: string; startDay: number; track: string; tier: number },
+  batch: { batchId: string; startDay: number; track: string; tier: number; totalDays: number },
   worldDay: number
 ): Promise<void> {
-  const targetProgress = clamp(worldDay - batch.startDay + 1, 0, ACADEMY_TOTAL_DAYS);
+  const targetProgress = clamp(worldDay - batch.startDay + 1, 0, batch.totalDays);
   if (targetProgress <= 0) return;
   const members = await listAcademyBatchMembers(client, batch.batchId);
   for (const member of members) {
@@ -478,7 +532,7 @@ type AcademyGraduationPayload = {
 async function finalizeAcademyBatchGraduation(
   client: import('pg').PoolClient,
   profileId: string,
-  batch: { batchId: string; track: string; tier: number; startDay: number },
+  batch: { batchId: string; track: string; tier: number; startDay: number; totalDays: number },
   worldDay: number
 ): Promise<AcademyGraduationPayload> {
   await autoProgressNpcBatchMembers(client, batch, worldDay);
@@ -552,7 +606,16 @@ async function finalizeAcademyBatchGraduation(
 async function autoFinalizeAcademyBatchIfReady(
   client: import('pg').PoolClient,
   profileId: string,
-  batch: { batchId: string; track: string; tier: number; startDay: number; endDay: number; status: 'ACTIVE' | 'GRADUATED' | 'FAILED'; lockEnabled: boolean },
+  batch: {
+    batchId: string;
+    track: string;
+    tier: number;
+    startDay: number;
+    endDay: number;
+    totalDays: number;
+    status: 'ACTIVE' | 'GRADUATED' | 'FAILED';
+    lockEnabled: boolean;
+  },
   worldDay: number
 ): Promise<AcademyGraduationPayload | null> {
   if (batch.status !== 'ACTIVE' || !batch.lockEnabled) return null;
@@ -560,7 +623,7 @@ async function autoFinalizeAcademyBatchIfReady(
   if (!playerMember) {
     throw new Error(`Active academy batch missing PLAYER member row: ${batch.batchId}`);
   }
-  if (playerMember.dayProgress < ACADEMY_TOTAL_DAYS) return null;
+  if (playerMember.dayProgress < batch.totalDays) return null;
   if (worldDay < batch.endDay) return null;
   return finalizeAcademyBatchGraduation(client, profileId, batch, worldDay);
 }
@@ -601,7 +664,7 @@ async function buildAcademyBatchStateForProfile(
   const playerStanding = standings.find((item) => item.holderType === 'PLAYER') ?? null;
   const playerProgress = playerMember?.dayProgress ?? 0;
   const expectedWorldDay = batch.startDay + playerProgress;
-  const canSubmitToday = batch.status === 'ACTIVE' && batch.lockEnabled && playerProgress < ACADEMY_TOTAL_DAYS && nowDay >= expectedWorldDay;
+  const canSubmitToday = batch.status === 'ACTIVE' && batch.lockEnabled && playerProgress < batch.totalDays && nowDay >= expectedWorldDay;
 
   const graduation = (() => {
     const payload = batch.graduationPayload;
@@ -630,13 +693,13 @@ async function buildAcademyBatchStateForProfile(
     lockEnabled: batch.lockEnabled,
     startDay: batch.startDay,
     endDay: batch.endDay,
-    totalDays: ACADEMY_TOTAL_DAYS,
+    totalDays: batch.totalDays,
     playerDayProgress: playerProgress,
     expectedWorldDay,
     canSubmitToday,
     nextQuestionSetId:
-      batch.status === 'ACTIVE' && batch.lockEnabled && playerProgress < ACADEMY_TOTAL_DAYS
-        ? buildAcademyQuestionSet(batch.track, playerProgress + 1).setId
+      batch.status === 'ACTIVE' && batch.lockEnabled && playerProgress < batch.totalDays
+        ? buildAcademyQuestionSet(batch.track, playerProgress + 1, batch.totalDays).setId
         : null,
     standingsTop10,
     playerStanding,
@@ -852,6 +915,39 @@ async function buildExpansionState(
   const playerEntry = competition.find((item) => item.holderType === 'PLAYER') ?? null;
   const playerRank = playerEntry?.rank ?? null;
   const adaptive = getAdaptiveTickMetrics();
+  const recruitmentPipeline = await listRecruitmentPipelineApplications(client, profileId, { limit: 20 });
+  const domCycle = await getCurrentDomOperationCycle(client, profileId);
+  const governance = await getLegacyGovernanceSnapshot(client, profileId);
+  const replacementQueue = await listRecruitmentQueue(client, profileId);
+  const lastRaiderAttack = await getLatestSocialTimelineEventByType(client, profileId, 'RAIDER_ATTACK');
+  const councils = await listCouncils(client, profileId, { limit: 20 });
+  const openCourtCases = await listCourtCasesV2(client, profileId, { status: 'PENDING', limit: 20 });
+  const mailboxSummary = await getMailboxSummary(client, profileId);
+  const socialTimelineSummary = await listSocialTimelineEvents(client, profileId, { limit: 8 });
+  const commandOrders = await listCommandChainOrders(client, profileId, { limit: 40 });
+  const openOrders = commandOrders.filter((item) => item.status === 'PENDING' || item.status === 'FORWARDED').length;
+  const breachedOrders = commandOrders.filter((item) => item.status === 'BREACHED').length;
+  const latestCommandOrder = commandOrders[0] ?? null;
+  const raiderThreatScore = computeRaiderThreatScore(governance);
+  const raiderCadenceDays = computeRaiderCadenceDays(raiderThreatScore);
+  const raiderNextAttackDay =
+    lastRaiderAttack && lastRaiderAttack.eventDay >= 0
+      ? lastRaiderAttack.eventDay + raiderCadenceDays
+      : snapshot.world.currentDay + 3;
+  const domMedalPool = computeDomCycleMedalPool(
+    {
+      commandAuthority: snapshot.player.commandAuthority,
+      morale: snapshot.player.morale,
+      health: snapshot.player.health
+    },
+    {
+      militaryStability: governance.militaryStability,
+      nationalStability: governance.nationalStability
+    }
+  );
+  const domAllocated = domCycle ? sumAllocatedCycleMedals(domCycle.sessions) : 0;
+  const domCompletedSessions = domCycle ? domCycle.sessions.filter((item) => item.status === 'COMPLETED').length : 0;
+  const domPendingSessions = domCycle ? Math.max(0, 3 - domCompletedSessions) : 0;
 
   const state: ExpansionStateV51 = {
     academyLockActive: lockInfo.locked,
@@ -870,6 +966,43 @@ async function buildExpansionState(
       adaptiveBudget: adaptive.adaptiveBudget,
       tickPressure: adaptive.tickPressure,
       pollingHintMs: lockInfo.locked ? 5_000 : 15_000
+    },
+    recruitmentPipeline,
+    domCycle,
+    councils,
+    openCourtCases,
+    mailboxSummary,
+    socialTimelineSummary,
+    commandChainSummary: {
+      openOrders,
+      breachedOrders,
+      latest: latestCommandOrder
+    },
+    governanceSummary: {
+      nationalStability: governance.nationalStability,
+      militaryStability: governance.militaryStability,
+      militaryFundCents: governance.militaryFundCents,
+      corruptionRisk: governance.corruptionRisk,
+      riskIndex: clamp(Math.round((governance.corruptionRisk * 0.62) + ((100 - governance.militaryStability) * 0.38)), 0, 100)
+    },
+    raiderThreat: {
+      threatLevel: raiderThreatScore >= 75 ? 'HIGH' : raiderThreatScore >= 50 ? 'MEDIUM' : 'LOW',
+      threatScore: raiderThreatScore,
+      cadenceDays: raiderCadenceDays,
+      lastAttackDay: lastRaiderAttack?.eventDay ?? null,
+      nextAttackDay: raiderNextAttackDay,
+      daysUntilNext: Math.max(0, raiderNextAttackDay - snapshot.world.currentDay),
+      pendingReplacementCount: replacementQueue.length
+    },
+    domMedalCompetition: {
+      cycleId: domCycle?.cycleId ?? null,
+      totalQuota: domMedalPool,
+      allocated: domAllocated,
+      remaining: Math.max(0, domMedalPool - domAllocated),
+      completedSessions: domCompletedSessions,
+      pendingSessions: domPendingSessions,
+      playerSessionNo: DOM_PLAYER_SESSION_NO,
+      playerNpcSlots: DOM_PLAYER_NPC_SLOTS
     }
   };
 
@@ -1121,6 +1254,14 @@ export async function executeMissionV5(request: FastifyRequest, reply: FastifyRe
       commandAuthority: Math.max(0, Math.min(100, world.commandAuthority + (success ? 2 : -2)))
     });
 
+    await applyLegacyGovernanceDelta(client, {
+      profileId,
+      nationalDelta: success ? 2 : -3 - Math.floor(casualties / 2),
+      militaryDelta: success ? 3 - casualties : -4 - casualties,
+      fundDeltaCents: execution.fundDeltaCents,
+      corruptionDelta: success ? -1 : 1 + Math.floor(casualties / 2)
+    });
+
     const snapshot = await buildSnapshotV5(client, profileId, nowMs);
     return { payload: { mission: resolved, snapshot } };
   });
@@ -1158,6 +1299,12 @@ export async function completeCeremonyV5(request: FastifyRequest, reply: Fastify
         rankIndex: world.rankIndex,
         assignment: world.assignment,
         commandAuthority: Math.min(100, world.commandAuthority + 3)
+      });
+      await applyLegacyGovernanceDelta(client, {
+        profileId,
+        nationalDelta: 1,
+        militaryDelta: 2,
+        corruptionDelta: -1
       });
     }
 
@@ -1352,6 +1499,240 @@ function summarizePlayerCertifications(certifications: CertificationRecordV5[]):
   };
 }
 
+const RECRUITMENT_PIPELINE_TOTAL_DAYS = 4;
+const DOM_OPERATION_CYCLE_DAYS = 13;
+const DOM_PLAYER_SESSION_NO: 1 = 1;
+const DOM_PLAYER_NPC_SLOTS = 8;
+const COMMAND_CHAIN_DEFAULT_HOPS = 3;
+const DOM_MEDAL_POOL_MIN = 3;
+const DOM_MEDAL_POOL_MAX = 8;
+
+function computeRaiderCadenceDays(threatScore: number): number {
+  if (threatScore >= 75) return 7;
+  if (threatScore >= 50) return 9;
+  return 11;
+}
+
+function computeRaiderThreatScore(governance: {
+  nationalStability: number;
+  militaryStability: number;
+  corruptionRisk: number;
+}): number {
+  return clamp(
+    Math.round(
+      ((100 - governance.nationalStability) * 0.42) +
+        ((100 - governance.militaryStability) * 0.38) +
+        governance.corruptionRisk * 0.2
+    ),
+    0,
+    100
+  );
+}
+
+function computeDomCycleMedalPool(
+  world: { commandAuthority: number; morale: number; health: number },
+  governance: { militaryStability: number; nationalStability: number }
+): number {
+  const readinessFactor = (world.commandAuthority + world.morale + world.health) / 3;
+  const stabilityFactor = (governance.militaryStability + governance.nationalStability) / 2;
+  const rawPool = Math.round(4 + readinessFactor / 28 + (stabilityFactor - 50) / 25);
+  return clamp(rawPool, DOM_MEDAL_POOL_MIN, DOM_MEDAL_POOL_MAX);
+}
+
+function sumAllocatedCycleMedals(sessions: DomOperationCycle['sessions']): number {
+  return sessions.reduce((sum, session) => {
+    if (session.status !== 'COMPLETED') return sum;
+    const quota = Number(session.result?.medalQuota ?? 0);
+    return sum + (Number.isFinite(quota) ? Math.max(0, Math.floor(quota)) : 0);
+  }, 0);
+}
+
+function decorateNameWithEducationTitles(
+  baseName: string,
+  certifications: CertificationRecordV5[],
+  titles: EducationTitle[]
+): string {
+  const validCerts = certifications.filter((item) => item.valid);
+  const matched = titles.filter((title) =>
+    validCerts.some(
+      (cert) =>
+        cert.valid &&
+        cert.tier >= title.minTier &&
+        (cert.certCode.toUpperCase() === title.titleCode.toUpperCase() || cert.track.toUpperCase() === title.sourceTrack.toUpperCase())
+    )
+  );
+  const prefix = matched
+    .filter((item) => item.mode === 'PREFIX')
+    .sort((a, b) => b.minTier - a.minTier)[0];
+  const suffix = matched
+    .filter((item) => item.mode === 'SUFFIX')
+    .sort((a, b) => b.minTier - a.minTier)[0];
+
+  const left = prefix ? `${prefix.label} ` : '';
+  const right = suffix ? ` ${suffix.label}` : '';
+  return `${left}${baseName}${right}`.trim();
+}
+
+async function pushMailboxAndTimeline(
+  client: import('pg').PoolClient,
+  input: {
+    profileId: string;
+    worldDay: number;
+    category: MailboxMessage['category'];
+    subject: string;
+    body: string;
+    relatedRef?: string | null;
+    timelineEventType: string;
+    timelineTitle: string;
+    timelineDetail: string;
+    actorType?: 'PLAYER' | 'NPC';
+    actorNpcId?: string | null;
+  }
+): Promise<void> {
+  await insertMailboxMessage(client, {
+    messageId: `mail-${input.profileId.slice(0, 8)}-${input.worldDay}-${randomUUID().slice(0, 8)}`,
+    profileId: input.profileId,
+    senderType: 'SYSTEM',
+    senderNpcId: null,
+    subject: input.subject,
+    body: input.body,
+    category: input.category,
+    relatedRef: input.relatedRef ?? null,
+    createdDay: input.worldDay
+  });
+
+  await insertSocialTimelineEvent(client, {
+    profileId: input.profileId,
+    actorType: input.actorType ?? 'PLAYER',
+    actorNpcId: input.actorNpcId ?? null,
+    eventType: input.timelineEventType,
+    title: input.timelineTitle,
+    detail: input.timelineDetail,
+    eventDay: input.worldDay,
+    meta: {
+      category: input.category,
+      relatedRef: input.relatedRef ?? null
+    }
+  });
+}
+
+async function ensureCouncilsInitialized(
+  client: import('pg').PoolClient,
+  profileId: string,
+  worldDay: number
+): Promise<CouncilState[]> {
+  const existing = await listCouncils(client, profileId, { limit: 20 });
+  const byType = new Map(existing.map((item) => [item.councilType, item]));
+  const defaults: Array<{ councilType: CouncilState['councilType']; agenda: string; quorum: number }> = [
+    { councilType: 'MLC', agenda: 'Evaluasi dan amandemen Military Law aktif.', quorum: 5 },
+    { councilType: 'DOM', agenda: 'Perencanaan siklus operasi DOM 13-hari.', quorum: 4 },
+    { councilType: 'PERSONNEL_BOARD', agenda: 'Promosi, demosi, mutasi, dan distribusi jabatan.', quorum: 4 },
+    { councilType: 'STRATEGIC_COUNCIL', agenda: 'Arah strategi nasional dan stabilitas militer.', quorum: 5 }
+  ];
+  for (const item of defaults) {
+    if (byType.has(item.councilType)) continue;
+    const councilId = `${item.councilType.toLowerCase()}-${profileId.slice(0, 8)}-${worldDay}`;
+    await upsertCouncilState(client, {
+      profileId,
+      councilId,
+      councilType: item.councilType,
+      agenda: item.agenda,
+      status: 'OPEN',
+      openedDay: worldDay,
+      closedDay: null,
+      quorum: item.quorum,
+      votes: { approve: 0, reject: 0, abstain: 0 }
+    });
+  }
+  return listCouncils(client, profileId, { limit: 20 });
+}
+
+async function ensureDomCycleCurrent(
+  client: import('pg').PoolClient,
+  profileId: string,
+  worldDay: number
+): Promise<DomOperationCycle> {
+  const cycleStart = worldDay - (worldDay % DOM_OPERATION_CYCLE_DAYS);
+  const cycleEnd = cycleStart + (DOM_OPERATION_CYCLE_DAYS - 1);
+  const cycleId = `dom-${profileId.slice(0, 8)}-${cycleStart}`;
+
+  const current = await getCurrentDomOperationCycle(client, profileId);
+  if (current && current.startDay !== cycleStart && current.status === 'ACTIVE') {
+    await updateDomOperationCycleStatus(client, { profileId, cycleId: current.cycleId, status: 'COMPLETED' });
+  }
+
+  await createDomOperationCycle(client, {
+    cycleId,
+    profileId,
+    startDay: cycleStart,
+    endDay: cycleEnd,
+    status: worldDay > cycleEnd ? 'COMPLETED' : 'ACTIVE'
+  });
+
+  for (let sessionNo = 1; sessionNo <= 3; sessionNo += 1) {
+    const sessionId = `${cycleId}-s${sessionNo}`;
+    const existing = await getDomOperationSession(client, profileId, sessionId);
+    await upsertDomOperationSession(client, {
+      sessionId,
+      cycleId,
+      profileId,
+      sessionNo: sessionNo as 1 | 2 | 3,
+      participantMode: sessionNo === DOM_PLAYER_SESSION_NO ? 'PLAYER_ELIGIBLE' : 'NPC_ONLY',
+      npcSlots: sessionNo === DOM_PLAYER_SESSION_NO ? DOM_PLAYER_NPC_SLOTS : 12,
+      playerJoined: existing?.playerJoined ?? false,
+      playerJoinDay: existing?.playerJoinDay ?? null,
+      status: existing?.status ?? 'PLANNED',
+      result: existing?.result ?? {}
+    });
+  }
+
+  const resolved = await getCurrentDomOperationCycle(client, profileId);
+  if (!resolved) {
+    throw new Error('Failed to ensure DOM cycle');
+  }
+  return resolved;
+}
+
+function buildRecruitmentPipelineFinalScore(input: {
+  tryoutScore: number;
+  commandAuthority: number;
+  morale: number;
+  health: number;
+  extraCertCount: number;
+}): number {
+  const certFactor = clamp(input.extraCertCount * 3.5, 0, 15);
+  const stabilityFactor = clamp(input.commandAuthority * 0.45 + input.morale * 0.35 + input.health * 0.2, 0, 100);
+  return Number(clamp(input.tryoutScore * 0.62 + stabilityFactor * 0.28 + certFactor, 0, 100).toFixed(2));
+}
+
+function buildDefaultCommandChainPath(input: {
+  npcs: Array<{ npcId: string; division: string; status: string; leadership: number; loyalty: number; integrityRisk: number; betrayalRisk: number }>;
+  targetNpcId: string | null;
+  targetDivision: string | null;
+}): string[] {
+  const active = input.npcs.filter((npc) => npc.status === 'ACTIVE');
+  const scoped = input.targetDivision ? active.filter((npc) => npc.division === input.targetDivision) : active;
+  const pool = (scoped.length > 0 ? scoped : active).slice();
+  pool.sort((a, b) => {
+    const scoreA = a.leadership * 1.3 + a.loyalty - a.integrityRisk * 0.7 - a.betrayalRisk * 0.9;
+    const scoreB = b.leadership * 1.3 + b.loyalty - b.integrityRisk * 0.7 - b.betrayalRisk * 0.9;
+    return scoreB - scoreA;
+  });
+  const path = pool.slice(0, COMMAND_CHAIN_DEFAULT_HOPS).map((npc) => npc.npcId);
+  if (input.targetNpcId && !path.includes(input.targetNpcId)) {
+    path.push(input.targetNpcId);
+  }
+  return Array.from(new Set(path)).slice(0, 12);
+}
+
+function normalizeCommandChainPath(path: string[], targetNpcId: string | null): string[] {
+  const cleaned = Array.from(new Set(path.filter((item) => typeof item === 'string' && item.length >= 3))).slice(0, 12);
+  if (targetNpcId && !cleaned.includes(targetNpcId)) {
+    cleaned.push(targetNpcId);
+  }
+  return cleaned;
+}
+
 export async function getExpansionStateV51(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
     const state = await buildExpansionState(client, profileId, nowMs);
@@ -1390,6 +1771,7 @@ export async function startAcademyBatchV51(
       };
     }
 
+    const totalDays = academyTotalDaysForTier(payload.tier);
     const batchId = `batch-${profileId.slice(0, 8)}-${world.currentDay}-${randomUUID().slice(0, 8)}`;
     await createAcademyBatch(client, {
       batchId,
@@ -1397,7 +1779,8 @@ export async function startAcademyBatchV51(
       track: payload.track,
       tier: payload.tier,
       startDay: world.currentDay,
-      endDay: world.currentDay + (ACADEMY_TOTAL_DAYS - 1)
+      endDay: world.currentDay + (totalDays - 1),
+      totalDays
     });
 
     await upsertAcademyBatchMember(client, {
@@ -1451,8 +1834,8 @@ export async function getAcademyBatchCurrentV51(request: FastifyRequest, reply: 
     const state = await buildExpansionState(client, profileId, nowMs);
     const batch = state.academyBatch;
     const questionSet =
-      batch && batch.status === 'ACTIVE' && batch.lockEnabled && batch.playerDayProgress < ACADEMY_TOTAL_DAYS
-        ? buildAcademyQuestionSet(batch.track, batch.playerDayProgress + 1)
+      batch && batch.status === 'ACTIVE' && batch.lockEnabled && batch.playerDayProgress < batch.totalDays
+        ? buildAcademyQuestionSet(batch.track, batch.playerDayProgress + 1, batch.totalDays)
         : null;
     const snapshot = await buildSnapshotV5(client, profileId, nowMs);
     return {
@@ -1490,7 +1873,7 @@ export async function submitAcademyBatchDayV51(
     if (!playerMember) {
       return { statusCode: 409, payload: { error: 'Data player batch tidak ditemukan.' } };
     }
-    if (playerMember.dayProgress >= ACADEMY_TOTAL_DAYS) {
+    if (playerMember.dayProgress >= batch.totalDays) {
       return { statusCode: 409, payload: { error: 'Seluruh hari academy sudah diselesaikan. Lakukan graduation.' } };
     }
 
@@ -1507,7 +1890,7 @@ export async function submitAcademyBatchDayV51(
     }
 
     const academyDay = playerMember.dayProgress + 1;
-    const questionSet = buildAcademyQuestionSet(batch.track, academyDay);
+    const questionSet = buildAcademyQuestionSet(batch.track, academyDay, batch.totalDays);
     const dayScore = scoreMultipleChoice(questionSet.correct, payload.answers);
     const nextDaily = [
       ...playerMember.dailyScores,
@@ -1547,7 +1930,7 @@ export async function submitAcademyBatchDayV51(
         academyDay,
         dayScore,
         dayPassed: dayScore >= 70,
-        readyToGraduate: nextProgress >= ACADEMY_TOTAL_DAYS && !autoGraduationPayload,
+        readyToGraduate: nextProgress >= batch.totalDays && !autoGraduationPayload,
         graduated: Boolean(autoGraduationPayload),
         graduation: autoGraduationPayload,
         academyBatch: state.academyBatch,
@@ -1571,11 +1954,11 @@ export async function graduateAcademyBatchV51(request: FastifyRequest, reply: Fa
     }
 
     const playerMember = await getAcademyBatchMember(client, batch.batchId, 'PLAYER');
-    if (!playerMember || playerMember.dayProgress < ACADEMY_TOTAL_DAYS) {
-      return { statusCode: 409, payload: { error: 'Progress academy belum mencapai hari ke-8.' } };
+    if (!playerMember || playerMember.dayProgress < batch.totalDays) {
+      return { statusCode: 409, payload: { error: `Progress academy belum mencapai hari ke-${batch.totalDays}.` } };
     }
     if (world.currentDay < batch.endDay) {
-      return { statusCode: 409, payload: { error: 'Graduation belum tersedia. Selesaikan hingga day ke-8 dunia game.' } };
+      return { statusCode: 409, payload: { error: `Graduation belum tersedia. Selesaikan hingga day ke-${batch.totalDays} dunia game.` } };
     }
 
     const graduationPayload = await finalizeAcademyBatchGraduation(client, profileId, batch, world.currentDay);
@@ -1917,6 +2300,10 @@ export async function applyRecruitmentV51(
     }
 
     if (playerAccepted) {
+      const [oldDivisionRaw, oldPositionRaw] = world.assignment.split('-').map((item) => item.trim());
+      const oldDivision = oldDivisionRaw && oldDivisionRaw.length > 0 ? oldDivisionRaw : 'Nondivisi';
+      const oldPosition = oldPositionRaw && oldPositionRaw.length > 0 ? oldPositionRaw : world.assignment;
+      const newPosition = 'Probationary Officer';
       await updateWorldCore(client, {
         profileId,
         stateVersion: world.stateVersion + 1,
@@ -1926,7 +2313,7 @@ export async function applyRecruitmentV51(
         morale: clamp(world.morale + 2, 0, 100),
         health: world.health,
         rankIndex: world.rankIndex,
-        assignment: `${division} - Probationary Officer`,
+        assignment: `${division} - ${newPosition}`,
         commandAuthority: clamp(world.commandAuthority + 2, 0, 100)
       });
 
@@ -1936,8 +2323,32 @@ export async function applyRecruitmentV51(
           SET player_division = $2, player_position = $3, updated_at = now()
           WHERE profile_id = $1
         `,
-        [profileId, division, 'Probationary Officer']
+        [profileId, division, newPosition]
       );
+
+      await insertAssignmentHistory(client, {
+        profileId,
+        actorType: 'PLAYER',
+        npcId: null,
+        oldDivision,
+        newDivision: division,
+        oldPosition,
+        newPosition,
+        reason: 'RECRUITMENT_ACCEPTED',
+        changedDay: world.currentDay
+      });
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: 'MUTATION',
+        subject: `Mutasi Awal: ${division}`,
+        body: `Anda diterima pada gelombang rekrutmen dan ditugaskan sebagai ${newPosition} di ${division}.`,
+        relatedRef: `legacy-recruitment-${world.currentDay}`,
+        timelineEventType: 'RECRUITMENT_ANNOUNCEMENT',
+        timelineTitle: 'Rekrutmen Diterima',
+        timelineDetail: `Penempatan awal ke ${division} sebagai ${newPosition}.`
+      });
     }
 
     invalidateExpansionStateCache(profileId);
@@ -1965,6 +2376,1304 @@ export async function applyRecruitmentV51(
         snapshot: snapshot ? { ...snapshot, expansion: stateAfter } : null
       }
     };
+  });
+}
+
+export async function getRankHistoryV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const entries = await listRankHistory(client, profileId, { limit: 160 });
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { items: entries, snapshot } };
+  });
+}
+
+export async function getDivisionsCatalogV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const state = await buildExpansionState(client, profileId, nowMs);
+    const quotasByDivision = new Map(state.quotaBoard.map((item) => [item.division, item]));
+    const items = DIVISION_REFERENCE_PROFILES.map((division) => ({
+      ...division,
+      requirement: requirementTierForDivision(division.name),
+      quota: quotasByDivision.get(division.name) ?? null
+    }));
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { items, snapshot: snapshot ? { ...snapshot, expansion: state } : null } };
+  });
+}
+
+export async function registerDivisionApplicationV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { division: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const lockBlocked = await guardAcademyLockResponse(client, profileId);
+    if (lockBlocked) return lockBlocked;
+
+    const division = payload.division.trim();
+    if (!REGISTERED_DIVISIONS.some((item) => item.name === division)) {
+      return { statusCode: 404, payload: { error: 'Division tidak terdaftar.' } };
+    }
+
+    const activeApplications = await listRecruitmentPipelineApplications(client, profileId, { holderType: 'PLAYER', limit: 20 });
+    const openApplication = activeApplications.find(
+      (item) => item.status === 'REGISTRATION' || item.status === 'TRYOUT' || item.status === 'SELECTION'
+    );
+    if (openApplication) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Masih ada aplikasi rekrutmen aktif. Selesaikan aplikasi sebelumnya.',
+          application: openApplication
+        }
+      };
+    }
+
+    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+    const titleCatalog = await listEducationTitles(client);
+    const displayName = decorateNameWithEducationTitles(world.playerName, playerCerts, titleCatalog);
+    const application = await upsertRecruitmentPipelineApplication(client, {
+      profileId,
+      applicationId: `rap-${profileId.slice(0, 8)}-${world.currentDay}-${randomUUID().slice(0, 8)}`,
+      holderType: 'PLAYER',
+      npcId: null,
+      holderName: displayName,
+      division,
+      status: 'REGISTRATION',
+      registeredDay: world.currentDay,
+      tryoutDay: null,
+      selectionDay: null,
+      announcementDay: null,
+      tryoutScore: 0,
+      finalScore: 0,
+      note: 'REGISTRATION_LOCKED'
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: `Registrasi Rekrutmen Divisi: ${division}`,
+      body: 'Registrasi kandidat diterima. Tryout dapat dijalankan mulai hari ke-2 pipeline.',
+      relatedRef: application.applicationId,
+      timelineEventType: 'RECRUITMENT_REGISTRATION',
+      timelineTitle: 'Registrasi Divisi',
+      timelineDetail: `Aplikasi ${division} masuk tahap REGISTRATION (Day 1/4).`
+    });
+
+    invalidateExpansionStateCache(profileId);
+    const state = await buildExpansionState(client, profileId, nowMs, division);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        application,
+        schedule: {
+          registrationDay: application.registeredDay,
+          tryoutDay: application.registeredDay + 1,
+          selectionDay: application.registeredDay + 2,
+          announcementDay: application.registeredDay + 3,
+          totalDays: RECRUITMENT_PIPELINE_TOTAL_DAYS
+        },
+        state,
+        snapshot: snapshot ? { ...snapshot, expansion: state } : null
+      }
+    };
+  });
+}
+
+export async function runDivisionApplicationTryoutV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { applicationId: string; answers: number[] }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const application = await getRecruitmentPipelineApplication(client, profileId, payload.applicationId);
+    if (!application) {
+      return { statusCode: 404, payload: { error: 'Application tidak ditemukan.' } };
+    }
+    if (application.status !== 'REGISTRATION') {
+      return { statusCode: 409, payload: { error: 'Tryout hanya bisa dijalankan setelah REGISTRATION.' } };
+    }
+    if (world.currentDay < application.registeredDay + 1) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Tryout baru tersedia pada hari ke-2 pipeline.',
+          currentDay: world.currentDay,
+          requiredDay: application.registeredDay + 1
+        }
+      };
+    }
+
+    const tryoutScore = scoreRecruitmentExam(application.division, payload.answers);
+    const updated = await upsertRecruitmentPipelineApplication(client, {
+      profileId,
+      ...application,
+      status: 'TRYOUT',
+      tryoutDay: world.currentDay,
+      tryoutScore,
+      note: 'TRYOUT_COMPLETED'
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: `Hasil Tryout ${application.division}`,
+      body: `Tryout selesai dengan skor ${tryoutScore}. Tahap berikutnya: Selection (Day 3).`,
+      relatedRef: application.applicationId,
+      timelineEventType: 'RECRUITMENT_TRYOUT',
+      timelineTitle: 'Tryout Selesai',
+      timelineDetail: `Skor tryout ${application.division}: ${tryoutScore}.`
+    });
+
+    invalidateExpansionStateCache(profileId);
+    const state = await buildExpansionState(client, profileId, nowMs, application.division);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        application: updated,
+        nextStageAvailableDay: application.registeredDay + 2,
+        state,
+        snapshot: snapshot ? { ...snapshot, expansion: state } : null
+      }
+    };
+  });
+}
+
+export async function finalizeDivisionApplicationV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { applicationId: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const application = await getRecruitmentPipelineApplication(client, profileId, payload.applicationId);
+    if (!application) {
+      return { statusCode: 404, payload: { error: 'Application tidak ditemukan.' } };
+    }
+
+    if (application.status === 'REGISTRATION') {
+      return { statusCode: 409, payload: { error: 'Tidak bisa melompat tahap. Jalankan TRYOUT terlebih dahulu.' } };
+    }
+
+    if (application.status === 'TRYOUT') {
+      if (world.currentDay < application.registeredDay + 2) {
+        return {
+          statusCode: 409,
+          payload: {
+            error: 'Tahap Selection tersedia pada hari ke-3 pipeline.',
+            currentDay: world.currentDay,
+            requiredDay: application.registeredDay + 2
+          }
+        };
+      }
+
+      const certs = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+      const certSummary = summarizePlayerCertifications(certs);
+      const finalScore = buildRecruitmentPipelineFinalScore({
+        tryoutScore: application.tryoutScore,
+        commandAuthority: world.commandAuthority,
+        morale: world.morale,
+        health: world.health,
+        extraCertCount: certSummary.extraCertCount
+      });
+
+      const updatedSelection = await upsertRecruitmentPipelineApplication(client, {
+        profileId,
+        ...application,
+        status: 'SELECTION',
+        selectionDay: world.currentDay,
+        finalScore,
+        note: 'SELECTION_SCORED'
+      });
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: 'GENERAL',
+        subject: `Tahap Selection ${application.division}`,
+        body: `Selection scoring selesai. Nilai akhir sementara: ${finalScore}. Announcement tersedia pada Day 4.`,
+        relatedRef: application.applicationId,
+        timelineEventType: 'RECRUITMENT_SELECTION',
+        timelineTitle: 'Selection Selesai',
+        timelineDetail: `Final score ${application.division}: ${finalScore}.`
+      });
+
+      invalidateExpansionStateCache(profileId);
+      const state = await buildExpansionState(client, profileId, nowMs, application.division);
+      const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+      return {
+        payload: {
+          stage: 'SELECTION',
+          application: updatedSelection,
+          nextStageAvailableDay: application.registeredDay + 3,
+          state,
+          snapshot: snapshot ? { ...snapshot, expansion: state } : null
+        }
+      };
+    }
+
+    if (application.status === 'SELECTION') {
+      if (world.currentDay < application.registeredDay + 3) {
+        return {
+          statusCode: 409,
+          payload: {
+            error: 'Announcement hanya tersedia pada hari ke-4 pipeline.',
+            currentDay: world.currentDay,
+            requiredDay: application.registeredDay + 3
+          }
+        };
+      }
+
+      const stateBefore = await buildExpansionState(client, profileId, nowMs, application.division);
+      const quota = stateBefore.quotaBoard.find((item) => item.division === application.division) ?? null;
+      const meetsScore = application.finalScore >= 68;
+      const hasQuota = quota ? quota.status === 'OPEN' && quota.quotaRemaining > 0 : true;
+      const accepted = meetsScore && hasQuota;
+
+      const updated = await upsertRecruitmentPipelineApplication(client, {
+        profileId,
+        ...application,
+        status: accepted ? 'ANNOUNCEMENT_ACCEPTED' : 'ANNOUNCEMENT_REJECTED',
+        announcementDay: world.currentDay,
+        note: accepted ? 'ANNOUNCEMENT_ACCEPTED' : hasQuota ? 'ANNOUNCEMENT_REJECTED_SCORE' : 'ANNOUNCEMENT_REJECTED_QUOTA'
+      });
+
+      if (accepted) {
+        const [oldDivisionRaw, oldPositionRaw] = world.assignment.split('-').map((item) => item.trim());
+        const oldDivision = oldDivisionRaw && oldDivisionRaw.length > 0 ? oldDivisionRaw : 'Nondivisi';
+        const oldPosition = oldPositionRaw && oldPositionRaw.length > 0 ? oldPositionRaw : world.assignment;
+        const newPosition = 'Probationary Officer';
+
+        await updateWorldCore(client, {
+          profileId,
+          stateVersion: world.stateVersion + 1,
+          lastTickMs: nowMs,
+          currentDay: world.currentDay,
+          moneyCents: world.moneyCents,
+          morale: clamp(world.morale + 3, 0, 100),
+          health: world.health,
+          rankIndex: world.rankIndex,
+          assignment: `${application.division} - ${newPosition}`,
+          commandAuthority: clamp(world.commandAuthority + 2, 0, 100)
+        });
+
+        await client.query(
+          `
+            UPDATE game_states
+            SET player_division = $2, player_position = $3, updated_at = now()
+            WHERE profile_id = $1
+          `,
+          [profileId, application.division, newPosition]
+        );
+
+        await insertAssignmentHistory(client, {
+          profileId,
+          actorType: 'PLAYER',
+          npcId: null,
+          oldDivision,
+          newDivision: application.division,
+          oldPosition,
+          newPosition,
+          reason: 'RECRUITMENT_PIPELINE_ACCEPTED',
+          changedDay: world.currentDay
+        });
+
+        if (quota) {
+          const nextUsed = clamp(quota.quotaUsed + 1, 0, quota.quotaTotal);
+          const closed = nextUsed >= quota.quotaTotal;
+          await upsertDivisionQuotaState(client, {
+            profileId,
+            division: quota.division,
+            headNpcId: quota.headNpcId,
+            quotaTotal: quota.quotaTotal,
+            quotaUsed: nextUsed,
+            status: closed ? 'COOLDOWN' : quota.status,
+            cooldownUntilDay: closed ? world.currentDay + quota.cooldownDays : quota.cooldownUntilDay,
+            cooldownDays: quota.cooldownDays,
+            decisionNote: closed ? 'Kuota ditutup karena terpenuhi pada announcement recruitment.' : quota.decisionNote,
+            updatedDay: world.currentDay
+          });
+        }
+      }
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: accepted ? 'MUTATION' : 'GENERAL',
+        subject: accepted ? `Announcement: Diterima ${application.division}` : `Announcement: Gagal ${application.division}`,
+        body: accepted
+          ? `Selamat, Anda diterima di ${application.division}. Penugasan awal sebagai Probationary Officer.`
+          : `Aplikasi ${application.division} dinyatakan belum lolos pada siklus ini.`,
+        relatedRef: application.applicationId,
+        timelineEventType: 'RECRUITMENT_ANNOUNCEMENT',
+        timelineTitle: accepted ? 'Recruitment Accepted' : 'Recruitment Rejected',
+        timelineDetail: accepted
+          ? `Diterima di ${application.division} pada Day 4 pipeline.`
+          : `Belum lolos di ${application.division}.`
+      });
+
+      invalidateExpansionStateCache(profileId);
+      const state = await buildExpansionState(client, profileId, nowMs, application.division);
+      const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+      return {
+        payload: {
+          stage: 'ANNOUNCEMENT',
+          accepted,
+          application: updated,
+          state,
+          snapshot: snapshot ? { ...snapshot, expansion: state } : null
+        }
+      };
+    }
+
+    return {
+      payload: {
+        stage: 'ANNOUNCEMENT',
+        accepted: application.status === 'ANNOUNCEMENT_ACCEPTED',
+        application
+      }
+    };
+  });
+}
+
+export async function getDivisionApplicationV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  applicationId: string
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const application = await getRecruitmentPipelineApplication(client, profileId, applicationId);
+    if (!application) {
+      return { statusCode: 404, payload: { error: 'Application tidak ditemukan.' } };
+    }
+    const schedule = {
+      registrationDay: application.registeredDay,
+      tryoutDay: application.registeredDay + 1,
+      selectionDay: application.registeredDay + 2,
+      announcementDay: application.registeredDay + 3,
+      totalDays: RECRUITMENT_PIPELINE_TOTAL_DAYS
+    };
+    const stageIndex = (() => {
+      if (application.status === 'REGISTRATION') return 1;
+      if (application.status === 'TRYOUT') return 2;
+      if (application.status === 'SELECTION') return 3;
+      return 4;
+    })();
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        application,
+        schedule,
+        stageIndex,
+        currentWorldDay: world.currentDay,
+        canTryout: application.status === 'REGISTRATION' && world.currentDay >= schedule.tryoutDay,
+        canFinalizeSelection: application.status === 'TRYOUT' && world.currentDay >= schedule.selectionDay,
+        canAnnounce: application.status === 'SELECTION' && world.currentDay >= schedule.announcementDay,
+        snapshot
+      }
+    };
+  });
+}
+
+export async function getAcademyProgramsV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const programs = [
+      { track: 'OFFICER', tiers: [1, 2, 3], durations: [4, 5, 6], description: 'Program dasar komando lintas divisi.' },
+      { track: 'HIGH_COMMAND', tiers: [2, 3], durations: [5, 6], description: 'Strategi komando tinggi dan pengambilan keputusan kritis.' },
+      { track: 'SPECIALIST', tiers: [1, 2, 3], durations: [4, 5, 6], description: 'Pendalaman keahlian teknis dan support ops.' },
+      { track: 'TRIBUNAL', tiers: [2, 3], durations: [5, 6], description: 'Prosedur pengadilan militer dan military law.' },
+      { track: 'CYBER', tiers: [2, 3], durations: [5, 6], description: 'Operasi cyber defense dan offense terintegrasi.' }
+    ];
+    const state = await buildExpansionState(client, profileId, nowMs);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        constants: {
+          academyTierDays: ACADEMY_TOTAL_DAYS_BY_TIER
+        },
+        programs,
+        state,
+        snapshot: snapshot ? { ...snapshot, expansion: state } : null
+      }
+    };
+  });
+}
+
+export async function getAcademyTitlesV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const titles = await listEducationTitles(client);
+    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+    const world = await lockV5World(client, profileId);
+    const playerDisplayName = world ? decorateNameWithEducationTitles(world.playerName, playerCerts, titles) : null;
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        titles,
+        playerDisplayName,
+        snapshot
+      }
+    };
+  });
+}
+
+export async function getDomCycleCurrentV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const cycle = await ensureDomCycleCurrent(client, profileId, world.currentDay);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        constants: {
+          domCycleDays: DOM_OPERATION_CYCLE_DAYS,
+          sessionsPerCycle: 3,
+          playerSessionNo: DOM_PLAYER_SESSION_NO,
+          playerNpcSlots: DOM_PLAYER_NPC_SLOTS
+        },
+        cycle,
+        snapshot
+      }
+    };
+  });
+}
+
+export async function joinDomSessionV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { sessionId: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const cycle = await ensureDomCycleCurrent(client, profileId, world.currentDay);
+    const targetSession = cycle.sessions.find((item) => item.sessionId === payload.sessionId) ?? null;
+    if (!targetSession) {
+      return { statusCode: 404, payload: { error: 'Session DOM tidak ditemukan.' } };
+    }
+    if (targetSession.participantMode !== 'PLAYER_ELIGIBLE' || targetSession.sessionNo !== DOM_PLAYER_SESSION_NO) {
+      return { statusCode: 409, payload: { error: 'Session ini khusus NPC_ONLY dan tidak bisa diikuti player.' } };
+    }
+
+    const joinedOther = cycle.sessions.find((item) => item.playerJoined && item.sessionId !== targetSession.sessionId);
+    if (joinedOther) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Player hanya boleh ikut 1 sesi per cycle DOM.',
+          joinedSessionId: joinedOther.sessionId
+        }
+      };
+    }
+
+    const updatedSession = await upsertDomOperationSession(client, {
+      sessionId: targetSession.sessionId,
+      cycleId: cycle.cycleId,
+      profileId,
+      sessionNo: targetSession.sessionNo,
+      participantMode: targetSession.participantMode,
+      npcSlots: DOM_PLAYER_NPC_SLOTS,
+      playerJoined: true,
+      playerJoinDay: world.currentDay,
+      status: targetSession.status === 'PLANNED' ? 'IN_PROGRESS' : targetSession.status,
+      result: targetSession.result
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: `Join DOM Session #${updatedSession.sessionNo}`,
+      body: `Anda resmi terdaftar pada sesi DOM #${updatedSession.sessionNo} dengan slot NPC ${DOM_PLAYER_NPC_SLOTS}.`,
+      relatedRef: updatedSession.sessionId,
+      timelineEventType: 'DOM_JOIN',
+      timelineTitle: 'Join Session DOM',
+      timelineDetail: `Player join sesi DOM #${updatedSession.sessionNo}.`
+    });
+
+    const cycleAfter = await getCurrentDomOperationCycle(client, profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { session: updatedSession, cycle: cycleAfter, snapshot } };
+  });
+}
+
+export async function executeDomSessionV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { sessionId: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const cycle = await ensureDomCycleCurrent(client, profileId, world.currentDay);
+    const session = await getDomOperationSession(client, profileId, payload.sessionId);
+    if (!session) {
+      return { statusCode: 404, payload: { error: 'Session DOM tidak ditemukan.' } };
+    }
+    if (session.status === 'COMPLETED') {
+      const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+      return { payload: { session, cycle, snapshot } };
+    }
+
+    const governance = await getLegacyGovernanceSnapshot(client, profileId);
+    const sessionsInCycleBefore = await listDomOperationSessionsByCycle(client, profileId, cycle.cycleId);
+    const cycleMedalPool = computeDomCycleMedalPool(
+      {
+        commandAuthority: world.commandAuthority,
+        morale: world.morale,
+        health: world.health
+      },
+      {
+        militaryStability: governance.militaryStability,
+        nationalStability: governance.nationalStability
+      }
+    );
+    const cycleAllocatedBefore = sumAllocatedCycleMedals(sessionsInCycleBefore);
+    const cycleRemainingBefore = Math.max(0, cycleMedalPool - cycleAllocatedBefore);
+
+    const playerParticipates = session.participantMode === 'PLAYER_ELIGIBLE' && session.playerJoined;
+    const participantCount = playerParticipates ? 1 + DOM_PLAYER_NPC_SLOTS : session.npcSlots;
+    const randomSwing = Math.floor(Math.random() * 25) - 12;
+    const scoreBase =
+      46 +
+      Math.round(world.commandAuthority * 0.27) +
+      Math.round(world.morale * 0.18) +
+      Math.round(world.health * 0.15) +
+      (playerParticipates ? 8 : 0) +
+      (session.sessionNo === 3 ? -4 : 0);
+    const successScore = clamp(scoreBase + randomSwing, 1, 99);
+    const success = successScore >= 56;
+    const casualties = success ? Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 3);
+    const rawQuota = success
+      ? clamp(
+          Math.round((successScore - 50) / 16) +
+            (session.sessionNo === DOM_PLAYER_SESSION_NO ? 1 : 0) -
+            Math.max(0, casualties - 1),
+          1,
+          4
+        )
+      : 0;
+    const medalQuota = success ? Math.min(cycleRemainingBefore, rawQuota) : 0;
+
+    const result = {
+      success,
+      successScore,
+      casualties,
+      medalQuota,
+      participantCount,
+      mode: playerParticipates ? 'PLAYER_PLUS_NPC' : 'FULL_NPC',
+      cycleMedalPool,
+      cycleAllocatedBefore,
+      cycleRemainingAfter: Math.max(0, cycleRemainingBefore - medalQuota)
+    };
+
+    const updatedSession = await upsertDomOperationSession(client, {
+      sessionId: session.sessionId,
+      cycleId: cycle.cycleId,
+      profileId,
+      sessionNo: session.sessionNo,
+      participantMode: session.participantMode,
+      npcSlots: session.npcSlots,
+      playerJoined: session.playerJoined,
+      playerJoinDay: session.playerJoinDay,
+      status: 'COMPLETED',
+      result
+    });
+
+    if (playerParticipates) {
+      await updateWorldCore(client, {
+        profileId,
+        stateVersion: world.stateVersion + 1,
+        lastTickMs: nowMs,
+        currentDay: world.currentDay,
+        moneyCents: world.moneyCents + (success ? 5_000 : -1_500),
+        morale: clamp(world.morale + (success ? 4 : -3), 0, 100),
+        health: clamp(world.health - (success ? 1 : 4), 0, 100),
+        rankIndex: world.rankIndex,
+        assignment: world.assignment,
+        commandAuthority: clamp(world.commandAuthority + (success ? 2 : -1), 0, 100)
+      });
+    }
+
+    await applyLegacyGovernanceDelta(client, {
+      profileId,
+      nationalDelta: success ? 1 : -2 - Math.floor(casualties / 2),
+      militaryDelta: success ? 2 - casualties : -3 - casualties,
+      fundDeltaCents: success
+        ? 4_000 - casualties * 1_500 + (playerParticipates ? 1_500 : 0)
+        : -3_500 - casualties * 1_200,
+      corruptionDelta: success ? -1 : 1
+    });
+
+    const sessionsInCycle = await listDomOperationSessionsByCycle(client, profileId, cycle.cycleId);
+    if (sessionsInCycle.length === 3 && sessionsInCycle.every((item) => item.status === 'COMPLETED')) {
+      await updateDomOperationCycleStatus(client, { profileId, cycleId: cycle.cycleId, status: 'COMPLETED' });
+    }
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: success ? 'GENERAL' : 'SANCTION',
+      subject: `Laporan DOM Session #${session.sessionNo}`,
+      body: success
+        ? `Sesi berhasil (score ${successScore}) dengan casualty ${casualties}. Kuota medali sesi: ${medalQuota}. Sisa pool cycle: ${result.cycleRemainingAfter}/${result.cycleMedalPool}.`
+        : `Sesi gagal (score ${successScore}) dengan casualty ${casualties}. Sisa pool cycle: ${result.cycleRemainingAfter}/${result.cycleMedalPool}.`,
+      relatedRef: session.sessionId,
+      timelineEventType: 'DOM_EXECUTION',
+      timelineTitle: `DOM Session #${session.sessionNo} ${success ? 'Berhasil' : 'Gagal'}`,
+      timelineDetail: `Score ${successScore}, casualty ${casualties}, mode ${result.mode}, medal ${medalQuota}/${result.cycleMedalPool}.`
+    });
+
+    invalidateExpansionStateCache(profileId);
+    const cycleAfter = await getCurrentDomOperationCycle(client, profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { session: updatedSession, cycle: cycleAfter, snapshot } };
+  });
+}
+
+export async function listCourtCasesV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const cases = await listCourtCasesV2(client, profileId, { limit: 120 });
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { cases, snapshot } };
+  });
+}
+
+export async function verdictCourtCaseV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { caseId: string; verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN'; note?: string; newDivision?: string; newPosition?: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const courtCase = await getCourtCaseV2(client, profileId, payload.caseId);
+    if (!courtCase) {
+      return { statusCode: 404, payload: { error: 'Case tidak ditemukan.' } };
+    }
+    if (courtCase.status === 'CLOSED') {
+      return { statusCode: 409, payload: { error: 'Case sudah ditutup.' } };
+    }
+
+    const details = {
+      ...courtCase.details,
+      verdictNote: payload.note ?? null,
+      resolvedBy: 'PLAYER',
+      resolvedAtDay: world.currentDay
+    };
+
+    const updatedCase = await upsertCourtCaseV2(client, {
+      ...courtCase,
+      profileId,
+      status: 'CLOSED',
+      verdict: payload.verdict,
+      decisionDay: world.currentDay,
+      details
+    });
+
+    if (payload.verdict === 'UPHOLD' || payload.verdict === 'REASSIGN') {
+      if (courtCase.targetType === 'PLAYER') {
+        let nextRank = world.rankIndex;
+        let nextAssignment = world.assignment;
+        let nextMorale = world.morale;
+        let nextCommandAuthority = world.commandAuthority;
+
+        if (courtCase.caseType === 'DEMOTION' && payload.verdict === 'UPHOLD') {
+          nextRank = Math.max(0, world.rankIndex - 1);
+          await insertRankHistory(client, {
+            profileId,
+            actorType: 'PLAYER',
+            npcId: null,
+            oldRankIndex: world.rankIndex,
+            newRankIndex: nextRank,
+            reason: `COURT_${payload.verdict}`,
+            changedDay: world.currentDay
+          });
+        }
+
+        if (courtCase.caseType === 'DISMISSAL' && payload.verdict === 'UPHOLD') {
+          nextAssignment = 'Dismissed Personnel - Former Officer';
+          nextMorale = clamp(world.morale - 12, 0, 100);
+          nextCommandAuthority = clamp(world.commandAuthority - 25, 0, 100);
+        }
+
+        if (courtCase.caseType === 'SANCTION' && payload.verdict === 'UPHOLD') {
+          nextMorale = clamp(world.morale - 8, 0, 100);
+          nextCommandAuthority = clamp(world.commandAuthority - 6, 0, 100);
+        }
+
+        if (courtCase.caseType === 'MUTATION' || payload.verdict === 'REASSIGN') {
+          const newDivision = payload.newDivision ?? String(courtCase.details.targetDivision ?? 'Nondivisi');
+          const newPosition = payload.newPosition ?? String(courtCase.details.targetPosition ?? 'Staff Officer');
+          const [oldDivisionRaw, oldPositionRaw] = world.assignment.split('-').map((item) => item.trim());
+          const oldDivision = oldDivisionRaw && oldDivisionRaw.length > 0 ? oldDivisionRaw : 'Nondivisi';
+          const oldPosition = oldPositionRaw && oldPositionRaw.length > 0 ? oldPositionRaw : world.assignment;
+          nextAssignment = `${newDivision} - ${newPosition}`;
+          await insertAssignmentHistory(client, {
+            profileId,
+            actorType: 'PLAYER',
+            npcId: null,
+            oldDivision,
+            newDivision,
+            oldPosition,
+            newPosition,
+            reason: `COURT_${payload.verdict}`,
+            changedDay: world.currentDay
+          });
+        }
+
+        await updateWorldCore(client, {
+          profileId,
+          stateVersion: world.stateVersion + 1,
+          lastTickMs: nowMs,
+          currentDay: world.currentDay,
+          moneyCents: world.moneyCents,
+          morale: nextMorale,
+          health: world.health,
+          rankIndex: nextRank,
+          assignment: nextAssignment,
+          commandAuthority: nextCommandAuthority
+        });
+      } else if (courtCase.targetNpcId) {
+        const npc = await getNpcRuntimeById(client, profileId, courtCase.targetNpcId);
+        if (npc) {
+          if (courtCase.caseType === 'DISMISSAL' && payload.verdict === 'UPHOLD') {
+            npc.status = 'RESERVE';
+            npc.position = 'Dismissed Reserve';
+          } else if (courtCase.caseType === 'SANCTION' && payload.verdict === 'UPHOLD') {
+            npc.fatigue = clamp(npc.fatigue + 12, 0, 100);
+            npc.relationToPlayer = clamp(npc.relationToPlayer - 10, 0, 100);
+          } else if (courtCase.caseType === 'MUTATION' || payload.verdict === 'REASSIGN') {
+            const newDivision = payload.newDivision ?? String(courtCase.details.targetDivision ?? npc.division);
+            const newPosition = payload.newPosition ?? String(courtCase.details.targetPosition ?? npc.position);
+            await client.query(
+              `
+                UPDATE npc_entities
+                SET division = $3, position = $4, unit = $5, updated_at = now()
+                WHERE profile_id = $1 AND npc_id = $2 AND is_current = TRUE
+              `,
+              [profileId, npc.npcId, newDivision, newPosition, `${newDivision} Unit`]
+            );
+          }
+          await updateNpcRuntimeState(client, profileId, npc, world.currentDay);
+        }
+      }
+    }
+
+    let governanceNationalDelta = 0;
+    let governanceMilitaryDelta = 0;
+    let governanceCorruptionDelta = 0;
+    if (payload.verdict === 'UPHOLD') {
+      if (courtCase.caseType === 'SANCTION' || courtCase.caseType === 'DEMOTION') {
+        governanceMilitaryDelta += 1;
+        governanceCorruptionDelta -= 1;
+      } else if (courtCase.caseType === 'DISMISSAL') {
+        governanceNationalDelta -= 2;
+        governanceMilitaryDelta -= 1;
+      } else {
+        governanceMilitaryDelta += 1;
+      }
+    } else if (payload.verdict === 'DISMISS') {
+      governanceNationalDelta -= 1;
+      governanceMilitaryDelta -= 2;
+      governanceCorruptionDelta += 2;
+    } else if (payload.verdict === 'REASSIGN') {
+      governanceMilitaryDelta += 1;
+      governanceCorruptionDelta -= 1;
+    }
+
+    await applyLegacyGovernanceDelta(client, {
+      profileId,
+      nationalDelta: governanceNationalDelta,
+      militaryDelta: governanceMilitaryDelta,
+      corruptionDelta: governanceCorruptionDelta
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'COURT',
+      subject: `Putusan Court Case ${courtCase.caseType}`,
+      body: `Case ${courtCase.caseId} diputus dengan verdict ${payload.verdict}.`,
+      relatedRef: courtCase.caseId,
+      timelineEventType: 'COURT_VERDICT',
+      timelineTitle: `Court Verdict ${payload.verdict}`,
+      timelineDetail: `${courtCase.caseType} diputus ${payload.verdict}.`
+    });
+
+    invalidateExpansionStateCache(profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { case: updatedCase, snapshot } };
+  });
+}
+
+export async function listCouncilsV5(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const councils = await ensureCouncilsInitialized(client, profileId, world.currentDay);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { councils, snapshot } };
+  });
+}
+
+export async function voteCouncilV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { councilId: string; voteChoice: 'APPROVE' | 'REJECT' | 'ABSTAIN'; rationale?: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    await ensureCouncilsInitialized(client, profileId, world.currentDay);
+    const council = await getCouncilState(client, profileId, payload.councilId);
+    if (!council) {
+      return { statusCode: 404, payload: { error: 'Council tidak ditemukan.' } };
+    }
+    if (council.status !== 'OPEN') {
+      return { statusCode: 409, payload: { error: 'Council vote sudah ditutup.' } };
+    }
+
+    const existingVote = await getCouncilVoteByActor(client, {
+      profileId,
+      councilId: council.councilId,
+      voterType: 'PLAYER',
+      voterNpcId: null
+    });
+    if (existingVote) {
+      return { statusCode: 409, payload: { error: 'Anda sudah voting pada council ini.' } };
+    }
+
+    await insertCouncilVote(client, {
+      councilId: council.councilId,
+      profileId,
+      voterType: 'PLAYER',
+      voterNpcId: null,
+      voteChoice: payload.voteChoice,
+      rationale: payload.rationale ?? '',
+      votedDay: world.currentDay
+    });
+
+    let updatedCouncil = await getCouncilState(client, profileId, council.councilId);
+    if (updatedCouncil) {
+      const totalVotes = updatedCouncil.votes.approve + updatedCouncil.votes.reject + updatedCouncil.votes.abstain;
+      if (updatedCouncil.status === 'OPEN' && totalVotes >= updatedCouncil.quorum) {
+        await upsertCouncilState(client, {
+          ...updatedCouncil,
+          profileId,
+          status: 'CLOSED',
+          closedDay: world.currentDay
+        });
+        updatedCouncil = await getCouncilState(client, profileId, council.councilId);
+      }
+    }
+
+    if (updatedCouncil?.status === 'CLOSED') {
+      const approved = updatedCouncil.votes.approve >= updatedCouncil.votes.reject;
+      await applyLegacyGovernanceDelta(client, {
+        profileId,
+        nationalDelta: approved ? 1 : -1,
+        militaryDelta: approved ? 2 : -1,
+        corruptionDelta: approved ? -1 : 1
+      });
+    }
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'COUNCIL_INVITE',
+      subject: `Vote Tercatat: ${council.councilType}`,
+      body: `Pilihan Anda (${payload.voteChoice}) telah dicatat untuk agenda: ${council.agenda}`,
+      relatedRef: council.councilId,
+      timelineEventType: 'COUNCIL_VOTE',
+      timelineTitle: `Vote ${council.councilType}`,
+      timelineDetail: `Vote ${payload.voteChoice} pada agenda council.`
+    });
+
+    invalidateExpansionStateCache(profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { council: updatedCouncil, snapshot } };
+  });
+}
+
+export async function getMailboxV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  query: { unreadOnly?: boolean; limit?: number }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const items = await listMailboxMessages(client, profileId, {
+      unreadOnly: Boolean(query.unreadOnly),
+      limit: query.limit ?? 40
+    });
+    const summary = await getMailboxSummary(client, profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { items, summary, snapshot } };
+  });
+}
+
+export async function markMailboxReadV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  messageId: string
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const updated = await markMailboxMessageRead(client, {
+      profileId,
+      messageId,
+      readDay: world.currentDay
+    });
+    if (!updated) {
+      return { statusCode: 404, payload: { error: 'Message tidak ditemukan.' } };
+    }
+    const summary = await getMailboxSummary(client, profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { message: updated, summary, snapshot } };
+  });
+}
+
+export async function getSocialTimelineV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  query: { actorType?: 'PLAYER' | 'NPC'; limit?: number }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const events = await listSocialTimelineEvents(client, profileId, {
+      actorType: query.actorType,
+      limit: query.limit ?? 120
+    });
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { events, snapshot } };
+  });
+}
+
+export async function listCommandChainOrdersV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  query: { status?: CommandChainOrder['status']; limit?: number }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const orders = await listCommandChainOrders(client, profileId, {
+      status: query.status,
+      limit: query.limit ?? 80
+    });
+    const openOrders = orders.filter((item) => item.status === 'PENDING' || item.status === 'FORWARDED').length;
+    const breachedOrders = orders.filter((item) => item.status === 'BREACHED').length;
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return {
+      payload: {
+        orders,
+        summary: {
+          openOrders,
+          breachedOrders,
+          latest: orders[0] ?? null
+        },
+        snapshot
+      }
+    };
+  });
+}
+
+export async function createCommandChainOrderV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: {
+    targetNpcId?: string;
+    targetDivision?: string;
+    message: string;
+    priority?: CommandChainOrder['priority'];
+    ackWindowDays?: number;
+    chainPathNpcIds?: string[];
+  }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+
+    const roster = await listCurrentNpcRuntime(client, profileId, { limit: V5_MAX_NPCS });
+    const defaultPath = buildDefaultCommandChainPath({
+      npcs: roster.items,
+      targetNpcId: payload.targetNpcId ?? null,
+      targetDivision: payload.targetDivision ?? null
+    });
+    const chainPathNpcIds = normalizeCommandChainPath(payload.chainPathNpcIds ?? defaultPath, payload.targetNpcId ?? null);
+    const targetNpcId = payload.targetNpcId ?? chainPathNpcIds[chainPathNpcIds.length - 1] ?? null;
+    const ackWindowDays = clamp(payload.ackWindowDays ?? 2, 1, 7);
+    const orderId = `cco-${profileId.slice(0, 8)}-${world.currentDay}-${randomUUID().slice(0, 8)}`;
+    const order = await createCommandChainOrder(client, {
+      orderId,
+      profileId,
+      issuedDay: world.currentDay,
+      issuerType: 'PLAYER',
+      issuerNpcId: null,
+      targetNpcId,
+      targetDivision: payload.targetDivision ?? null,
+      priority: payload.priority ?? 'MEDIUM',
+      status: 'PENDING',
+      ackDueDay: world.currentDay + ackWindowDays,
+      completedDay: null,
+      penaltyApplied: false,
+      commandPayload: {
+        message: payload.message,
+        chainPathNpcIds,
+        requiredAcks: chainPathNpcIds.length,
+        lastForwardHop: 0
+      }
+    });
+
+    await appendCommandChainAck(client, {
+      orderId,
+      profileId,
+      actorType: 'PLAYER',
+      actorNpcId: null,
+      hopNo: 0,
+      forwardedToNpcId: chainPathNpcIds[0] ?? null,
+      ackDay: world.currentDay,
+      note: 'ORDER_ISSUED'
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: `Order Komando Berantai (${order.priority})`,
+      body: `Order dibuat dengan due day ${order.ackDueDay}. Path: ${chainPathNpcIds.join(' -> ') || 'AUTO'}.`,
+      relatedRef: order.orderId,
+      timelineEventType: 'COMMAND_CHAIN_ORDER_CREATED',
+      timelineTitle: 'Order Komando Dibuat',
+      timelineDetail: payload.message
+    });
+
+    const acks = await listCommandChainAcks(client, profileId, orderId);
+    invalidateExpansionStateCache(profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { order: { ...order, acks }, snapshot } };
+  });
+}
+
+export async function getCommandChainOrderV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  orderId: string
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const order = await getCommandChainOrder(client, profileId, orderId);
+    if (!order) {
+      return { statusCode: 404, payload: { error: 'Order command chain tidak ditemukan.' } };
+    }
+    const acks = await listCommandChainAcks(client, profileId, orderId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { order: { ...order, acks }, snapshot } };
+  });
+}
+
+export async function forwardCommandChainOrderV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { orderId: string; actorNpcId?: string; forwardedToNpcId: string; note?: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const order = await getCommandChainOrder(client, profileId, payload.orderId);
+    if (!order) {
+      return { statusCode: 404, payload: { error: 'Order command chain tidak ditemukan.' } };
+    }
+    if (!['PENDING', 'FORWARDED'].includes(order.status)) {
+      return { statusCode: 409, payload: { error: `Order tidak bisa di-forward pada status ${order.status}.` } };
+    }
+    if (world.currentDay > order.ackDueDay) {
+      await updateCommandChainOrderStatus(client, {
+        profileId,
+        orderId: order.orderId,
+        status: 'BREACHED',
+        completedDay: world.currentDay
+      });
+      return { statusCode: 409, payload: { error: 'Order melewati ack due day dan dinyatakan breached.' } };
+    }
+
+    const actorType = payload.actorNpcId ? 'NPC' : 'PLAYER';
+    const acks = await listCommandChainAcks(client, profileId, order.orderId);
+    const hopNo = (acks[acks.length - 1]?.hopNo ?? 0) + 1;
+    await appendCommandChainAck(client, {
+      orderId: order.orderId,
+      profileId,
+      actorType,
+      actorNpcId: payload.actorNpcId ?? null,
+      hopNo,
+      forwardedToNpcId: payload.forwardedToNpcId,
+      ackDay: world.currentDay,
+      note: payload.note ?? 'FORWARDED'
+    });
+
+    const updatedPayload = {
+      ...order.commandPayload,
+      lastForwardHop: hopNo,
+      lastForwardedToNpcId: payload.forwardedToNpcId
+    };
+    const updatedOrder = await createCommandChainOrder(client, {
+      orderId: order.orderId,
+      profileId,
+      issuedDay: order.issuedDay,
+      issuerType: order.issuerType,
+      issuerNpcId: order.issuerNpcId,
+      targetNpcId: order.targetNpcId,
+      targetDivision: order.targetDivision,
+      priority: order.priority,
+      status: 'FORWARDED',
+      ackDueDay: order.ackDueDay,
+      completedDay: order.completedDay,
+      penaltyApplied: order.penaltyApplied,
+      commandPayload: updatedPayload
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: `Forward Command Chain (${updatedOrder.priority})`,
+      body: `Order ${updatedOrder.orderId} diteruskan ke NPC ${payload.forwardedToNpcId}.`,
+      relatedRef: updatedOrder.orderId,
+      timelineEventType: 'COMMAND_CHAIN_FORWARDED',
+      timelineTitle: 'Order Diteruskan',
+      timelineDetail: payload.note ?? 'Forward berhasil.'
+    });
+
+    const updatedAcks = await listCommandChainAcks(client, profileId, order.orderId);
+    invalidateExpansionStateCache(profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { order: { ...updatedOrder, acks: updatedAcks }, snapshot } };
+  });
+}
+
+export async function ackCommandChainOrderV5(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { orderId: string; actorNpcId?: string; note?: string }
+): Promise<void> {
+  await withV5Context(request, reply, async ({ client, profileId, nowMs }) => {
+    const world = await lockV5World(client, profileId);
+    if (!world) {
+      return { statusCode: 404, payload: { error: 'World not found' } };
+    }
+    const order = await getCommandChainOrder(client, profileId, payload.orderId);
+    if (!order) {
+      return { statusCode: 404, payload: { error: 'Order command chain tidak ditemukan.' } };
+    }
+    if (!['PENDING', 'FORWARDED'].includes(order.status)) {
+      return { statusCode: 409, payload: { error: `Order tidak bisa di-ack pada status ${order.status}.` } };
+    }
+    if (world.currentDay > order.ackDueDay) {
+      await updateCommandChainOrderStatus(client, {
+        profileId,
+        orderId: order.orderId,
+        status: 'BREACHED',
+        completedDay: world.currentDay
+      });
+      return { statusCode: 409, payload: { error: 'Order melewati ack due day dan dinyatakan breached.' } };
+    }
+
+    const actorType = payload.actorNpcId ? 'NPC' : 'PLAYER';
+    const acks = await listCommandChainAcks(client, profileId, order.orderId);
+    const hopNo = (acks[acks.length - 1]?.hopNo ?? 0) + 1;
+    await appendCommandChainAck(client, {
+      orderId: order.orderId,
+      profileId,
+      actorType,
+      actorNpcId: payload.actorNpcId ?? null,
+      hopNo,
+      forwardedToNpcId: null,
+      ackDay: world.currentDay,
+      note: payload.note ?? 'ACKNOWLEDGED'
+    });
+
+    const path = Array.isArray(order.commandPayload.chainPathNpcIds)
+      ? order.commandPayload.chainPathNpcIds.filter((item): item is string => typeof item === 'string')
+      : [];
+    const finalNpcId = order.targetNpcId ?? (path[path.length - 1] ?? null);
+    const isFinalAck = payload.actorNpcId ? payload.actorNpcId === finalNpcId : finalNpcId === null;
+
+    const nextStatus: CommandChainOrder['status'] = isFinalAck ? 'ACKNOWLEDGED' : 'FORWARDED';
+    const updatedOrder = await createCommandChainOrder(client, {
+      orderId: order.orderId,
+      profileId,
+      issuedDay: order.issuedDay,
+      issuerType: order.issuerType,
+      issuerNpcId: order.issuerNpcId,
+      targetNpcId: order.targetNpcId,
+      targetDivision: order.targetDivision,
+      priority: order.priority,
+      status: nextStatus,
+      ackDueDay: order.ackDueDay,
+      completedDay: isFinalAck ? world.currentDay : order.completedDay,
+      penaltyApplied: order.penaltyApplied,
+      commandPayload: {
+        ...order.commandPayload,
+        lastAckHop: hopNo,
+        lastAckActorNpcId: payload.actorNpcId ?? null
+      }
+    });
+
+    await pushMailboxAndTimeline(client, {
+      profileId,
+      worldDay: world.currentDay,
+      category: 'GENERAL',
+      subject: isFinalAck ? 'Command Chain Tuntas' : 'Command Chain Acknowledged',
+      body: isFinalAck
+        ? `Order ${updatedOrder.orderId} acknowledged lengkap sebelum due day.`
+        : `Order ${updatedOrder.orderId} acknowledged, menunggu hop berikutnya.`,
+      relatedRef: updatedOrder.orderId,
+      timelineEventType: isFinalAck ? 'COMMAND_CHAIN_ACK_COMPLETE' : 'COMMAND_CHAIN_ACK',
+      timelineTitle: isFinalAck ? 'Ack Chain Lengkap' : 'Ack Chain Parsial',
+      timelineDetail: payload.note ?? 'Acknowledgement tercatat.'
+    });
+
+    const updatedAcks = await listCommandChainAcks(client, profileId, order.orderId);
+    invalidateExpansionStateCache(profileId);
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    return { payload: { order: { ...updatedOrder, acks: updatedAcks }, snapshot } };
   });
 }
 

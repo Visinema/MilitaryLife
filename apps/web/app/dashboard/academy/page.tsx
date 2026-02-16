@@ -46,7 +46,12 @@ function resolveAcademyErrorMessage(error: unknown, fallback: string): string {
 
 function AcademyPageContent() {
   const searchParams = useSearchParams();
-  const preferredTier = useMemo(() => (searchParams.get('tier') === '2' ? 2 : 1), [searchParams]);
+  const preferredTier = useMemo(() => {
+    const parsed = Number(searchParams.get('tier'));
+    if (parsed === 3) return 3;
+    if (parsed === 2) return 2;
+    return 1;
+  }, [searchParams]);
 
   const [track, setTrack] = useState<'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 'TRIBUNAL' | 'CYBER'>('OFFICER');
   const [tier, setTier] = useState<number>(preferredTier);
@@ -103,7 +108,8 @@ function AcademyPageContent() {
       const response = await api.v5AcademyBatchStart({ track, tier });
       setAnnouncementOpen(false);
       announcedBatchRef.current = null;
-      setMessage(`Batch dimulai: ${response.batchId}. Selesaikan 8 hari academy tanpa keluar dari jalur.`);
+      const totalDays = response.state.academyBatch?.totalDays ?? (tier === 3 ? 6 : tier === 2 ? 5 : 4);
+      setMessage(`Batch dimulai: ${response.batchId}. Selesaikan ${totalDays} hari academy sesuai tier tanpa keluar jalur.`);
       await loadCurrent();
     } catch (err) {
       setMessage(resolveAcademyErrorMessage(err, 'Gagal memulai academy batch.'));
@@ -187,7 +193,7 @@ function AcademyPageContent() {
     <div className="space-y-4">
       <div className="cyber-panel p-3">
         <p className="text-xs uppercase tracking-[0.14em] text-muted">Military Academy Expansion v5.1</p>
-        <h1 className="text-lg font-semibold text-text">Academy 8-Day Program</h1>
+        <h1 className="text-lg font-semibold text-text">Academy Tier Program (4/5/6 Hari)</h1>
         <p className="text-xs text-muted">Mode lock aktif selama batch berjalan. Progress tersimpan otomatis dan dapat dilanjutkan setelah refresh/disconnect.</p>
         <div className="mt-2 flex gap-2">
           {lockActive ? (
@@ -215,9 +221,10 @@ function AcademyPageContent() {
               </select>
             </label>
             <label className="text-muted">Tier
-              <select value={tier} onChange={(e) => setTier(Number(e.target.value) === 2 ? 2 : 1)} className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-text">
+              <select value={tier} onChange={(e) => setTier(Number(e.target.value) === 3 ? 3 : Number(e.target.value) === 2 ? 2 : 1)} className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-text">
                 <option value={1}>Tier 1</option>
                 <option value={2}>Tier 2</option>
+                <option value={3}>Tier 3</option>
               </select>
             </label>
           </div>
@@ -234,7 +241,7 @@ function AcademyPageContent() {
               Progress player: <span className="text-text">{batch.playerDayProgress}/{batch.totalDays}</span> | Expected world day: <span className="text-text">{batch.expectedWorldDay}</span> | Current world day: <span className="text-text">{worldCurrentDay ?? '-'}</span>
             </p>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
-              {Array.from({ length: 8 }, (_, idx) => {
+              {Array.from({ length: batch.totalDays }, (_, idx) => {
                 const day = idx + 1;
                 const completed = day <= batch.playerDayProgress;
                 const currentDay = day === batch.playerDayProgress + 1 && batch.status === 'ACTIVE';
