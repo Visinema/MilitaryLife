@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AcademyBatchState, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api, ApiError } from '@/lib/api-client';
 
@@ -27,6 +27,10 @@ const TRACK_OPTIONS: Array<{ value: 'OFFICER' | 'HIGH_COMMAND' | 'SPECIALIST' | 
   { value: 'CYBER', label: 'Cyber' }
 ];
 
+function graduationAnnouncementStorageKey(batchId: string): string {
+  return `academy-graduation-announcement:${batchId}`;
+}
+
 function resolveAcademyErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     const details = error.details && typeof error.details === 'object' ? (error.details as Record<string, unknown>) : null;
@@ -50,6 +54,8 @@ function AcademyPageContent() {
   const [message, setMessage] = useState<string | null>(null);
   const [current, setCurrent] = useState<AcademyCurrentPayload | null>(null);
   const [answers, setAnswers] = useState<number[]>([1, 1, 1]);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const announcedBatchRef = useRef<string | null>(null);
 
   const loadCurrent = useCallback(async () => {
     const response = await api.v5AcademyBatchCurrent();
@@ -95,6 +101,8 @@ function AcademyPageContent() {
     setMessage(null);
     try {
       const response = await api.v5AcademyBatchStart({ track, tier });
+      setAnnouncementOpen(false);
+      announcedBatchRef.current = null;
       setMessage(`Batch dimulai: ${response.batchId}. Selesaikan 8 hari academy tanpa keluar dari jalur.`);
       await loadCurrent();
     } catch (err) {
@@ -109,7 +117,11 @@ function AcademyPageContent() {
     setMessage(null);
     try {
       const response = await api.v5AcademyBatchSubmitDay({ answers });
-      setMessage(`Day ${response.academyDay} tersubmit. Score hari ini: ${response.dayScore}.`);
+      if (response.graduated && response.graduation) {
+        setMessage(`Day ${response.academyDay} tersubmit. ${response.graduation.message}`);
+      } else {
+        setMessage(`Day ${response.academyDay} tersubmit. Score hari ini: ${response.dayScore}.`);
+      }
       await loadCurrent();
     } catch (err) {
       setMessage(resolveAcademyErrorMessage(err, 'Gagal submit hari academy.'));
@@ -142,6 +154,34 @@ function AcademyPageContent() {
       batch.playerDayProgress >= batch.totalDays &&
       (worldCurrentDay === null || worldCurrentDay >= batch.endDay)
   );
+
+  useEffect(() => {
+    if (!batch?.graduation) return;
+    if (batch.status !== 'GRADUATED' && batch.status !== 'FAILED') return;
+    if (announcedBatchRef.current === batch.batchId) return;
+
+    announcedBatchRef.current = batch.batchId;
+    try {
+      if (window.sessionStorage.getItem(graduationAnnouncementStorageKey(batch.batchId)) === '1') {
+        return;
+      }
+    } catch {
+      // Ignore storage access errors (private mode/blocked storage).
+    }
+
+    setAnnouncementOpen(true);
+  }, [batch?.batchId, batch?.graduation, batch?.status]);
+
+  const closeAnnouncement = useCallback(() => {
+    if (batch?.batchId) {
+      try {
+        window.sessionStorage.setItem(graduationAnnouncementStorageKey(batch.batchId), '1');
+      } catch {
+        // Ignore storage access errors (private mode/blocked storage).
+      }
+    }
+    setAnnouncementOpen(false);
+  }, [batch?.batchId]);
 
   return (
     <div className="space-y-4">
@@ -291,6 +331,38 @@ function AcademyPageContent() {
           </div>
         </>
       )}
+
+      {announcementOpen && batch?.graduation ? (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4">
+          <div className={`w-full max-w-xl rounded border p-4 shadow-panel ${batch.graduation.passed ? 'border-emerald-400/70 bg-panel' : 'border-danger/70 bg-panel'}`}>
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">Academy Graduation Announcement</p>
+            <h2 className="mt-1 text-lg font-semibold text-text">
+              {batch.graduation.passed ? 'Graduation LULUS' : 'Graduation BELUM LULUS'}
+            </h2>
+            <p className="mt-2 text-sm text-muted">{batch.graduation.message}</p>
+            <p className="mt-2 text-sm text-muted">
+              Rank akhir: <span className="text-text">#{batch.graduation.playerRank}</span> dari <span className="text-text">{batch.graduation.totalCadets}</span> kadet.
+            </p>
+            {batch.graduation.certificateCodes.length > 0 ? (
+              <p className="mt-2 text-sm text-muted">Certificate: <span className="text-text">{batch.graduation.certificateCodes.join(' | ')}</span></p>
+            ) : null}
+            <div className="mt-4 flex gap-2">
+              {batch.graduation.passed ? (
+                <Link href="/dashboard/recruitment" onClick={closeAnnouncement} className="rounded border border-accent bg-accent/20 px-3 py-1 text-sm text-text">
+                  Lanjut Recruitment
+                </Link>
+              ) : (
+                <Link href="/dashboard" onClick={closeAnnouncement} className="rounded border border-border bg-bg px-3 py-1 text-sm text-text">
+                  Kembali Dashboard
+                </Link>
+              )}
+              <button onClick={closeAnnouncement} className="rounded border border-border bg-bg px-3 py-1 text-sm text-text">
+                Tutup Announcement
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {message ? <div className="rounded border border-border bg-panel px-3 py-2 text-xs text-muted">{message}</div> : null}
     </div>

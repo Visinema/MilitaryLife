@@ -265,6 +265,14 @@ export const api = {
       dayScore: number;
       dayPassed: boolean;
       readyToGraduate: boolean;
+      graduated?: boolean;
+      graduation?: {
+        passed: boolean;
+        playerRank: number;
+        totalCadets: number;
+        certificateCodes: string[];
+        message: string;
+      } | null;
       academyBatch: AcademyBatchState | null;
       state: ExpansionStateV51;
       snapshot: GameSnapshotV5 | null;

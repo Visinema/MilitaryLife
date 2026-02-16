@@ -467,18 +467,124 @@ async function rankAcademyBatchMembers(
   return listAcademyBatchMembers(client, batchId);
 }
 
+type AcademyGraduationPayload = {
+  passed: boolean;
+  playerRank: number;
+  totalCadets: number;
+  certificateCodes: string[];
+  message: string;
+};
+
+async function finalizeAcademyBatchGraduation(
+  client: import('pg').PoolClient,
+  profileId: string,
+  batch: { batchId: string; track: string; tier: number; startDay: number },
+  worldDay: number
+): Promise<AcademyGraduationPayload> {
+  await autoProgressNpcBatchMembers(client, batch, worldDay);
+  const ranked = await rankAcademyBatchMembers(client, batch.batchId);
+  const playerRanked = ranked.find((item) => item.holderType === 'PLAYER') ?? null;
+  if (!playerRanked) {
+    throw new Error(`Active academy batch missing ranked PLAYER entry: ${batch.batchId}`);
+  }
+
+  const passed = playerRanked.finalScore >= ACADEMY_PASS_SCORE;
+  const baseCertCode = resolveBaseCertCode(batch.track);
+  const certCodes: string[] = [];
+
+  if (passed) {
+    certCodes.push(baseCertCode);
+    await upsertCertification(client, {
+      profileId,
+      certId: `v51-base-${profileId}-${batch.batchId}`,
+      holderType: 'PLAYER',
+      npcId: null,
+      certCode: baseCertCode,
+      track: batch.track,
+      tier: certTierFromCode(baseCertCode),
+      grade: gradeFromScore(playerRanked.finalScore),
+      issuedDay: worldDay,
+      expiresDay: worldDay + 540,
+      valid: true,
+      sourceEnrollmentId: null
+    });
+
+    for (let i = 0; i < playerRanked.extraCertCount; i += 1) {
+      const code = `${batch.track}_EXTRA_CERT_${i + 1}`;
+      certCodes.push(code);
+      await upsertCertification(client, {
+        profileId,
+        certId: `v51-extra-${profileId}-${batch.batchId}-${i + 1}`,
+        holderType: 'PLAYER',
+        npcId: null,
+        certCode: code,
+        track: batch.track,
+        tier: 1,
+        grade: gradeFromScore(Math.max(70, playerRanked.finalScore - i * 4)),
+        issuedDay: worldDay,
+        expiresDay: worldDay + 420,
+        valid: true,
+        sourceEnrollmentId: null
+      });
+    }
+  }
+
+  const graduationPayload: AcademyGraduationPayload = {
+    passed,
+    playerRank: playerRanked.rankPosition,
+    totalCadets: ranked.length,
+    certificateCodes: certCodes,
+    message: passed
+      ? `Graduation sukses. Rank Anda #${playerRanked.rankPosition} dari ${ranked.length} kadet.`
+      : `Graduation selesai namun belum lulus. Rank Anda #${playerRanked.rankPosition} dari ${ranked.length} kadet.`
+  };
+
+  await updateAcademyBatchMeta(client, {
+    batchId: batch.batchId,
+    status: passed ? 'GRADUATED' : 'FAILED',
+    lockEnabled: false,
+    graduationPayload
+  });
+
+  return graduationPayload;
+}
+
+async function autoFinalizeAcademyBatchIfReady(
+  client: import('pg').PoolClient,
+  profileId: string,
+  batch: { batchId: string; track: string; tier: number; startDay: number; endDay: number; status: 'ACTIVE' | 'GRADUATED' | 'FAILED'; lockEnabled: boolean },
+  worldDay: number
+): Promise<AcademyGraduationPayload | null> {
+  if (batch.status !== 'ACTIVE' || !batch.lockEnabled) return null;
+  const playerMember = await getAcademyBatchMember(client, batch.batchId, 'PLAYER');
+  if (!playerMember) {
+    throw new Error(`Active academy batch missing PLAYER member row: ${batch.batchId}`);
+  }
+  if (playerMember.dayProgress < ACADEMY_TOTAL_DAYS) return null;
+  if (worldDay < batch.endDay) return null;
+  return finalizeAcademyBatchGraduation(client, profileId, batch, worldDay);
+}
+
 async function buildAcademyBatchStateForProfile(
   client: import('pg').PoolClient,
   profileId: string,
   nowDay: number,
   playerName: string
 ): Promise<AcademyBatchState | null> {
-  const active = await getActiveAcademyBatch(client, profileId);
-  const batch = active ?? (await getLatestAcademyBatch(client, profileId));
+  let active = await getActiveAcademyBatch(client, profileId);
+  let batch = active ?? (await getLatestAcademyBatch(client, profileId));
   if (!batch) return null;
 
   if (active) {
-    await autoProgressNpcBatchMembers(client, batch, nowDay);
+    const graduationFinalized = await autoFinalizeAcademyBatchIfReady(client, profileId, batch, nowDay);
+    if (graduationFinalized) {
+      active = null;
+      const latest = await getLatestAcademyBatch(client, profileId);
+      if (!latest) return null;
+      batch = latest;
+    } else {
+      await autoProgressNpcBatchMembers(client, batch, nowDay);
+    }
   }
 
   const members = await rankAcademyBatchMembers(client, batch.batchId);
@@ -1430,6 +1536,7 @@ export async function submitAcademyBatchDayV51(
 
     await autoProgressNpcBatchMembers(client, batch, world.currentDay);
     await rankAcademyBatchMembers(client, batch.batchId);
+    const autoGraduationPayload = await autoFinalizeAcademyBatchIfReady(client, profileId, batch, world.currentDay);
 
     invalidateExpansionStateCache(profileId);
     const state = await buildExpansionState(client, profileId, nowMs);
@@ -1440,7 +1547,9 @@ export async function submitAcademyBatchDayV51(
         academyDay,
         dayScore,
         dayPassed: dayScore >= 70,
-        readyToGraduate: nextProgress >= ACADEMY_TOTAL_DAYS,
+        readyToGraduate: nextProgress >= ACADEMY_TOTAL_DAYS && !autoGraduationPayload,
+        graduated: Boolean(autoGraduationPayload),
+        graduation: autoGraduationPayload,
         academyBatch: state.academyBatch,
         state,
         snapshot: snapshot ? { ...snapshot, expansion: state } : null
@@ -1469,70 +1578,7 @@ export async function graduateAcademyBatchV51(request: FastifyRequest, reply: Fa
       return { statusCode: 409, payload: { error: 'Graduation belum tersedia. Selesaikan hingga day ke-8 dunia game.' } };
     }
 
-    await autoProgressNpcBatchMembers(client, batch, world.currentDay);
-    const ranked = await rankAcademyBatchMembers(client, batch.batchId);
-    const playerRanked = ranked.find((item) => item.holderType === 'PLAYER') ?? null;
-    if (!playerRanked) {
-      return { statusCode: 409, payload: { error: 'Data ranking player tidak ditemukan.' } };
-    }
-
-    const passed = playerRanked.finalScore >= ACADEMY_PASS_SCORE;
-    const baseCertCode = resolveBaseCertCode(batch.track);
-    const certCodes: string[] = [];
-
-    if (passed) {
-      certCodes.push(baseCertCode);
-      await upsertCertification(client, {
-        profileId,
-        certId: `v51-base-${profileId}-${batch.batchId}`,
-        holderType: 'PLAYER',
-        npcId: null,
-        certCode: baseCertCode,
-        track: batch.track,
-        tier: certTierFromCode(baseCertCode),
-        grade: gradeFromScore(playerRanked.finalScore),
-        issuedDay: world.currentDay,
-        expiresDay: world.currentDay + 540,
-        valid: true,
-        sourceEnrollmentId: null
-      });
-
-      for (let i = 0; i < playerRanked.extraCertCount; i += 1) {
-        const code = `${batch.track}_EXTRA_CERT_${i + 1}`;
-        certCodes.push(code);
-        await upsertCertification(client, {
-          profileId,
-          certId: `v51-extra-${profileId}-${batch.batchId}-${i + 1}`,
-          holderType: 'PLAYER',
-          npcId: null,
-          certCode: code,
-          track: batch.track,
-          tier: 1,
-          grade: gradeFromScore(Math.max(70, playerRanked.finalScore - i * 4)),
-          issuedDay: world.currentDay,
-          expiresDay: world.currentDay + 420,
-          valid: true,
-          sourceEnrollmentId: null
-        });
-      }
-    }
-
-    const graduationPayload = {
-      passed,
-      playerRank: playerRanked.rankPosition,
-      totalCadets: ranked.length,
-      certificateCodes: certCodes,
-      message: passed
-        ? `Graduation sukses. Rank Anda #${playerRanked.rankPosition} dari ${ranked.length} kadet.`
-        : `Graduation selesai namun belum lulus. Rank Anda #${playerRanked.rankPosition} dari ${ranked.length} kadet.`
-    };
-
-    await updateAcademyBatchMeta(client, {
-      batchId: batch.batchId,
-      status: passed ? 'GRADUATED' : 'FAILED',
-      lockEnabled: false,
-      graduationPayload
-    });
+    const graduationPayload = await finalizeAcademyBatchGraduation(client, profileId, batch, world.currentDay);
 
     invalidateExpansionStateCache(profileId);
     const state = await buildExpansionState(client, profileId, nowMs);
