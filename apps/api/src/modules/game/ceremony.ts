@@ -111,11 +111,12 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     }
   ].sort((a: { competenceScore: number }, b: { competenceScore: number }) => b.competenceScore - a.competenceScore);
 
+  const hasMissionPrestasi = state.last_mission_day > 0 && state.current_day - state.last_mission_day <= 24;
   const highPerformers = candidatePool.filter((x) => x.competenceScore >= chief.competenceScore - 6).length;
   const awardSaturation = Math.min(8, Math.floor((Object.keys(state.npc_award_history).length + state.player_medals.length) / 2));
   const strictnessPenalty = state.morale < 68 ? 1 : 0;
   const baseQuota = Math.floor(chief.competenceScore / 28);
-  const quota = Math.max(1, Math.min(8, baseQuota + Math.floor(highPerformers / 6) - awardSaturation - strictnessPenalty));
+  const quota = hasMissionPrestasi ? Math.max(1, Math.min(8, baseQuota + Math.floor(highPerformers / 6) - awardSaturation - strictnessPenalty)) : 0;
 
   const recipients: CeremonyRecipient[] = [];
   for (const candidate of candidatePool) {
@@ -123,6 +124,7 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
     if (!award) continue;
     if (candidate.competenceScore < chief.competenceScore - 16) continue;
+    if (!hasMissionPrestasi) continue;
 
     recipients.push({
       order: recipients.length + 1,
@@ -139,6 +141,7 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const logs = [
     `Ceremony starts on Day ${currentCeremonyDay}. All ${MAX_ACTIVE_NPCS + 1} personnel are assembled for formation and readiness brief.`,
     `Chief of Staff ${chief.name} sets dynamic quota ${quota} from competence, saturation, and excellence threshold.`,
+    hasMissionPrestasi ? 'Mission achievement detected. Medal board activated for this ceremony cycle.' : 'No mission achievement in active window. Medal board locked: impossible to grant medals this cycle.',
     'Award session runs sequentially for one unified category of personnel (player and NPC progression share the same board).',
     `Recipients selected: ${recipients.length}. Non-selected personnel remain on progression evaluation for next 12-day cycle.`,
     'Ceremony closes with branch-wide directives for next 12-day operational cycle.'

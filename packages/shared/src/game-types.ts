@@ -75,6 +75,15 @@ export interface NewsItem {
   detail: string;
 }
 
+export interface MedalCatalogItem {
+  code: string;
+  name: string;
+  description: string;
+  minimumMissionSuccess: number;
+  minimumDangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  criteria: string[];
+}
+
 export interface CeremonyReport {
   ceremonyDay: number;
   attendance: number;
@@ -119,8 +128,22 @@ export interface GameSnapshot {
   playerMedals: string[];
   playerRibbons: string[];
   playerPosition: string;
+  playerDivision: string;
   raiderLastAttackDay: number;
   raiderCasualties: RaiderCasualty[];
+  nationalStability: number;
+  militaryStability: number;
+  militaryFundCents: number;
+  fundSecretaryNpc: string | null;
+  corruptionRisk: number;
+  pendingCourtCases: Array<{
+    id: string;
+    day: number;
+    title: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH';
+    status: 'PENDING' | 'IN_REVIEW' | 'CLOSED';
+    requestedBy: string;
+  }>;
 }
 
 export interface DecisionResult {
@@ -135,7 +158,7 @@ export interface DecisionResult {
 }
 
 export interface ActionResult {
-  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION' | 'RECRUITMENT';
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION' | 'RECRUITMENT' | 'V3_MISSION' | 'COURT_REVIEW' | 'APPOINT_SECRETARY';
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }

@@ -239,6 +239,12 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
   state.current_day = targetDay;
   state.money_cents += salary * elapsed;
   state.days_in_rank += elapsed;
+  if (elapsed > 0) {
+    const stabilityDecay = Math.floor(elapsed / 6);
+    state.national_stability = Math.max(0, Math.min(100, state.national_stability - stabilityDecay));
+    state.military_stability = Math.max(0, Math.min(100, state.military_stability - stabilityDecay - (state.corruption_risk >= 50 ? 1 : 0)));
+    state.corruption_risk = Math.max(0, Math.min(100, state.corruption_risk + (state.fund_secretary_npc ? 0 : 1)));
+  }
   return elapsed;
 }
 
@@ -506,8 +512,15 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     playerMedals: state.player_medals,
     playerRibbons: state.player_ribbons,
     playerPosition: state.player_position,
+    playerDivision: state.player_division,
     raiderLastAttackDay: state.raider_last_attack_day,
-    raiderCasualties: state.raider_casualties
+    raiderCasualties: state.raider_casualties,
+    nationalStability: state.national_stability,
+    militaryStability: state.military_stability,
+    militaryFundCents: state.military_fund_cents,
+    fundSecretaryNpc: state.fund_secretary_npc,
+    corruptionRisk: state.corruption_risk,
+    pendingCourtCases: state.court_pending_cases
   };
 }
 

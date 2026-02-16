@@ -12,7 +12,10 @@ import {
   commandActionSchema,
   socialInteractionSchema,
   recruitmentApplySchema,
-  newsQuerySchema
+  newsQuerySchema,
+  v3MissionSchema,
+  appointSecretarySchema,
+  courtReviewSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -35,7 +38,11 @@ import {
   completeCeremony,
   runRaiderDefense,
   runRecruitmentApply,
-  getNews
+  getNews,
+  runV3Mission,
+  appointFundSecretary,
+  reviewMilitaryCourtCase,
+  getMedalCatalog
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -189,6 +196,38 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     try {
       const query = parseOrThrow(newsQuerySchema, request.query ?? {});
       await getNews(request, reply, query.type);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
+
+  app.get('/v3/medals', async (request, reply) => {
+    await getMedalCatalog(request, reply);
+  });
+
+  app.post('/actions/v3-mission', async (request, reply) => {
+    try {
+      const body = parseOrThrow(v3MissionSchema, request.body ?? {});
+      await runV3Mission(request, reply, body);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
+  app.post('/actions/appoint-secretary', async (request, reply) => {
+    try {
+      const body = parseOrThrow(appointSecretarySchema, request.body ?? {});
+      await appointFundSecretary(request, reply, body.npcName);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
+  });
+
+  app.post('/actions/court-review', async (request, reply) => {
+    try {
+      const body = parseOrThrow(courtReviewSchema, request.body ?? {});
+      await reviewMilitaryCourtCase(request, reply, body.caseId, body.verdict);
     } catch (err) {
       sendValidationError(reply, err);
     }

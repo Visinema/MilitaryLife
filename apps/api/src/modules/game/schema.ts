@@ -59,3 +59,19 @@ export const recruitmentApplySchema = z.object({
 export const newsQuerySchema = z.object({
   type: z.enum(['DISMISSAL', 'MISSION', 'PROMOTION', 'MEDAL']).optional()
 });
+
+
+export const v3MissionSchema = z.object({
+  missionType: z.enum(['RECON', 'COUNTER_RAID', 'BLACK_OPS', 'TRIBUNAL_SECURITY']),
+  dangerTier: z.enum(['LOW', 'MEDIUM', 'HIGH', 'EXTREME']).default('MEDIUM'),
+  playerParticipates: z.boolean().default(false)
+});
+
+export const appointSecretarySchema = z.object({
+  npcName: z.string().min(2).max(64)
+});
+
+export const courtReviewSchema = z.object({
+  caseId: z.string().min(2).max(64),
+  verdict: z.enum(['UPHOLD', 'DISMISS', 'REASSIGN'])
+});

@@ -67,7 +67,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
       </div>
 
       <section className="cyber-panel p-2">
-        <p className="text-xs uppercase tracking-[0.14em] text-muted">UI V2 · Cybernetic Theater</p>
+        <p className="text-[11px] uppercase tracking-[0.12em] text-muted">UI V3 · Compact Theater</p>
         <div className="mt-1.5 grid gap-1.5 xl:grid-cols-[1.3fr,1fr]">
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>
@@ -93,6 +93,12 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
             <h3 className="mt-2 text-sm font-semibold text-text">{world.missionBrief.title}</h3>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.objective}</p>
             <p className="mt-1 text-xs text-muted">{world.missionBrief.commandRule}</p>
+            <div className="mt-1 grid grid-cols-2 gap-1 text-[10px]">
+              <div className="rounded border border-border/60 bg-bg/60 px-1.5 py-1 text-muted">Stabilitas Negara: <span className="text-text">{snapshot.nationalStability}%</span></div>
+              <div className="rounded border border-border/60 bg-bg/60 px-1.5 py-1 text-muted">Stabilitas Militer: <span className="text-text">{snapshot.militaryStability}%</span></div>
+              <div className="rounded border border-border/60 bg-bg/60 px-1.5 py-1 text-muted">Kas Militer: <span className="text-text">${Math.round(snapshot.militaryFundCents / 100).toLocaleString()}</span></div>
+              <div className="rounded border border-border/60 bg-bg/60 px-1.5 py-1 text-muted">Sekretaris: <span className="text-text">{snapshot.fundSecretaryNpc ?? 'Belum ditunjuk'}</span></div>
+            </div>
             <div className="mt-2 grid gap-1 sm:grid-cols-[1.2fr,1fr]">
               <div className="rounded border border-border px-2 py-1.5 text-[11px] text-text">
                 Active: {world.stats.active} · Injured: {world.stats.injured} · Reserve: {world.stats.reserve}
@@ -170,7 +176,7 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
 
             <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2">
               <p className="text-xs uppercase tracking-[0.1em] text-muted">People & Interaction Hub</p>
-              <div className="mt-1.5 grid grid-cols-2 gap-1">
+              <div className="mt-1 grid grid-cols-3 gap-1">
                 <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
                 <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
                 <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>
@@ -179,6 +185,9 @@ export function V2CommandCenter({ snapshot }: V2CommandCenterProps) {
                 <Link href="/dashboard/recruitment" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Rekrutmen</Link>
                 <Link href="/dashboard/raider-attack" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Raider Alert</Link>
                 <Link href="/dashboard/news" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">News</Link>
+                <Link href="/dashboard/medals" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Medals V3</Link>
+                <Link href="/dashboard/division-ops" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Division Ops</Link>
+                <Link href="/dashboard/military-court" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Pending Sidang</Link>
               </div>
             </div>
           </div>

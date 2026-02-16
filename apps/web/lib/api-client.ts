@@ -1,5 +1,5 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, NewsItem, NewsType } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, NewsItem, NewsType } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -174,6 +174,19 @@ export const api = {
 
   recruitmentApply(payload: { trackId: string; answers: Record<string, string> }) {
     return request<ActionResult>('/game/actions/recruitment-apply', 'POST', payload);
+  },
+
+  v3Mission(payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }) {
+    return request<ActionResult>('/game/actions/v3-mission', 'POST', payload);
+  },
+  appointSecretary(npcName: string) {
+    return request<ActionResult>('/game/actions/appoint-secretary', 'POST', { npcName });
+  },
+  courtReview(payload: { caseId: string; verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN' }) {
+    return request<ActionResult>('/game/actions/court-review', 'POST', payload);
+  },
+  medalCatalog() {
+    return request<{ items: MedalCatalogItem[]; note: string; snapshot: GameSnapshot }>('/game/v3/medals', 'GET');
   },
   news(type?: NewsType) {
     const query = type ? `?type=${type}` : '';

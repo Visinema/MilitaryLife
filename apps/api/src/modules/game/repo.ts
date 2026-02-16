@@ -34,9 +34,16 @@ export interface DbGameStateRow {
   player_medals: string[];
   player_ribbons: string[];
   player_position: string;
+  player_division: string;
   npc_award_history: Record<string, { medals: string[]; ribbons: string[] }>;
   raider_last_attack_day: number;
   raider_casualties: RaiderCasualty[];
+  national_stability: number;
+  military_stability: number;
+  military_fund_cents: number;
+  fund_secretary_npc: string | null;
+  corruption_risk: number;
+  court_pending_cases: Array<{ id: string; day: number; title: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'PENDING' | 'IN_REVIEW' | 'CLOSED'; requestedBy: string }>;
   pending_event_payload: {
     title: string;
     description: string;
@@ -140,6 +147,25 @@ function parseNpcAwardHistory(value: unknown): Record<string, { medals: string[]
   }, {});
 }
 
+
+function parseCourtCases(value: unknown): Array<{ id: string; day: number; title: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'PENDING' | 'IN_REVIEW' | 'CLOSED'; requestedBy: string }> {
+  const raw = typeof value === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return [];
+        }
+      })()
+    : value;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is { id: string; day: number; title: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'PENDING' | 'IN_REVIEW' | 'CLOSED'; requestedBy: string } => {
+      return Boolean(item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' && typeof (item as { day?: unknown }).day === 'number');
+    })
+    .slice(-60);
+}
+
 function parseJsonbArray(value: unknown): AcademyCertificate[] {
   if (Array.isArray(value)) {
     return value as AcademyCertificate[];
@@ -214,9 +240,16 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.player_medals,
         gs.player_ribbons,
         gs.player_position,
+        gs.player_division,
         gs.npc_award_history,
         gs.raider_last_attack_day,
         gs.raider_casualties,
+        gs.national_stability,
+        gs.military_stability,
+        gs.military_fund_cents,
+        gs.fund_secretary_npc,
+        gs.corruption_risk,
+        gs.court_pending_cases,
         gs.pending_event_payload,
         gs.version
       FROM profiles p
@@ -236,6 +269,7 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   row.player_ribbons = parseJsonbStringArray(row.player_ribbons);
   row.npc_award_history = parseNpcAwardHistory(row.npc_award_history);
   row.raider_casualties = parseRaiderCasualties(row.raider_casualties);
+  row.court_pending_cases = parseCourtCases(row.court_pending_cases);
   return row;
 }
 
@@ -304,10 +338,17 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         player_medals = $25::jsonb,
         player_ribbons = $26::jsonb,
         player_position = $27,
-        npc_award_history = $28::jsonb,
-        raider_last_attack_day = $29,
-        raider_casualties = $30::jsonb,
-        pending_event_payload = $31::jsonb,
+        player_division = $28,
+        npc_award_history = $29::jsonb,
+        raider_last_attack_day = $30,
+        raider_casualties = $31::jsonb,
+        national_stability = $32,
+        military_stability = $33,
+        military_fund_cents = $34,
+        fund_secretary_npc = $35,
+        corruption_risk = $36,
+        court_pending_cases = $37::jsonb,
+        pending_event_payload = $38::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -340,9 +381,16 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       toJsonbParam(state.player_medals, []),
       toJsonbParam(state.player_ribbons, []),
       state.player_position,
+      state.player_division,
       toJsonbParam(state.npc_award_history, {}),
       state.raider_last_attack_day,
       toJsonbParam(state.raider_casualties, []),
+      state.national_stability,
+      state.military_stability,
+      state.military_fund_cents,
+      state.fund_secretary_npc,
+      state.corruption_risk,
+      toJsonbParam(state.court_pending_cases, []),
       toJsonbParam(state.pending_event_payload, null)
     ]
   );

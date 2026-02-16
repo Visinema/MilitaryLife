@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
-import type { ActionResult, CeremonyRecipient, DecisionResult, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
@@ -60,7 +60,44 @@ const RECRUITMENT_TRACKS: RecruitmentTrack[] = [
   { id: 'air-defense-division', name: 'Air Defense Division', division: 'Air Defense HQ', minRankIndex: 5, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Air Defense Controller', 'Radar Director', 'Counter-UAV Ops Officer'], exam: [{ id: 'ad-1', answer: 'Detect → classify → engage' }, { id: 'ad-2', answer: 'Intercept rate + false positive low' }, { id: 'ad-3', answer: 'Layered EW + missile discipline' }, { id: 'ad-4', answer: 'Validated inbound threat' }] },
   { id: 'engineering-command', name: 'Combat Engineering Command', division: 'Engineer Command HQ', minRankIndex: 4, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Combat Engineer Planner', 'Field Construction Officer', 'EOD Coordination Officer'], exam: [{ id: 'en-1', answer: 'Mobility corridor first' }, { id: 'en-2', answer: 'Build speed + safety compliance' }, { id: 'en-3', answer: 'Deploy secondary span protocol' }, { id: 'en-4', answer: 'Isolate + identify + neutralize' }] },
   { id: 'medical-support-division', name: 'Medical Support Division', division: 'Medical Command HQ', minRankIndex: 3, needOfficerCert: true, needHighCommandCert: false, rolePool: ['Forward Medical Officer', 'Triage Command Officer', 'Recovery Planning Officer'], exam: [{ id: 'md-1', answer: 'Life-saving first by severity' }, { id: 'md-2', answer: 'Survival rate + evacuation speed' }, { id: 'md-3', answer: 'Activate surge protocol' }, { id: 'md-4', answer: 'Daily bio-monitor screening' }] },
-  { id: 'signal-cyber-corps', name: 'Signal & Cyber Corps', division: 'Signal Cyber HQ', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Cyber Incident Commander', 'Signal Security Officer', 'SOC Mission Coordinator'], exam: [{ id: 'cy-1', answer: 'Contain and isolate segment' }, { id: 'cy-2', answer: 'Uptime + breach containment time' }, { id: 'cy-3', answer: 'Primary comm compromised' }, { id: 'cy-4', answer: 'Risk-based priority with rollback plan' }] }
+  { id: 'signal-cyber-corps', name: 'Signal & Cyber Corps', division: 'Signal Cyber HQ', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Cyber Incident Commander', 'Signal Security Officer', 'SOC Mission Coordinator'], exam: [{ id: 'cy-1', answer: 'Contain and isolate segment' }, { id: 'cy-2', answer: 'Uptime + breach containment time' }, { id: 'cy-3', answer: 'Primary comm compromised' }, { id: 'cy-4', answer: 'Risk-based priority with rollback plan' }] },
+  { id: 'military-judge-corps', name: 'Military Judge Corps', division: 'Military Court Division', minRankIndex: 6, needOfficerCert: true, needHighCommandCert: true, rolePool: ['Associate Military Judge', 'Panel Military Judge', 'Chief Clerk of Court'], exam: [{ id: 'mj-1', answer: 'Evidence integrity and due process' }, { id: 'mj-2', answer: 'Chain of command accountability' }, { id: 'mj-3', answer: 'Proportional sanction recommendation' }, { id: 'mj-4', answer: 'Impartial review with legal basis' }] }
+];
+
+
+const MEDAL_CATALOG: MedalCatalogItem[] = [
+  {
+    code: 'STAR_OF_VALOR',
+    name: 'Star of Valor',
+    description: 'Aksi heroik pada misi berbahaya dengan dampak strategis tinggi.',
+    minimumMissionSuccess: 3,
+    minimumDangerTier: 'HIGH',
+    criteria: ['Mission success rate > 80%', 'No critical misconduct', 'Contributed in high/ extreme risk operations']
+  },
+  {
+    code: 'JOINT_COMMAND_CROSS',
+    name: 'Joint Command Cross',
+    description: 'Koordinasi lintas divisi dengan efisiensi tinggi dan casualty rendah.',
+    minimumMissionSuccess: 2,
+    minimumDangerTier: 'MEDIUM',
+    criteria: ['Joint operation executed', 'Casualties below threshold', 'Stable military morale']
+  },
+  {
+    code: 'TRIBUNAL_INTEGRITY_MEDAL',
+    name: 'Tribunal Integrity Medal',
+    description: 'Ketegasan penegakan disiplin militer tanpa bias.',
+    minimumMissionSuccess: 1,
+    minimumDangerTier: 'LOW',
+    criteria: ['Successful court case resolution', 'Zero corruption flag during review cycle', 'Integrity score maintained']
+  },
+  {
+    code: 'RAIDER_SUPPRESSION_RIBBON',
+    name: 'Raider Suppression Ribbon',
+    description: 'Kontribusi pada penanggulangan raider internal.',
+    minimumMissionSuccess: 2,
+    minimumDangerTier: 'HIGH',
+    criteria: ['Counter-raider objective completed', 'Base infrastructure loss minimized', 'Team readiness maintained']
+  }
 ];
 
 interface StateCheckpoint {
@@ -89,9 +126,16 @@ interface StateCheckpoint {
   playerMedals: DbGameStateRow['player_medals'];
   playerRibbons: DbGameStateRow['player_ribbons'];
   playerPosition: string;
+  playerDivision: string;
   npcAwardHistory: DbGameStateRow['npc_award_history'];
   raiderLastAttackDay: number;
   raiderCasualties: DbGameStateRow['raider_casualties'];
+  nationalStability: number;
+  militaryStability: number;
+  militaryFundCents: number;
+  fundSecretaryNpc: string | null;
+  corruptionRisk: number;
+  courtPendingCases: DbGameStateRow['court_pending_cases'];
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -123,9 +167,16 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     playerMedals: state.player_medals,
     playerRibbons: state.player_ribbons,
     playerPosition: state.player_position,
+    playerDivision: state.player_division,
     npcAwardHistory: state.npc_award_history,
     raiderLastAttackDay: state.raider_last_attack_day,
     raiderCasualties: state.raider_casualties,
+    nationalStability: state.national_stability,
+    militaryStability: state.military_stability,
+    militaryFundCents: state.military_fund_cents,
+    fundSecretaryNpc: state.fund_secretary_npc,
+    corruptionRisk: state.corruption_risk,
+    courtPendingCases: state.court_pending_cases,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -158,9 +209,16 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.player_medals !== checkpoint.playerMedals ||
     state.player_ribbons !== checkpoint.playerRibbons ||
     state.player_position !== checkpoint.playerPosition ||
+    state.player_division !== checkpoint.playerDivision ||
     state.npc_award_history !== checkpoint.npcAwardHistory ||
     state.raider_last_attack_day !== checkpoint.raiderLastAttackDay ||
     state.raider_casualties !== checkpoint.raiderCasualties ||
+    state.national_stability !== checkpoint.nationalStability ||
+    state.military_stability !== checkpoint.militaryStability ||
+    state.military_fund_cents !== checkpoint.militaryFundCents ||
+    state.fund_secretary_npc !== checkpoint.fundSecretaryNpc ||
+    state.corruption_risk !== checkpoint.corruptionRisk ||
+    state.court_pending_cases !== checkpoint.courtPendingCases ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -827,9 +885,16 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.player_medals = [];
     state.player_ribbons = [];
     state.player_position = 'Platoon Leader';
+    state.player_division = 'General Command';
     state.npc_award_history = {};
     state.raider_last_attack_day = 0;
     state.raider_casualties = [];
+    state.national_stability = 72;
+    state.military_stability = 70;
+    state.military_fund_cents = 250000;
+    state.fund_secretary_npc = null;
+    state.corruption_risk = 18;
+    state.court_pending_cases = [];
 
     await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
 
@@ -1004,6 +1069,26 @@ function buildNewsFeed(state: DbGameStateRow, decisionLogs: Array<{ id: number; 
     });
   }
 
+  if (state.court_pending_cases.some((item) => item.status !== 'CLOSED')) {
+    items.push({
+      id: `court-${state.current_day}`,
+      day: state.current_day,
+      type: 'DISMISSAL',
+      title: 'News Pengadilan Militer',
+      detail: `Terdapat ${state.court_pending_cases.filter((item) => item.status !== 'CLOSED').length} sidang aktif menunggu panel hakim.`
+    });
+  }
+
+  if (state.national_stability <= 35 || state.military_stability <= 35) {
+    items.push({
+      id: `instability-${state.current_day}`,
+      day: state.current_day,
+      type: 'MISSION',
+      title: 'News Stabilitas Kritis',
+      detail: 'Stabilitas negara/militer rendah, potensi pemberontakan internal meningkat.'
+    });
+  }
+
   const filtered = filterType ? items.filter((item) => item.type === filterType) : items;
   return filtered.sort((a, b) => b.day - a.day).slice(0, 120);
 }
@@ -1055,7 +1140,7 @@ export async function runRaiderDefense(request: FastifyRequest, reply: FastifyRe
     const snapshot = buildSnapshot(state, nowMs);
     return {
       payload: {
-        type: 'COMMAND',
+        type: 'V3_MISSION',
         snapshot,
         details: {
           raiderAttack: true,
@@ -1279,6 +1364,7 @@ export async function runRecruitmentApply(
     const divisionHead = evaluateDivisionHead(state, track.division);
     const assignedRole = track.rolePool[(state.current_day + state.rank_index) % track.rolePool.length] ?? 'Division Staff Officer';
     state.player_position = assignedRole;
+    state.player_division = track.division;
 
     const certificate = {
       id: `${state.profile_id}-recruit-${Date.now()}`,
@@ -1306,6 +1392,153 @@ export async function runRecruitmentApply(
           certificate,
           redirectTo: '/dashboard'
         }
+      } as ActionResult
+    };
+  });
+}
+
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function maybeCreateCourtCase(state: DbGameStateRow): void {
+  const shouldCreate = state.corruption_risk >= 55 || state.military_stability <= 35 || state.national_stability <= 38;
+  if (!shouldCreate) return;
+
+  const existingPending = state.court_pending_cases.filter((item) => item.status !== 'CLOSED').length;
+  if (existingPending >= 8) return;
+
+  const newCase = {
+    id: `case-${state.current_day}-${existingPending + 1}`,
+    day: state.current_day,
+    title: state.corruption_risk >= 55 ? 'Investigasi indikasi korupsi kas militer' : 'Sidang disiplin komando operasi',
+    severity: (state.corruption_risk >= 70 || state.military_stability <= 25 ? 'HIGH' : state.corruption_risk >= 45 ? 'MEDIUM' : 'LOW') as 'LOW' | 'MEDIUM' | 'HIGH',
+    status: 'PENDING' as const,
+    requestedBy: 'Chief of Staff Council'
+  };
+
+  state.court_pending_cases = [...state.court_pending_cases, newCase].slice(-60);
+}
+
+function computeMissionDelta(payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }): { success: boolean; successScore: number; fundDelta: number; moraleDelta: number; healthDelta: number; stabilityDelta: number; corruptionDelta: number; casualties: number } {
+  const dangerFactor = { LOW: 8, MEDIUM: 16, HIGH: 28, EXTREME: 40 }[payload.dangerTier];
+  const missionBias = { RECON: 14, COUNTER_RAID: 10, BLACK_OPS: -6, TRIBUNAL_SECURITY: 6 }[payload.missionType];
+  const participationBonus = payload.playerParticipates ? 7 : 0;
+  const successScore = 52 + missionBias + participationBonus - Math.floor(dangerFactor * 0.55);
+  const randomFactor = (Date.now() + dangerFactor * 13 + missionBias * 19) % 100;
+  const success = randomFactor < successScore;
+  const casualties = success ? Math.max(0, Math.floor((dangerFactor - 10) / 18)) : Math.max(1, Math.floor((dangerFactor + 6) / 14));
+
+  return {
+    success,
+    successScore,
+    fundDelta: success ? (payload.dangerTier === 'EXTREME' ? 22000 : 14000) : -(payload.dangerTier === 'EXTREME' ? 18000 : 9000),
+    moraleDelta: success ? 3 : -5,
+    healthDelta: payload.playerParticipates ? (success ? -2 : -8) : 0,
+    stabilityDelta: success ? 4 : -7,
+    corruptionDelta: payload.missionType === 'TRIBUNAL_SECURITY' ? -4 : success ? 0 : 4,
+    casualties
+  };
+}
+
+export async function getMedalCatalog(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => ({
+    payload: {
+      items: MEDAL_CATALOG,
+      note: 'Medal hanya dapat diberikan saat upacara dan wajib berbasis prestasi misi.',
+      snapshot: buildSnapshot(state, nowMs)
+    }
+  }));
+}
+
+export async function runV3Mission(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
+    const delta = computeMissionDelta(payload);
+
+    state.money_cents = Math.max(0, state.money_cents + Math.floor(delta.fundDelta / 2));
+    state.military_fund_cents = Math.max(0, state.military_fund_cents + delta.fundDelta);
+    state.morale = clampScore(state.morale + delta.moraleDelta);
+    state.health = clampScore(state.health + delta.healthDelta);
+    state.national_stability = clampScore(state.national_stability + delta.stabilityDelta);
+    state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
+    state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
+    state.last_mission_day = state.current_day;
+
+    maybeCreateCourtCase(state);
+
+    const details = {
+      ...delta,
+      missionType: payload.missionType,
+      dangerTier: payload.dangerTier,
+      playerParticipates: payload.playerParticipates,
+      npcOnly: !payload.playerParticipates
+    };
+
+    return {
+      payload: {
+        type: 'V3_MISSION',
+        snapshot: buildSnapshot(state, nowMs),
+        details
+      } as ActionResult
+    };
+  });
+}
+
+export async function appointFundSecretary(request: FastifyRequest, reply: FastifyReply, npcName: string): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    if ((state.rank_index ?? 0) < 8) {
+      return { statusCode: 409, payload: { error: 'Hanya level komando tinggi yang dapat menunjuk sekretaris kas militer.', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    state.fund_secretary_npc = npcName;
+    state.corruption_risk = clampScore(state.corruption_risk - 3);
+
+    return {
+      payload: {
+        type: 'APPOINT_SECRETARY',
+        snapshot: buildSnapshot(state, nowMs),
+        details: { npcName }
+      } as ActionResult
+    };
+  });
+}
+
+export async function reviewMilitaryCourtCase(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  caseId: string,
+  verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN'
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const idx = state.court_pending_cases.findIndex((item) => item.id === caseId && item.status !== 'CLOSED');
+    if (idx < 0) {
+      return { statusCode: 404, payload: { error: 'Kasus sidang tidak ditemukan.', snapshot: buildSnapshot(state, nowMs) } };
+    }
+
+    const target = state.court_pending_cases[idx];
+    state.court_pending_cases[idx] = { ...target, status: 'CLOSED' };
+
+    if (verdict === 'UPHOLD') {
+      state.corruption_risk = clampScore(state.corruption_risk - 8);
+      state.military_stability = clampScore(state.military_stability + 4);
+    } else if (verdict === 'DISMISS') {
+      state.national_stability = clampScore(state.national_stability - 2);
+      state.military_stability = clampScore(state.military_stability - 2);
+    } else {
+      state.national_stability = clampScore(state.national_stability + 1);
+      state.military_stability = clampScore(state.military_stability + 1);
+    }
+
+    return {
+      payload: {
+        type: 'COURT_REVIEW',
+        snapshot: buildSnapshot(state, nowMs),
+        details: { caseId, verdict }
       } as ActionResult
     };
   });

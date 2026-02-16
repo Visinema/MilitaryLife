@@ -172,6 +172,27 @@ const TRACKS: Track[] = [
       { id: 'cy-4', prompt: 'Prinsip patch management?', choices: ['Risk-based priority with rollback plan', 'Patch never', 'Patch without backup', 'Patch public network first'], answer: 'Risk-based priority with rollback plan' }
     ]
   }
+  {
+    id: 'military-judge-corps',
+    name: 'Military Judge Corps',
+    type: 'KORPS',
+    minRankIndex: 6,
+    needOfficerCert: true,
+    needHighCommandCert: true,
+    assets: ['Court Evidence Archive', 'Tribunal Chamber', 'Legal Intelligence Desk'],
+    internalHierarchy: [
+      { level: 'DIVISI', name: 'Military Court Division', roles: ['Judge Chair', 'Panel Judge 1', 'Panel Judge 2', 'Panel Judge 3'] },
+      { level: 'SATUAN', name: 'Court Clerk Unit', roles: ['Chief Clerk', 'Evidence Custodian', 'Legal Secretary'] },
+      { level: 'KORPS', name: 'Military Law Corps', roles: ['Case Reviewer', 'Disciplinary Prosecutor', 'Defense Liaison'] }
+    ],
+    questions: [
+      { id: 'mj-1', prompt: 'Prinsip utama sidang militer?', choices: ['Evidence integrity and due process', 'Command favoritism', 'Closed without record', 'Random penalty'], answer: 'Evidence integrity and due process' },
+      { id: 'mj-2', prompt: 'Fokus evaluasi hakim militer?', choices: ['Chain of command accountability', 'Weapon caliber', 'Vehicle speed', 'Supply quantity'], answer: 'Chain of command accountability' },
+      { id: 'mj-3', prompt: 'Sanksi terbaik?', choices: ['Proportional sanction recommendation', 'Max penalty always', 'No sanction', 'Public humiliation'], answer: 'Proportional sanction recommendation' },
+      { id: 'mj-4', prompt: 'Sikap panel hakim?', choices: ['Impartial review with legal basis', 'Rank bias', 'Political pressure first', 'Ignore witnesses'], answer: 'Impartial review with legal basis' }
+    ]
+  },
+
 ];
 
 function rotateChoices(choices: string[], seed: number): string[] {
@@ -270,6 +291,7 @@ export default function RecruitmentPage() {
         </select>
 
         <p className="text-muted">Persyaratan: min rank {track.minRankIndex}, Officer Cert: {track.needOfficerCert ? 'Ya' : 'Tidak'}, High Command Cert: {track.needHighCommandCert ? 'Ya' : 'Tidak'}</p>
+        <p className="text-muted">Jika lolos Military Judge Corps, tab "Pending Sidang" akan aktif di menu Pengadilan Militer.</p>
 
         <div className="rounded border border-border/60 bg-bg/50 p-2">
           <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Aset Divisi/Satuan/Korps</p>
