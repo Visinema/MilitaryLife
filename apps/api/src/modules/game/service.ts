@@ -15,7 +15,7 @@ import type {
 } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
-import type { BranchCode } from '@mls/shared/constants';
+import type { BranchCode, CountryCode } from '@mls/shared/constants';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
 import {
@@ -630,8 +630,13 @@ async function withLockedState(
   }
 }
 
-function inferCountryFromBranch(branch: BranchCode): 'US' | 'ID' {
-  return branch.startsWith('ID_') ? 'ID' : 'US';
+const BRANCH_COUNTRY_MAP: Record<BranchCode, CountryCode> = {
+  US_ARMY: 'US',
+  US_NAVY: 'US'
+};
+
+function inferCountryFromBranch(branch: BranchCode): CountryCode {
+  return BRANCH_COUNTRY_MAP[branch];
 }
 
 function splitAssignment(assignment: string): { division: string; position: string } {
