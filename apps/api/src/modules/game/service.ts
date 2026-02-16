@@ -1144,6 +1144,25 @@ export async function getNpcBackgroundActivity(request: FastifyRequest, reply: F
 }
 
 
+
+
+function hasRecruitmentPrereqFromInventory(state: DbGameStateRow, minTier: 1 | 2): boolean {
+  const certs = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
+  return certs.some((cert) => {
+    if (!cert || typeof cert !== 'object') return false;
+    const tier = typeof cert.tier === 'number' ? cert.tier : 0;
+    return tier >= minTier;
+  });
+}
+
+function hasDivisionCertificate(state: DbGameStateRow, division: string): boolean {
+  const certs = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
+  return certs.some((cert) => {
+    if (!cert || typeof cert !== 'object') return false;
+    return String(cert.assignedDivision ?? '').toLowerCase() === division.toLowerCase();
+  });
+}
+
 export async function runRecruitmentApply(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -1156,21 +1175,30 @@ export async function runRecruitmentApply(
     }
 
     const rankOk = state.rank_index >= track.minRankIndex;
-    const officerOk = !track.needOfficerCert || state.academy_tier >= 1;
-    const highOk = !track.needHighCommandCert || state.academy_tier >= 2;
-    const examPass = track.exam.every((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase());
+    const officerOk = !track.needOfficerCert || state.academy_tier >= 1 || hasRecruitmentPrereqFromInventory(state, 1);
+    const highOk = !track.needHighCommandCert || state.academy_tier >= 2 || hasRecruitmentPrereqFromInventory(state, 2);
+    const priorDivisionCertified = hasDivisionCertificate(state, track.division);
+    const examPass = priorDivisionCertified || track.exam.every((q) => (payload.answers[q.id] ?? '').trim().toLowerCase() === q.answer.toLowerCase());
 
     if (!(rankOk && officerOk && highOk && examPass)) {
+      const failedReasons = [
+        rankOk ? null : `Rank minimal belum terpenuhi (butuh ${track.minRankIndex})`,
+        officerOk ? null : 'Sertifikasi Officer Academy tidak terdeteksi (academy tier/inventory)',
+        highOk ? null : 'Sertifikasi High Command tidak terdeteksi (academy tier/inventory)',
+        examPass ? null : 'Ujian track belum lulus dan belum ada sertifikasi divisi sebelumnya'
+      ].filter(Boolean);
+
       return {
         statusCode: 409,
         payload: {
-          error: 'Syarat rekrutmen belum terpenuhi',
+          error: failedReasons.join('; '),
           snapshot: buildSnapshot(state, nowMs),
           details: {
             rankOk,
             officerOk,
             highOk,
-            examPass
+            examPass,
+            priorDivisionCertified
           }
         }
       };
@@ -1193,7 +1221,9 @@ export async function runRecruitmentApply(
       assignedDivision: track.division
     };
 
-    state.certificate_inventory = [certificate, ...(state.certificate_inventory ?? [])].slice(0, 20);
+    const existingCertificates = Array.isArray(state.certificate_inventory) ? state.certificate_inventory : [];
+    const dedupedCertificates = existingCertificates.filter((item) => String(item.assignedDivision ?? '').toLowerCase() !== track.division.toLowerCase());
+    state.certificate_inventory = [certificate, ...dedupedCertificates].slice(0, 20);
 
     return {
       payload: {
