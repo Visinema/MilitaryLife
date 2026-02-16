@@ -28,6 +28,7 @@ function DeploymentPageContent() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
+  const [missionRespondBusy, setMissionRespondBusy] = useState(false);
   const [strategy, setStrategy] = useState(STRATEGY_OPTIONS[0]?.id ?? 'layered-security');
   const [objective, setObjective] = useState('Amankan area dan selesaikan objective utama dengan casualty minimal.');
   const [prepChecklist, setPrepChecklist] = useState<string[]>([]);
@@ -36,6 +37,38 @@ function DeploymentPageContent() {
     if (snapshot) return;
     void api.snapshot().then((response) => setSnapshot(response.snapshot));
   }, [setSnapshot, snapshot]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let active = true;
+    let syncing = false;
+
+    const syncSnapshot = () => {
+      if (!active || syncing) return;
+      if (document.visibilityState !== 'visible') return;
+      syncing = true;
+      api
+        .snapshot()
+        .then((response) => {
+          if (!active) return;
+          setSnapshot(response.snapshot);
+        })
+        .finally(() => {
+          syncing = false;
+        });
+    };
+
+    syncSnapshot();
+    const timer = window.setInterval(syncSnapshot, 3000);
+    window.addEventListener('focus', syncSnapshot);
+    window.addEventListener('visibilitychange', syncSnapshot);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', syncSnapshot);
+      window.removeEventListener('visibilitychange', syncSnapshot);
+    };
+  }, [setSnapshot]);
 
   const activeMission = snapshot?.activeMission ?? null;
   const missionPlanningMode = Boolean(activeMission && activeMission.status === 'ACTIVE' && activeMission.playerParticipates);
@@ -94,6 +127,25 @@ function DeploymentPageContent() {
     }
   };
 
+  const respondMissionCall = async (participate: boolean) => {
+    if (missionRespondBusy) return;
+    setMissionRespondBusy(true);
+    setMessage(null);
+    try {
+      const response = await api.respondMissionCall(participate);
+      setSnapshot(response.snapshot);
+      if (participate) {
+        setMessage('Panggilan misi diterima. Susun planning lalu eksekusi dari halaman ini.');
+      } else {
+        setMessage('Misi dijalankan otomatis oleh NPC. Anda bisa kembali ke dashboard.');
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Gagal merespons panggilan misi');
+    } finally {
+      setMissionRespondBusy(false);
+    }
+  };
+
   if (!snapshot) {
     return <div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading deployment console...</div>;
   }
@@ -110,6 +162,33 @@ function DeploymentPageContent() {
       {fromMissionCall ? (
         <div className="rounded-md border border-amber-500/60 bg-amber-500/10 p-3 text-xs text-amber-100">
           Anda masuk lewat panggilan misi otomatis. Selesaikan perencanaan lalu eksekusi misi.
+        </div>
+      ) : null}
+
+      {activeMission?.status === 'ACTIVE' && !activeMission.playerParticipates ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-md border border-amber-400/70 bg-panel p-4 shadow-panel">
+            <p className="text-xs uppercase tracking-[0.12em] text-amber-200">Panggilan Misi Otomatis · Day {activeMission.issuedDay}</p>
+            <h2 className="mt-1 text-base font-semibold text-amber-100">Ikut misi atau serahkan ke NPC?</h2>
+            <p className="mt-2 text-sm text-muted">Waktu game tetap pause sampai Anda memilih. Jika ikut, planning akan dibuka di halaman ini.</p>
+            <p className="mt-2 text-xs text-amber-100/90">Mission: {activeMission.missionType} · Danger: {activeMission.dangerTier}</p>
+            <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => void respondMissionCall(true)}
+                  disabled={missionRespondBusy}
+                  className="rounded border border-amber-200/60 bg-amber-200/20 px-3 py-1.5 text-sm text-amber-50 disabled:opacity-50"
+                >
+                  {missionRespondBusy ? 'Memproses...' : 'Ikut misi'}
+                </button>
+                <button
+                  onClick={() => void respondMissionCall(false)}
+                  disabled={missionRespondBusy}
+                  className="rounded border border-border bg-bg px-3 py-1.5 text-sm text-text disabled:opacity-50"
+                >
+                  {missionRespondBusy ? 'Memproses...' : 'Jalankan NPC'}
+                </button>
+              </div>
+            </div>
         </div>
       ) : null}
 

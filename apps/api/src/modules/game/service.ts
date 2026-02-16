@@ -708,10 +708,20 @@ function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boo
 
 function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
   const missionIntervalDays = 10;
-  if (state.active_mission?.status === 'ACTIVE') {
-    if (!state.paused_at_ms && state.pause_reason !== 'DECISION') {
+  const ensureModalPause = () => {
+    if (state.pause_reason === 'DECISION') return;
+    if (!state.paused_at_ms) {
       pauseState(state, 'MODAL', nowMs, timeoutMinutes);
+      return;
     }
+    if (state.pause_reason !== 'MODAL') {
+      state.pause_reason = 'MODAL';
+      state.pause_expires_at_ms = nowMs + timeoutMinutes * 60_000;
+    }
+  };
+
+  if (state.active_mission?.status === 'ACTIVE') {
+    ensureModalPause();
     return;
   }
 
@@ -729,9 +739,7 @@ function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinu
     participants: buildMissionParticipants(state, false)
   };
   state.mission_call_issued_day = state.current_day;
-  if (state.pause_reason !== 'DECISION') {
-    pauseState(state, 'MODAL', nowMs, timeoutMinutes);
-  }
+  ensureModalPause();
 }
 
 function enforceMissionCallPause(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
