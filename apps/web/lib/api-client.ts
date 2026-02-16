@@ -260,6 +260,14 @@ export const api = {
         };
       }>;
       mlcEligibleMembers: number;
+      governance: {
+        canPlayerVote: boolean;
+        meetingActive: boolean;
+        meetingDay: number;
+        totalMeetingDays: number;
+        scheduledPresetId: MilitaryLawPresetId | null;
+        note: string;
+      };
       snapshot: GameSnapshot;
     }>('/game/military-law', 'GET');
   },

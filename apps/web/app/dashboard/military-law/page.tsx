@@ -28,6 +28,14 @@ export default function MilitaryLawPage() {
       };
     }>;
     mlcEligibleMembers: number;
+    governance: {
+      canPlayerVote: boolean;
+      meetingActive: boolean;
+      meetingDay: number;
+      totalMeetingDays: number;
+      scheduledPresetId: MilitaryLawPresetId | null;
+      note: string;
+    };
   } | null>(null);
 
   useEffect(() => {
@@ -37,7 +45,8 @@ export default function MilitaryLawPage() {
           current: res.current,
           logs: res.logs,
           presets: res.presets,
-          mlcEligibleMembers: res.mlcEligibleMembers
+          mlcEligibleMembers: res.mlcEligibleMembers,
+          governance: res.governance
         });
         setSnapshot(res.snapshot);
       })
@@ -49,6 +58,14 @@ export default function MilitaryLawPage() {
   const logs = data?.logs ?? snapshot?.militaryLawLogs ?? [];
   const presets = data?.presets ?? [];
   const mlcMembers = data?.mlcEligibleMembers ?? snapshot?.mlcEligibleMembers ?? 0;
+  const governance = data?.governance ?? {
+    canPlayerVote: false,
+    meetingActive: false,
+    meetingDay: 0,
+    totalMeetingDays: 3,
+    scheduledPresetId: null,
+    note: ''
+  };
 
   const activeOptionalPosts = useMemo(() => current?.rules.optionalPosts ?? [], [current?.rules.optionalPosts]);
 
@@ -67,7 +84,15 @@ export default function MilitaryLawPage() {
               current: nextCurrent,
               logs: nextLogs,
               presets: [],
-              mlcEligibleMembers: res.snapshot.mlcEligibleMembers
+              mlcEligibleMembers: res.snapshot.mlcEligibleMembers,
+              governance: {
+                canPlayerVote: true,
+                meetingActive: false,
+                meetingDay: 3,
+                totalMeetingDays: 3,
+                scheduledPresetId: null,
+                note: 'Military Law aktif.'
+              }
             };
       });
       setMessage(`Military Law v${res.snapshot.militaryLawCurrent?.version ?? '-'} disahkan melalui voting Dewan MLC.`);
@@ -86,6 +111,7 @@ export default function MilitaryLawPage() {
             <p className="text-[11px] uppercase tracking-[0.12em] text-muted">Military Legislative Council</p>
             <h1 className="text-sm font-semibold text-text">Military Law Governance</h1>
             <p className="text-muted">Anggota MLC aktif (rank di atas Kolonel): <span className="text-text">{mlcMembers}</span> suara.</p>
+            <p className="text-muted">{governance.note}</p>
           </div>
           <Link href="/dashboard" className="rounded border border-border bg-bg px-2 py-1 text-[11px] text-text">Back Dashboard</Link>
         </div>
@@ -113,6 +139,8 @@ export default function MilitaryLawPage() {
 
       <section className="cyber-panel p-3 space-y-2">
         <h2 className="text-[12px] font-semibold text-text">Rapat Voting MLC (Preset Hukum)</h2>
+        {!governance.canPlayerVote ? <p className="text-muted">Rank di bawah Kolonel hanya dapat melihat Military Law aktif tanpa hak ubah.</p> : null}
+        {governance.meetingActive ? <p className="text-muted">Rapat NPC highrank sedang berlangsung ({governance.meetingDay}/{governance.totalMeetingDays} hari) untuk opsi {governance.scheduledPresetId}.</p> : null}
         <div className="grid gap-2 lg:grid-cols-2">
           {presets.map((preset) => (
             <div key={preset.id} className="rounded border border-border/60 bg-bg/70 p-2 space-y-1">
@@ -120,13 +148,15 @@ export default function MilitaryLawPage() {
               <p className="text-muted">{preset.summary}</p>
               <p className="text-muted">Kabinet {preset.rules.cabinetSeatCount} · Batas Chief {preset.rules.chiefOfStaffTermLimitDays} hari · Career {preset.rules.promotionPointMultiplierPct}%</p>
               <p className="text-muted">Post opsional: {preset.rules.optionalPosts.join(' · ')}</p>
-              <button
-                disabled={Boolean(busyPreset)}
-                onClick={() => void voteLaw(preset.id)}
-                className="rounded border border-accent bg-accent/20 px-2 py-1 text-[11px] text-text disabled:opacity-60"
-              >
-                {busyPreset === preset.id ? 'Voting...' : `Vote ${preset.id}`}
-              </button>
+              {governance.canPlayerVote && !governance.meetingActive ? (
+                <button
+                  disabled={Boolean(busyPreset)}
+                  onClick={() => void voteLaw(preset.id)}
+                  className="rounded border border-accent bg-accent/20 px-2 py-1 text-[11px] text-text disabled:opacity-60"
+                >
+                  {busyPreset === preset.id ? 'Voting...' : `Vote ${preset.id}`}
+                </button>
+              ) : null}
             </div>
           ))}
         </div>

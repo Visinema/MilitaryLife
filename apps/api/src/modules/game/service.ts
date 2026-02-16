@@ -136,6 +136,78 @@ function mlcEligibleMembers(state: DbGameStateRow): number {
   return Math.max(5, Math.min(MAX_ACTIVE_NPCS, base + rankFactor));
 }
 
+function isColonelOrHigher(state: DbGameStateRow): boolean {
+  const ranks = BRANCH_CONFIG[state.branch].ranks;
+  const currentRank = (ranks[state.rank_index] ?? '').toLowerCase();
+  return currentRank.includes('colonel') || currentRank.includes('kolonel') || currentRank.includes('general') || state.rank_index >= 9;
+}
+
+function scheduledPresetIdForDay(day: number): MilitaryLawPresetId {
+  return MILITARY_LAW_PRESETS[Math.max(0, day) % MILITARY_LAW_PRESETS.length]?.id ?? 'BALANCED_COMMAND';
+}
+
+function enactMilitaryLawByNpc(state: DbGameStateRow, presetId: MilitaryLawPresetId, nowDay: number): MilitaryLawEntry {
+  const members = mlcEligibleMembers(state);
+  const votesFor = Math.max(Math.ceil(members * 0.65), Math.floor(members / 2) + 1);
+  const votesAgainst = Math.max(0, members - votesFor);
+  const enacted = composeMilitaryLawEntry(state, presetId, votesFor, votesAgainst, `Highrank NPC Council Day-${nowDay}`);
+  state.military_law_current = enacted;
+  state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
+  state.national_stability = clampScore(state.national_stability + (enacted.rules.npcCommandDrift >= 0 ? 2 : -1));
+  state.military_stability = clampScore(state.military_stability + (enacted.rules.npcCommandDrift >= 0 ? 3 : 1));
+  state.promotion_points = Math.max(0, Math.round(state.promotion_points * (enacted.rules.promotionPointMultiplierPct / 100)));
+  return enacted;
+}
+
+function maybeAutoGovernMilitaryLaw(state: DbGameStateRow): void {
+  if (!state.military_law_current) {
+    if (state.current_day >= 3) {
+      enactMilitaryLawByNpc(state, scheduledPresetIdForDay(state.current_day), state.current_day);
+    }
+    return;
+  }
+
+  const activeLaw = state.military_law_current;
+  const npcReviewIntervalDays = Math.max(18, Math.min(45, activeLaw.rules.chiefOfStaffTermLimitDays));
+  if (state.current_day - activeLaw.enactedDay >= npcReviewIntervalDays) {
+    const nextPreset = MILITARY_LAW_PRESETS.find((preset) => preset.id !== activeLaw.presetId)?.id ?? 'BALANCED_COMMAND';
+    enactMilitaryLawByNpc(state, nextPreset, state.current_day);
+  }
+}
+
+function militaryLawCouncilStatus(state: DbGameStateRow): {
+  canPlayerVote: boolean;
+  meetingActive: boolean;
+  meetingDay: number;
+  totalMeetingDays: number;
+  scheduledPresetId: MilitaryLawPresetId | null;
+  note: string;
+} {
+  if (state.military_law_current) {
+    return {
+      canPlayerVote: isColonelOrHigher(state),
+      meetingActive: false,
+      meetingDay: 3,
+      totalMeetingDays: 3,
+      scheduledPresetId: null,
+      note: 'Military Law aktif. Perubahan dapat diajukan melalui voting MLC oleh pejabat minimal Kolonel.'
+    };
+  }
+
+  const meetingDay = Math.min(3, Math.max(1, state.current_day + 1));
+  const scheduledPresetId = scheduledPresetIdForDay(state.current_day);
+  return {
+    canPlayerVote: isColonelOrHigher(state),
+    meetingActive: state.current_day < 3,
+    meetingDay,
+    totalMeetingDays: 3,
+    scheduledPresetId,
+    note: state.current_day < 3
+      ? `Rapat NPC highrank sedang berlangsung (${meetingDay}/3 hari) untuk opsi ${scheduledPresetId}.`
+      : `Rapat NPC highrank telah selesai untuk opsi ${scheduledPresetId}.`
+  };
+}
+
 function composeMilitaryLawEntry(
   state: DbGameStateRow,
   presetId: MilitaryLawPresetId,
@@ -1840,6 +1912,7 @@ export async function getNews(request: FastifyRequest, reply: FastifyReply, filt
 
 export async function getMilitaryLawState(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    maybeAutoGovernMilitaryLaw(state);
     const current = state.military_law_current;
     const logs = state.military_law_logs.slice().reverse().slice(0, 20);
     return {
@@ -1848,6 +1921,7 @@ export async function getMilitaryLawState(request: FastifyRequest, reply: Fastif
         logs,
         presets: MILITARY_LAW_PRESETS,
         mlcEligibleMembers: mlcEligibleMembers(state),
+        governance: militaryLawCouncilStatus(state),
         snapshot: buildSnapshot(state, nowMs)
       }
     };
@@ -1860,23 +1934,31 @@ export async function voteMilitaryLaw(
   payload: { presetId: MilitaryLawPresetId; rationale?: string }
 ): Promise<void> {
   await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
-    const members = mlcEligibleMembers(state);
-    const momentum = state.morale + state.military_stability + Math.max(0, state.rank_index * 3);
-    const supportBase = Math.min(members, Math.max(3, Math.floor((momentum % (members * 2)) / 2) + Math.ceil(members * 0.35)));
-    const votesFor = Math.min(members, supportBase + (state.military_law_current ? 0 : 1));
-    const votesAgainst = Math.max(0, members - votesFor);
-    const approved = votesFor > votesAgainst;
+    maybeAutoGovernMilitaryLaw(state);
 
-    if (!approved) {
+    if (!isColonelOrHigher(state)) {
       return {
-        statusCode: 409,
+        statusCode: 403,
         payload: {
-          error: 'Voting MLC gagal mencapai mayoritas. Rapat perubahan Military Law ditunda.',
+          error: 'Perubahan Military Law hanya dapat diajukan oleh rank Kolonel atau lebih tinggi.',
           snapshot: buildSnapshot(state, nowMs)
         }
       };
     }
 
+    if (!state.military_law_current && state.current_day < 3) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Rapat NPC highrank untuk Military Law awal sedang berlangsung 3 hari. Tunggu hingga rapat selesai.',
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
+    }
+
+    const members = mlcEligibleMembers(state);
+    const votesFor = Math.max(Math.ceil(members * 0.6), Math.floor(members / 2) + 1);
+    const votesAgainst = Math.max(0, members - votesFor);
     const enacted = composeMilitaryLawEntry(state, payload.presetId, votesFor, votesAgainst, state.player_name);
     state.military_law_current = enacted;
     state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
