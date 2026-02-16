@@ -1,5 +1,5 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, MilitaryLawEntry, MilitaryLawPresetId, NewsItem, NewsType } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, MilitaryLawCabinetOptionId, MilitaryLawChiefTermOptionId, MilitaryLawEntry, MilitaryLawOptionalPostOptionId, NewsItem, NewsType } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -9,7 +9,9 @@ export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
 
 
 export type MilitaryLawProposalPayload = {
-  presetId: MilitaryLawPresetId;
+  chiefTermOptionId: MilitaryLawChiefTermOptionId;
+  cabinetOptionId: MilitaryLawCabinetOptionId;
+  optionalPostOptionId: MilitaryLawOptionalPostOptionId;
   rationale?: string;
 };
 
@@ -247,25 +249,22 @@ export const api = {
     return request<{
       current: MilitaryLawEntry | null;
       logs: MilitaryLawEntry[];
-      presets: Array<{
-        id: MilitaryLawPresetId;
-        title: string;
-        summary: string;
-        rules: {
-          cabinetSeatCount: number;
-          chiefOfStaffTermLimitDays: number;
-          optionalPosts: string[];
-          promotionPointMultiplierPct: number;
-          npcCommandDrift: number;
-        };
-      }>;
+      articleOptions: {
+        chiefTerm: Array<{ id: MilitaryLawChiefTermOptionId; label: string; valueDays: number }>;
+        cabinet: Array<{ id: MilitaryLawCabinetOptionId; label: string; seatCount: number }>;
+        optionalPosts: Array<{ id: MilitaryLawOptionalPostOptionId; label: string; posts: string[] }>;
+      };
       mlcEligibleMembers: number;
       governance: {
         canPlayerVote: boolean;
         meetingActive: boolean;
         meetingDay: number;
         totalMeetingDays: number;
-        scheduledPresetId: MilitaryLawPresetId | null;
+        scheduledSelection: {
+          chiefTermOptionId: MilitaryLawChiefTermOptionId;
+          cabinetOptionId: MilitaryLawCabinetOptionId;
+          optionalPostOptionId: MilitaryLawOptionalPostOptionId;
+        } | null;
         note: string;
       };
       snapshot: GameSnapshot;

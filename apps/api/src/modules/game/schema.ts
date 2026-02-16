@@ -78,7 +78,9 @@ export const courtReviewSchema = z.object({
 
 
 export const militaryLawVoteSchema = z.object({
-  presetId: z.enum(['BALANCED_COMMAND', 'EXPEDITIONARY_MANDATE', 'DISCIPLINE_FIRST', 'CIVIL_OVERSIGHT']),
+  chiefTermOptionId: z.enum(['TERM_42', 'TERM_54', 'TERM_60', 'TERM_72', 'TERM_90']),
+  cabinetOptionId: z.enum(['CABINET_5', 'CABINET_6', 'CABINET_7', 'CABINET_8', 'CABINET_9']),
+  optionalPostOptionId: z.enum(['POSTS_MINIMAL', 'POSTS_BALANCED', 'POSTS_EXPEDITIONARY', 'POSTS_OVERSIGHT']),
   rationale: z.string().min(2).max(200).optional()
 });
 

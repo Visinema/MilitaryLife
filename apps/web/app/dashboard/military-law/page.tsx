@@ -2,41 +2,47 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { MilitaryLawEntry, MilitaryLawPresetId } from '@mls/shared/game-types';
+import type {
+  MilitaryLawCabinetOptionId,
+  MilitaryLawChiefTermOptionId,
+  MilitaryLawEntry,
+  MilitaryLawOptionalPostOptionId
+} from '@mls/shared/game-types';
 import { api, ApiError } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
+
+type LawSelection = {
+  chiefTermOptionId: MilitaryLawChiefTermOptionId;
+  cabinetOptionId: MilitaryLawCabinetOptionId;
+  optionalPostOptionId: MilitaryLawOptionalPostOptionId;
+};
 
 type GovernanceState = {
   canPlayerVote: boolean;
   meetingActive: boolean;
   meetingDay: number;
   totalMeetingDays: number;
-  scheduledPresetId: MilitaryLawPresetId | null;
+  scheduledSelection: LawSelection | null;
   note: string;
 };
 
-type LawArticle = {
-  key: string;
-  title: string;
-  summary: string;
-  value: string;
+type LawArticleOptions = {
+  chiefTerm: Array<{ id: MilitaryLawChiefTermOptionId; label: string; valueDays: number }>;
+  cabinet: Array<{ id: MilitaryLawCabinetOptionId; label: string; seatCount: number }>;
+  optionalPosts: Array<{ id: MilitaryLawOptionalPostOptionId; label: string; posts: string[] }>;
 };
 
-function ArticlePanel({ article, defaultOpen = false }: { article: LawArticle; defaultOpen?: boolean }) {
-  return (
-    <details
-      open={defaultOpen}
-      className="rounded border border-border/60 bg-bg/70 p-2"
-    >
-      <summary className="cursor-pointer select-none text-[11px] font-semibold text-text">
-        {article.title}
-      </summary>
-      <div className="mt-2 rounded border border-border/50 bg-panel px-2 py-1">
-        <p className="text-muted">{article.summary}</p>
-        <p className="text-text">{article.value}</p>
-      </div>
-    </details>
-  );
+const DEFAULT_SELECTION: LawSelection = {
+  chiefTermOptionId: 'TERM_60',
+  cabinetOptionId: 'CABINET_6',
+  optionalPostOptionId: 'POSTS_BALANCED'
+};
+
+function fallbackSelectionFromLaw(law: MilitaryLawEntry | null): LawSelection {
+  if (law?.articleSelection) {
+    return law.articleSelection as LawSelection;
+  }
+  return DEFAULT_SELECTION;
 }
 
 export default function MilitaryLawPage() {
@@ -44,25 +50,17 @@ export default function MilitaryLawPage() {
   const setSnapshot = useGameStore((s) => s.setSnapshot);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [busyPreset, setBusyPreset] = useState<MilitaryLawPresetId | null>(null);
+  const [busyArticle, setBusyArticle] = useState<'chief' | 'cabinet' | 'posts' | null>(null);
+
   const [data, setData] = useState<{
     current: MilitaryLawEntry | null;
     logs: MilitaryLawEntry[];
-    presets: Array<{
-      id: MilitaryLawPresetId;
-      title: string;
-      summary: string;
-      rules: {
-        cabinetSeatCount: number;
-        chiefOfStaffTermLimitDays: number;
-        optionalPosts: string[];
-        promotionPointMultiplierPct: number;
-        npcCommandDrift: number;
-      };
-    }>;
+    articleOptions: LawArticleOptions;
     mlcEligibleMembers: number;
     governance: GovernanceState;
   } | null>(null);
+
+  const [selection, setSelection] = useState<LawSelection>(DEFAULT_SELECTION);
 
   useEffect(() => {
     api.militaryLaw()
@@ -70,10 +68,11 @@ export default function MilitaryLawPage() {
         setData({
           current: res.current,
           logs: res.logs,
-          presets: res.presets,
+          articleOptions: res.articleOptions,
           mlcEligibleMembers: res.mlcEligibleMembers,
           governance: res.governance
         });
+        setSelection(fallbackSelectionFromLaw(res.current));
         setSnapshot(res.snapshot);
       })
       .catch((err) => setMessage(err instanceof Error ? err.message : 'Gagal muat Military Law'))
@@ -82,72 +81,52 @@ export default function MilitaryLawPage() {
 
   const current = data?.current ?? snapshot?.militaryLawCurrent ?? null;
   const logs = data?.logs ?? snapshot?.militaryLawLogs ?? [];
-  const presets = data?.presets ?? [];
+  const articleOptions = data?.articleOptions ?? { chiefTerm: [], cabinet: [], optionalPosts: [] };
   const lmcMembers = data?.mlcEligibleMembers ?? snapshot?.mlcEligibleMembers ?? 0;
   const governance = data?.governance ?? {
     canPlayerVote: false,
     meetingActive: false,
     meetingDay: 0,
     totalMeetingDays: 3,
-    scheduledPresetId: null,
+    scheduledSelection: null,
     note: ''
   };
 
-  const currentArticles = useMemo<LawArticle[]>(() => {
-    if (!current) return [];
-    return [
-      {
-        key: 'chief-term',
-        title: 'Pasal 1: Batas Masa Jabatan Chief',
-        summary: 'Mengatur panjang masa jabatan Chief of Staff sebelum evaluasi ulang.',
-        value: `${current.rules.chiefOfStaffTermLimitDays} hari`
-      },
-      {
-        key: 'cabinet-seat',
-        title: 'Pasal 2: Formasi Kabinet',
-        summary: 'Menentukan jumlah kursi kabinet yang aktif pada struktur komando.',
-        value: `${current.rules.cabinetSeatCount} kursi kabinet`
-      },
-      {
-        key: 'optional-posts',
-        title: 'Pasal 3: Jabatan Opsional',
-        summary: 'Jabatan tambahan yang diaktifkan oleh Military Law berjalan.',
-        value: current.rules.optionalPosts.length ? current.rules.optionalPosts.join(' · ') : 'Tidak ada jabatan tambahan'
-      }
-    ];
+  const canEdit = governance.canPlayerVote && !governance.meetingActive;
+
+  const currentSummary = useMemo(() => {
+    if (!current) return null;
+    return {
+      chief: `${current.rules.chiefOfStaffTermLimitDays} hari`,
+      cabinet: `${current.rules.cabinetSeatCount} kursi`,
+      posts: current.rules.optionalPosts.length ? current.rules.optionalPosts.join(' · ') : 'Tidak ada jabatan tambahan'
+    };
   }, [current]);
 
-  const voteLaw = async (presetId: MilitaryLawPresetId) => {
-    setBusyPreset(presetId);
+  const submitLaw = async (article: 'chief' | 'cabinet' | 'posts') => {
+    setBusyArticle(article);
     setMessage('');
     try {
-      const res = await api.militaryLawVote({ presetId, rationale: `LMC emergency session for ${presetId}` });
+      const res = await api.militaryLawVote({
+        chiefTermOptionId: selection.chiefTermOptionId,
+        cabinetOptionId: selection.cabinetOptionId,
+        optionalPostOptionId: selection.optionalPostOptionId,
+        rationale: `Update pasal ${article}`
+      });
+
       setSnapshot(res.snapshot);
       setData((prev) => {
         const nextCurrent = res.snapshot.militaryLawCurrent;
         const nextLogs = res.snapshot.militaryLawLogs;
         return prev
           ? { ...prev, current: nextCurrent, logs: nextLogs, mlcEligibleMembers: res.snapshot.mlcEligibleMembers }
-          : {
-              current: nextCurrent,
-              logs: nextLogs,
-              presets: [],
-              mlcEligibleMembers: res.snapshot.mlcEligibleMembers,
-              governance: {
-                canPlayerVote: true,
-                meetingActive: false,
-                meetingDay: 3,
-                totalMeetingDays: 3,
-                scheduledPresetId: null,
-                note: 'Military Law aktif.'
-              }
-            };
+          : null;
       });
-      setMessage(`Military Law v${res.snapshot.militaryLawCurrent?.version ?? '-'} disahkan melalui voting Dewan LMC.`);
+      setMessage(`Perubahan pasal ${article} berhasil diterapkan ke Military Law v${res.snapshot.militaryLawCurrent?.version ?? '-'}.`);
     } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : 'Voting LMC gagal');
+      setMessage(err instanceof ApiError ? err.message : 'Perubahan Military Law gagal');
     } finally {
-      setBusyPreset(null);
+      setBusyArticle(null);
     }
   };
 
@@ -167,74 +146,92 @@ export default function MilitaryLawPage() {
 
       <section className="cyber-panel p-3 space-y-2">
         <h2 className="text-[12px] font-semibold text-text">Military Law Aktif</h2>
-        {!current ? (
+        {!current || !currentSummary ? (
           <p className="text-muted">Belum ada Military Law yang disahkan. Rapat NPC highrank akan menetapkan hukum pertama dalam 3 hari.</p>
         ) : (
-          <div className="rounded border border-border/60 bg-bg/70 p-2 space-y-2">
+          <div className="rounded border border-border/60 bg-bg/70 p-2 space-y-1">
             <p className="text-text font-semibold">v{current.version} · {current.title}</p>
             <p className="text-muted">{current.summary}</p>
-            <p className="text-muted">Disahkan hari {current.enactedDay} · Voting {current.votesFor}:{current.votesAgainst} dari {current.councilMembers} suara.</p>
-            <div className="space-y-2">
-              {currentArticles.map((article, idx) => (
-                <ArticlePanel key={article.key} article={article} defaultOpen={idx === 0} />
-              ))}
-            </div>
+            <p className="text-muted">Pasal 1: {currentSummary.chief}</p>
+            <p className="text-muted">Pasal 2: {currentSummary.cabinet}</p>
+            <p className="text-muted">Pasal 3: {currentSummary.posts}</p>
           </div>
         )}
       </section>
 
       <section className="cyber-panel p-3 space-y-2">
-        <h2 className="text-[12px] font-semibold text-text">Rapat Voting LMC (Preset Hukum)</h2>
+        <h2 className="text-[12px] font-semibold text-text">Kustomisasi Per Pasal</h2>
         {!governance.canPlayerVote ? <p className="text-muted">Rank di bawah Major hanya dapat melihat Military Law aktif tanpa hak ubah.</p> : null}
-        {governance.meetingActive ? <p className="text-muted">Rapat NPC highrank sedang berlangsung ({governance.meetingDay}/{governance.totalMeetingDays} hari) untuk opsi {governance.scheduledPresetId}.</p> : null}
-        <div className="grid gap-2 lg:grid-cols-2">
-          {presets.map((preset) => {
-            const presetArticles: LawArticle[] = [
-              {
-                key: `${preset.id}-chief-term`,
-                title: 'Pasal 1: Batas Masa Jabatan Chief',
-                summary: 'Batas masa jabatan Chief of Staff untuk preset ini.',
-                value: `${preset.rules.chiefOfStaffTermLimitDays} hari`
-              },
-              {
-                key: `${preset.id}-cabinet-seat`,
-                title: 'Pasal 2: Formasi Kabinet',
-                summary: 'Jumlah kursi kabinet yang berlaku pada preset ini.',
-                value: `${preset.rules.cabinetSeatCount} kursi kabinet`
-              },
-              {
-                key: `${preset.id}-optional-posts`,
-                title: 'Pasal 3: Jabatan Opsional',
-                summary: 'Daftar jabatan opsional yang aktif pada preset ini.',
-                value: preset.rules.optionalPosts.length ? preset.rules.optionalPosts.join(' · ') : 'Tidak ada jabatan tambahan'
-              }
-            ];
+        {governance.meetingActive ? <p className="text-muted">Rapat NPC highrank sedang berlangsung ({governance.meetingDay}/{governance.totalMeetingDays} hari).</p> : null}
 
-            return (
-              <div key={preset.id} className="rounded border border-border/60 bg-bg/70 p-2 space-y-2">
-                <p className="text-text font-semibold">{preset.title}</p>
-                <p className="text-muted">{preset.summary}</p>
-                <p className="text-muted">Career {preset.rules.promotionPointMultiplierPct}% · NPC Drift {preset.rules.npcCommandDrift >= 0 ? '+' : ''}{preset.rules.npcCommandDrift}</p>
+        <details className="rounded border border-border/60 bg-bg/70 p-2" open>
+          <summary className="cursor-pointer font-semibold text-text">Pasal 1: Batas Masa Jabatan Chief</summary>
+          <div className="mt-2 space-y-1">
+            {articleOptions.chiefTerm.map((option) => (
+              <label key={option.id} className="flex items-center gap-2 rounded border border-border/40 bg-panel px-2 py-1 text-muted">
+                <input
+                  type="radio"
+                  name="chiefTerm"
+                  checked={selection.chiefTermOptionId === option.id}
+                  onChange={() => setSelection((prev) => ({ ...prev, chiefTermOptionId: option.id }))}
+                />
+                <span>{option.label} ({option.valueDays} hari)</span>
+              </label>
+            ))}
+            {canEdit ? (
+              <button onClick={() => void submitLaw('chief')} disabled={busyArticle !== null} className="rounded border border-accent bg-accent/20 px-2 py-1 text-text disabled:opacity-60">
+                {busyArticle === 'chief' ? 'Menyimpan...' : 'Terapkan perubahan Pasal 1'}
+              </button>
+            ) : null}
+          </div>
+        </details>
 
-                <div className="space-y-2">
-                  {presetArticles.map((article) => (
-                    <ArticlePanel key={article.key} article={article} />
-                  ))}
+        <details className="rounded border border-border/60 bg-bg/70 p-2">
+          <summary className="cursor-pointer font-semibold text-text">Pasal 2: Formasi Kabinet</summary>
+          <div className="mt-2 space-y-1">
+            {articleOptions.cabinet.map((option) => (
+              <label key={option.id} className="flex items-center gap-2 rounded border border-border/40 bg-panel px-2 py-1 text-muted">
+                <input
+                  type="radio"
+                  name="cabinet"
+                  checked={selection.cabinetOptionId === option.id}
+                  onChange={() => setSelection((prev) => ({ ...prev, cabinetOptionId: option.id }))}
+                />
+                <span>{option.label} ({option.seatCount} kursi)</span>
+              </label>
+            ))}
+            {canEdit ? (
+              <button onClick={() => void submitLaw('cabinet')} disabled={busyArticle !== null} className="rounded border border-accent bg-accent/20 px-2 py-1 text-text disabled:opacity-60">
+                {busyArticle === 'cabinet' ? 'Menyimpan...' : 'Terapkan perubahan Pasal 2'}
+              </button>
+            ) : null}
+          </div>
+        </details>
+
+        <details className="rounded border border-border/60 bg-bg/70 p-2">
+          <summary className="cursor-pointer font-semibold text-text">Pasal 3: Jabatan Opsional</summary>
+          <div className="mt-2 space-y-1">
+            {articleOptions.optionalPosts.map((option) => (
+              <label key={option.id} className="rounded border border-border/40 bg-panel px-2 py-1 text-muted block">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="optionalPosts"
+                    checked={selection.optionalPostOptionId === option.id}
+                    onChange={() => setSelection((prev) => ({ ...prev, optionalPostOptionId: option.id }))}
+                  />
+                  <span>{option.label}</span>
                 </div>
-
-                {governance.canPlayerVote && !governance.meetingActive ? (
-                  <button
-                    disabled={Boolean(busyPreset)}
-                    onClick={() => void voteLaw(preset.id)}
-                    className="rounded border border-accent bg-accent/20 px-2 py-1 text-[11px] text-text disabled:opacity-60"
-                  >
-                    {busyPreset === preset.id ? 'Voting...' : `Vote ${preset.id}`}
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
+                <p className="pl-5 text-[11px]">{option.posts.join(' · ')}</p>
+              </label>
+            ))}
+            {canEdit ? (
+              <button onClick={() => void submitLaw('posts')} disabled={busyArticle !== null} className="rounded border border-accent bg-accent/20 px-2 py-1 text-text disabled:opacity-60">
+                {busyArticle === 'posts' ? 'Menyimpan...' : 'Terapkan perubahan Pasal 3'}
+              </button>
+            ) : null}
+          </div>
+        </details>
       </section>
 
       <section className="cyber-panel p-3 space-y-2">

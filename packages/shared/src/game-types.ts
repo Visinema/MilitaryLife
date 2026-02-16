@@ -68,6 +68,17 @@ export interface RaiderCasualty {
 
 export type MilitaryLawPresetId = 'BALANCED_COMMAND' | 'EXPEDITIONARY_MANDATE' | 'DISCIPLINE_FIRST' | 'CIVIL_OVERSIGHT';
 
+
+export type MilitaryLawChiefTermOptionId = 'TERM_42' | 'TERM_54' | 'TERM_60' | 'TERM_72' | 'TERM_90';
+export type MilitaryLawCabinetOptionId = 'CABINET_5' | 'CABINET_6' | 'CABINET_7' | 'CABINET_8' | 'CABINET_9';
+export type MilitaryLawOptionalPostOptionId = 'POSTS_MINIMAL' | 'POSTS_BALANCED' | 'POSTS_EXPEDITIONARY' | 'POSTS_OVERSIGHT';
+
+export interface MilitaryLawArticleSelection {
+  chiefTermOptionId: MilitaryLawChiefTermOptionId;
+  cabinetOptionId: MilitaryLawCabinetOptionId;
+  optionalPostOptionId: MilitaryLawOptionalPostOptionId;
+}
+
 export interface MilitaryLawRuleSet {
   cabinetSeatCount: number;
   chiefOfStaffTermLimitDays: number;
@@ -78,7 +89,7 @@ export interface MilitaryLawRuleSet {
 
 export interface MilitaryLawEntry {
   version: number;
-  presetId: MilitaryLawPresetId;
+  presetId: MilitaryLawPresetId | 'CUSTOM';
   title: string;
   summary: string;
   enactedDay: number;
@@ -86,6 +97,7 @@ export interface MilitaryLawEntry {
   votesAgainst: number;
   councilMembers: number;
   initiatedBy: string;
+  articleSelection?: MilitaryLawArticleSelection;
   rules: MilitaryLawRuleSet;
 }
 
