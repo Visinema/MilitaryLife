@@ -64,10 +64,12 @@ export function PausedRouteGuard() {
             try {
               const refreshed = await api.snapshot();
               setSnapshot(refreshed.snapshot);
-              if (refreshed.snapshot.ceremonyDue) {
+              if (!refreshed.snapshot.paused) {
+                setError(null);
+              } else if (refreshed.snapshot.ceremonyDue) {
                 setError('Upacara wajib aktif. Selesaikan upacara sebelum melanjutkan game.');
               } else {
-                setError('Pause token berubah karena sinkronisasi sesi. Snapshot telah diperbarui.');
+                setError(null);
               }
             } catch (snapshotErr) {
               setError(snapshotErr instanceof Error ? snapshotErr.message : 'Gagal sinkronisasi snapshot setelah konflik resume.');

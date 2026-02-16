@@ -617,6 +617,18 @@ export async function resumeGame(request: FastifyRequest, reply: FastifyReply, p
     }
 
     if (!state.pause_token || state.pause_token !== pauseToken) {
+      const canBypassTokenForModal = state.pause_reason === 'MODAL' && !ceremonyPending(state);
+      if (canBypassTokenForModal) {
+        resumeState(state, nowMs);
+        synchronizeProgress(state, nowMs);
+        return {
+          payload: {
+            snapshot: buildSnapshot(state, nowMs),
+            warning: 'Pause token mismatch auto-recovered for modal pause'
+          }
+        };
+      }
+
       return {
         payload: {
           error: 'Invalid pause token',

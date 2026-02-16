@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 const PLANNING_CHECKLIST = [
@@ -149,17 +149,48 @@ function DeploymentPageContent() {
   };
 
   const acknowledgeMissionResult = async () => {
-    if (!snapshot?.paused || !snapshot.pauseToken) {
+    const latest = await api.snapshot().catch(() => null);
+    const currentSnapshot = latest?.snapshot ?? snapshot;
+
+    if (!currentSnapshot?.paused || !currentSnapshot.pauseToken) {
       router.replace('/dashboard');
+      return;
+    }
+
+    if (currentSnapshot.ceremonyDue) {
+      router.replace('/dashboard/ceremony?forced=1');
       return;
     }
 
     setResultAckBusy(true);
     try {
-      const resumed = await api.resume(snapshot.pauseToken);
+      const resumed = await api.resume(currentSnapshot.pauseToken);
       setSnapshot(resumed.snapshot);
       router.replace('/dashboard');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        try {
+          const refreshed = await api.snapshot();
+          setSnapshot(refreshed.snapshot);
+          if (!refreshed.snapshot.paused) {
+            router.replace('/dashboard');
+            return;
+          }
+          if (refreshed.snapshot.ceremonyDue) {
+            router.replace('/dashboard/ceremony?forced=1');
+            return;
+          }
+          if (refreshed.snapshot.pauseToken) {
+            const resumed = await api.resume(refreshed.snapshot.pauseToken);
+            setSnapshot(resumed.snapshot);
+            router.replace('/dashboard');
+            return;
+          }
+        } catch (retryErr) {
+          setMessage(retryErr instanceof Error ? retryErr.message : 'Gagal recovery resume setelah konflik token.');
+          return;
+        }
+      }
       setMessage(err instanceof Error ? err.message : 'Gagal unpause setelah hasil misi.');
     } finally {
       setResultAckBusy(false);
