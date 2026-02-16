@@ -1,6 +1,9 @@
 {
   "name": "military-career-life-simulator",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "packageManager": "pnpm@9.12.2",
   "scripts": {
     "dev:web": "corepack pnpm --filter @mls/web dev",

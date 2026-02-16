@@ -267,6 +267,7 @@ If startup logs show `ECONNREFUSED ::1:5432`, your API is using local DB config 
 If browser console shows `GET /api/v1/game/snapshot 404` or `POST /api/v1/profile/create 404`:
 
 1. Verify `BACKEND_ORIGIN` in Vercel points to Railway API domain (for example `https://<service>.up.railway.app`).
+   - Build frontend sekarang sengaja gagal jika `BACKEND_ORIGIN` kosong pada deploy Vercel (preview/production), untuk mencegah runtime 404 di `/api/v1/*`.
 2. Open `https://<vercel-domain>/api/v1/health` directly:
    - `200/503` means proxy is working and issue is on API/runtime side.
    - `404` means Vercel proxy is not configured/deployed correctly.

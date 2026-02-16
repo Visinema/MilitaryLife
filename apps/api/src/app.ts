@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { env } from './config/env.js';
 import { dbPlugin } from './plugins/db.js';
@@ -20,6 +20,24 @@ function parseCorsOrigins(raw: string): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+function assertCriticalV51Routes(app: FastifyInstance): void {
+  const requiredRoutes = [
+    { method: 'GET', url: '/api/v1/game/v5/expansion/state' },
+    { method: 'POST', url: '/api/v1/game/v5/academy/batch/start' },
+    { method: 'GET', url: '/api/v1/game/v5/academy/batch/current' },
+    { method: 'POST', url: '/api/v1/game/v5/academy/batch/submit-day' },
+    { method: 'POST', url: '/api/v1/game/v5/academy/batch/graduate' },
+    { method: 'GET', url: '/api/v1/game/v5/recruitment/board' },
+    { method: 'POST', url: '/api/v1/game/v5/recruitment/apply' }
+  ] as const;
+
+  for (const route of requiredRoutes) {
+    if (!app.hasRoute(route)) {
+      throw new Error(`Critical route missing: ${route.method} ${route.url}`);
+    }
+  }
 }
 
 export async function buildApp() {
@@ -80,6 +98,7 @@ export async function buildApp() {
   await app.register(gameV5Routes, { prefix: '/api/v1/game/v5' });
   await app.register(eventsRoutes, { prefix: '/api/v1/events' });
   await app.register(metaRoutes, { prefix: '/api/v1/meta' });
+  assertCriticalV51Routes(app);
   registerV5TickScheduler(app);
 
   let healthCache:

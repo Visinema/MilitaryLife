@@ -127,6 +127,15 @@ function resolveAutoVersion() {
   return `${baseVersion}.${Math.floor(Date.now() / 1000)}`;
 }
 
+const backendForRewrite = normalizeBackendOrigin(process.env.BACKEND_ORIGIN);
+const vercelEnv = process.env.VERCEL_ENV?.trim();
+const runningOnVercel = process.env.VERCEL === '1' || Boolean(vercelEnv);
+const shouldRequireBackendOrigin = runningOnVercel && (vercelEnv === 'production' || vercelEnv === 'preview');
+
+if (shouldRequireBackendOrigin && !backendForRewrite) {
+  throw new Error('BACKEND_ORIGIN is required for Vercel deployments. This prevents runtime 404 on /api/v1/* rewrites.');
+}
+
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -134,15 +143,14 @@ const nextConfig = {
     NEXT_PUBLIC_APP_VERSION: resolveAutoVersion()
   },
   async rewrites() {
-    const backend = normalizeBackendOrigin(process.env.BACKEND_ORIGIN);
-    if (!backend) {
+    if (!backendForRewrite) {
       return [];
     }
 
     return [
       {
         source: '/api/:path*',
-        destination: `${backend}/api/:path*`
+        destination: `${backendForRewrite}/api/:path*`
       }
     ];
   }

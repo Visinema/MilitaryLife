@@ -96,6 +96,7 @@ export function DashboardShell() {
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
   const lastLiveMissionCheckDayRef = useRef<number>(-1);
   const snapshotLoadInFlightRef = useRef(false);
+  const expansionEndpointErrorShownRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotLoadInFlightRef.current) {
@@ -118,8 +119,20 @@ export function DashboardShell() {
       setSnapshot(snapshotResult.value.snapshot);
       if (expansionResult.status === 'fulfilled') {
         setExpansionState(expansionResult.value.state);
+        expansionEndpointErrorShownRef.current = false;
       } else {
         setExpansionState(null);
+        if (!expansionEndpointErrorShownRef.current) {
+          const reason = expansionResult.reason;
+          if (reason instanceof ApiError && reason.status === 404) {
+            setError('Backend API v5.1 belum tersedia (endpoint /game/v5/* mengembalikan 404). Deploy backend terbaru terlebih dahulu.');
+          } else if (reason instanceof Error) {
+            setError(`Expansion state v5.1 gagal dimuat: ${reason.message}`);
+          } else {
+            setError('Expansion state v5.1 gagal dimuat karena error tidak dikenal.');
+          }
+          expansionEndpointErrorShownRef.current = true;
+        }
       }
       hasInitialSnapshotRef.current = true;
       setNoProfile(false);
@@ -130,6 +143,11 @@ export function DashboardShell() {
           return;
         }
         if (err.status === 404) {
+          if (err.message === 'Request failed') {
+            setNoProfile(false);
+            setError('Endpoint backend /game/snapshot tidak ditemukan (404). Periksa BACKEND_ORIGIN/rewrite dan deploy API backend.');
+            return;
+          }
           setNoProfile(true);
           setError(null);
           setLoading(false);

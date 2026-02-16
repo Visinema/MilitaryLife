@@ -1,0 +1,17 @@
+.git
+.gitignore
+.vercel
+.railway
+.nixpacks
+node_modules
+.pnpm-store
+apps/*/node_modules
+packages/*/node_modules
+apps/web/.next
+apps/web/out
+apps/api/dist
+coverage
+*.log
+.env
+.env.local
+.env.*.local

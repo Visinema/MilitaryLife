@@ -128,7 +128,15 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown, opti
   const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: unknown } & T;
 
   if (!response.ok) {
-    throw new ApiError(response.status, payload.error ?? 'Request failed', payload.details ?? payload);
+    const defaultMessage = payload.error ?? 'Request failed';
+    if (response.status === 404 && path.startsWith('/game/v5/')) {
+      throw new ApiError(
+        response.status,
+        `Endpoint backend belum tersedia: ${path}. Pastikan API backend versi terbaru sudah terdeploy.`,
+        payload.details ?? payload
+      );
+    }
+    throw new ApiError(response.status, defaultMessage, payload.details ?? payload);
   }
 
   return payload as T;

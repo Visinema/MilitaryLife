@@ -1,6 +1,6 @@
-﻿[build]
+[build]
 builder = "NIXPACKS"
-buildCommand = "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm run build:api"
+buildCommand = "corepack enable && corepack pnpm run build:api"
 
 [deploy]
 startCommand = "node apps/api/dist/server.js"
