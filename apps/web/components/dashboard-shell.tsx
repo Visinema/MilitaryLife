@@ -91,6 +91,7 @@ export function DashboardShell() {
   const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
   const [v5InventoryCertificates, setV5InventoryCertificates] = useState<AcademyCertificate[]>([]);
   const [snapshotHydrated, setSnapshotHydrated] = useState(false);
+  const [suppressForcedCeremonyRedirect, setSuppressForcedCeremonyRedirect] = useState(false);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
@@ -432,12 +433,33 @@ export function DashboardShell() {
     return () => window.removeEventListener('load', onLoad);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setSuppressForcedCeremonyRedirect(params.has('ceremonyDone'));
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!suppressForcedCeremonyRedirect) return;
+    let active = true;
+
+    void loadSnapshot({ force: true }).finally(() => {
+      if (!active) return;
+      setSuppressForcedCeremonyRedirect(false);
+      router.replace('/dashboard');
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [loadSnapshot, router, suppressForcedCeremonyRedirect]);
 
   useEffect(() => {
     if (!snapshot) return;
     if (!snapshotHydrated) return;
     if (resetBusy) return;
     if (!pageReady) return;
+    if (suppressForcedCeremonyRedirect) return;
     if (typeof window === 'undefined') return;
     if (document.visibilityState !== 'visible') return;
 
@@ -478,7 +500,7 @@ export function DashboardShell() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [clockOffsetMs, pageReady, pathname, resetBusy, router, setError, setSnapshot, snapshot, snapshotHydrated]);
+  }, [clockOffsetMs, pageReady, pathname, resetBusy, router, setError, setSnapshot, snapshot, snapshotHydrated, suppressForcedCeremonyRedirect]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -523,6 +545,7 @@ export function DashboardShell() {
     if (!snapshotHydrated) return;
     if (resetBusy) return;
     if (!pageReady) return;
+    if (suppressForcedCeremonyRedirect) return;
     if (typeof window === 'undefined') return;
     if (document.visibilityState !== 'visible') return;
 
@@ -538,7 +561,7 @@ export function DashboardShell() {
         ceremonyRedirectFrameRef.current = null;
       }
     };
-  }, [pageReady, pathname, resetBusy, router, snapshot?.ceremonyDue, snapshot?.gameDay, snapshotHydrated]);
+  }, [pageReady, pathname, resetBusy, router, snapshot?.ceremonyDue, snapshot?.gameDay, snapshotHydrated, suppressForcedCeremonyRedirect]);
 
   const safeCertificates = useMemo(
     () =>

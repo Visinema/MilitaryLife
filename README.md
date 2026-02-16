@@ -137,20 +137,26 @@ Mailbox & social:
 - `POST /mailbox/:messageId/read`
 - `GET /social/timeline`
 
-Legacy compatibility (tetap hidup sementara):
-- Endpoint `game`/`game v3` lama tetap tersedia sebagai compatibility layer.
-- Route legacy kritikal (termasuk `POST /game/actions/mission-call-response`) dipertahankan sementara untuk mencegah 404 dari frontend bundle lama/cached.
-- Endpoint lama ditandai deprecated bertahap; state utama ada di jalur `game-v5`.
-- Endpoint legacy yang mulai ditinggalkan untuk dashboard utama:
-  - `GET /game/news` -> gunakan `GET /game/v5/social/timeline`
-  - `GET /game/ceremony` dan `POST /game/actions/ceremony-complete` -> gunakan jalur `game/v5/ceremony/*`
-  - `POST /game/actions/raider-defense` -> status raider otomatis via tick + `game/v5/expansion/state`
-  - `POST /game/actions/v3-mission` -> gunakan `POST /game/v5/dom/sessions/:sessionId/execute`
-  - `POST /game/actions/mission-call-response` -> gunakan `POST /game/v5/dom/sessions/:sessionId/join`
-  - `POST /game/actions/mission-plan` -> gunakan `POST /game/v5/missions/plan` atau jalur DOM
-  - `POST /game/actions/court-review` -> gunakan `POST /game/v5/court/cases/:caseId/verdict`
-  - `GET /game/military-law` dan `POST /game/actions/military-law-vote` -> gunakan `GET /game/v5/councils` + `POST /game/v5/councils/:councilId/vote`
-  - `GET /game/v3/medals` -> gunakan `GET /game/v5/dom/cycle/current`, `GET /game/v5/ceremony/current`, dan `GET /game/v5/expansion/state`
+Legacy compatibility (state saat ini):
+- Endpoint legacy yang masih dipertahankan hanya yang masih dipakai dashboard aktif (`/game/snapshot`, `/game/pause`, `/game/resume`, action legacy inti).
+- Endpoint dormant/compat yang sudah dipensiunkan (retired) agar tidak mengambang:
+  - `POST /game/actions/deployment`
+  - `POST /game/actions/ceremony-complete`
+  - `POST /game/actions/raider-defense`
+  - `POST /game/actions/recruitment-apply`
+  - `GET /game/config`
+  - `GET /game/ceremony`
+  - `GET /game/subpage-snapshot`
+  - `GET /game/news`
+  - `GET /game/v3/medals`
+  - `GET /game/military-law`
+  - `POST /game/actions/military-law-vote`
+  - `POST /game/actions/v3-mission`
+  - `POST /game/actions/mission-call-response`
+  - `POST /game/actions/mission-plan`
+  - `POST /game/actions/appoint-secretary`
+  - `POST /game/actions/court-review`
+  - `GET /game/npc-activity`
 
 ## 7. Migration & Compatibility
 

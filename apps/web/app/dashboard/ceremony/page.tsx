@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import type { CeremonyCycleV5, DomOperationCycle, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
@@ -23,6 +23,8 @@ function extractSessionMedalQuota(cycle: DomOperationCycle | null): number {
 
 export default function CeremonyPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const forcedAccess = searchParams.get('forced') === '1';
   const [data, setData] = useState<CeremonyViewState>({
     ceremony: null,
     domCycle: null,
@@ -57,13 +59,33 @@ export default function CeremonyPage() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!forcedAccess) return;
+    if (loading) return;
+    if (data.ceremony?.status === 'PENDING') return;
+
+    const timer = window.setTimeout(() => {
+      router.replace('/dashboard');
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [data.ceremony?.status, forcedAccess, loading, router]);
+
   const completeCeremony = async () => {
     if (!data.ceremony || data.ceremony.status !== 'PENDING') return;
     setBusy(true);
     setError(null);
     try {
       await api.v5CeremonyComplete();
-      router.replace('/dashboard');
+      const refreshed = await api.snapshot();
+      if (refreshed.snapshot.ceremonyDue) {
+        setError('Status upacara masih terbaca pending. Refresh halaman lalu coba lagi agar sinkron dengan snapshot terbaru.');
+        return;
+      }
+      const completedDay = refreshed.snapshot.ceremonyCompletedDay ?? refreshed.snapshot.gameDay;
+      router.replace(`/dashboard?ceremonyDone=${completedDay}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara.');
     } finally {

@@ -5,7 +5,6 @@ import type {
   AcademyBatchState,
   ActionResult,
   CeremonyCycleV5,
-  CeremonyReport,
   CertificationRecordV5,
   CommandChainOrder,
   CouncilState,
@@ -18,8 +17,6 @@ import type {
   GameSnapshotV5,
   MailboxMessage,
   MissionInstanceV5,
-  NewsItem,
-  NewsType,
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
@@ -735,9 +732,6 @@ export const api = {
   training(intensity: 'LOW' | 'MEDIUM' | 'HIGH') {
     return request<ActionResult>('/game/actions/training', 'POST', { intensity });
   },
-  deployment(missionType: 'PATROL' | 'SUPPORT', missionDurationDays = 2) {
-    return request<ActionResult>('/game/actions/deployment', 'POST', { missionType, missionDurationDays });
-  },
   careerReview() {
     return request<ActionResult>('/game/actions/career-review', 'POST', {});
   },
@@ -777,45 +771,8 @@ export const api = {
       nextCursor: number | null;
     }>(`/game/decision-logs?${query.toString()}`, 'GET');
   },
-  config() {
-    return request<{ branches: Record<string, unknown>; generatedAt: number }>('/game/config', 'GET', undefined, { cache: 'force-cache' });
-  },
-  ceremony() {
-    return request<{ ceremony: CeremonyReport }>('/game/ceremony', 'GET');
-  },
-  ceremonyComplete() {
-    return request<{ ok: boolean; awardedToPlayer?: boolean; snapshot: GameSnapshot; alreadyCompleted?: boolean }>('/game/actions/ceremony-complete', 'POST', {});
-  },
-  raiderDefense() {
-    return request<ActionResult>('/game/actions/raider-defense', 'POST', {});
-  },
-
-  recruitmentApply(payload: { trackId: string; answers: Record<string, string> }) {
-    return request<ActionResult>('/game/actions/recruitment-apply', 'POST', payload);
-  },
-  news(type?: NewsType) {
-    const query = type ? `?type=${type}` : '';
-    return request<{ items: NewsItem[]; generatedAt: number; rangeDays: number; filter: NewsType | null; snapshot: GameSnapshot }>(`/game/news${query}`, 'GET');
-  },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
-  },
-
-  npcActivity() {
-    return request<{
-      generatedAt: number;
-      items: Array<{
-        npcId: string;
-        lastTickDay: number;
-        operation: string;
-        result: string;
-        readiness: number;
-        morale: number;
-        rankInfluence: number;
-        promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED';
-        notificationLetter: string | null;
-      }>;
-    }>('/game/npc-activity', 'GET');
   }
 };
 

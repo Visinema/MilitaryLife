@@ -109,18 +109,37 @@ export default function PeoplePage() {
   useEffect(() => {
     const loadActivity = () => {
       api
-        .npcActivity()
+        .v5Npcs({ limit: 120 })
         .then((response) => {
           setNpcActivity(
             response.items.reduce<Record<string, { result: string; readiness: number; morale: number; rankInfluence: number; promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED'; notificationLetter: string | null }>>((acc, item) => {
-              acc[item.npcId] = {
-                result: item.result,
-                readiness: item.readiness,
-                morale: item.morale,
-                rankInfluence: item.rankInfluence,
-                promotionRecommendation: item.promotionRecommendation,
-                notificationLetter: item.notificationLetter
-              };
+              const readiness = Math.round((item.tactical + item.support + item.resilience + item.competence) / 4);
+              const morale = Math.max(0, Math.min(100, Math.round((item.relationToPlayer + item.loyalty) / 2)));
+              const rankInfluence = Math.max(1, Math.round(item.promotionPoints / 12));
+              const promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED' =
+                item.promotionPoints >= 75 && item.integrityRisk < 35
+                  ? 'STRONG_RECOMMEND'
+                  : item.promotionPoints >= 45 && item.integrityRisk < 50
+                    ? 'RECOMMEND'
+                    : item.integrityRisk >= 70 || item.betrayalRisk >= 70
+                      ? 'NOT_RECOMMENDED'
+                      : 'HOLD';
+              const result = item.lastTask?.trim() ? item.lastTask : 'Patroli rutin aktif';
+              const notificationLetter =
+                item.integrityRisk >= 70 || item.betrayalRisk >= 70
+                  ? `Peringatan risiko tinggi pada ${item.name}: integrity=${item.integrityRisk}, betrayal=${item.betrayalRisk}.`
+                  : null;
+              const aliases = [item.npcId, `npc-${item.slotNo}`];
+              for (const alias of aliases) {
+                acc[alias] = {
+                  result,
+                  readiness,
+                  morale,
+                  rankInfluence,
+                  promotionRecommendation,
+                  notificationLetter
+                };
+              }
               return acc;
             }, {})
           );
