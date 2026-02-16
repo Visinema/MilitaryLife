@@ -15,7 +15,8 @@ import {
   newsQuerySchema,
   v3MissionSchema,
   appointSecretarySchema,
-  courtReviewSchema
+  courtReviewSchema,
+  militaryLawVoteSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -42,7 +43,9 @@ import {
   runV3Mission,
   appointFundSecretary,
   reviewMilitaryCourtCase,
-  getMedalCatalog
+  getMedalCatalog,
+  getMilitaryLawState,
+  voteMilitaryLaw
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -204,6 +207,20 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/v3/medals', async (request, reply) => {
     await getMedalCatalog(request, reply);
+  });
+
+  app.get('/military-law', async (request, reply) => {
+    await getMilitaryLawState(request, reply);
+  });
+
+
+  app.post('/actions/military-law-vote', async (request, reply) => {
+    try {
+      const body = parseOrThrow(militaryLawVoteSchema, request.body ?? {});
+      await voteMilitaryLaw(request, reply, body);
+    } catch (err) {
+      sendValidationError(reply, err);
+    }
   });
 
   app.post('/actions/v3-mission', async (request, reply) => {

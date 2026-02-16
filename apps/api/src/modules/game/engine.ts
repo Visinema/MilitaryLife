@@ -600,7 +600,10 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     secretaryVacancyDays,
     secretaryEscalationRisk: secretaryEscalationRisk(secretaryVacancyDays),
     corruptionRisk: state.corruption_risk,
-    pendingCourtCases: state.court_pending_cases
+    pendingCourtCases: state.court_pending_cases,
+    militaryLawCurrent: state.military_law_current,
+    militaryLawLogs: state.military_law_logs.slice(-25),
+    mlcEligibleMembers: Math.max(5, Math.min(50, 4 + Math.floor(state.current_day / 14) + (state.rank_index >= 9 ? 2 : state.rank_index >= 7 ? 1 : 0)))
   };
 }
 
@@ -737,6 +740,7 @@ export function snapshotStateForLog(state: DbGameStateRow): Record<string, unkno
     academyTier: state.academy_tier,
     lastTravelPlace: state.last_travel_place,
     divisionFreedomScore: state.division_freedom_score,
-    preferredDivision: state.preferred_division
+    preferredDivision: state.preferred_division,
+    militaryLawVersion: state.military_law_current?.version ?? 0
   };
 }

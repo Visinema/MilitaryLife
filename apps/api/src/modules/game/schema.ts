@@ -75,3 +75,9 @@ export const courtReviewSchema = z.object({
   caseId: z.string().min(2).max(64),
   verdict: z.enum(['UPHOLD', 'DISMISS', 'REASSIGN'])
 });
+
+
+export const militaryLawVoteSchema = z.object({
+  presetId: z.enum(['BALANCED_COMMAND', 'EXPEDITIONARY_MANDATE', 'DISCIPLINE_FIRST', 'CIVIL_OVERSIGHT']),
+  rationale: z.string().min(2).max(200).optional()
+});

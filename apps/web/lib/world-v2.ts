@@ -178,8 +178,9 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
   const status: NpcStatus = fallen ? 'KIA' : 'ACTIVE';
   const tenure = Math.max(1, snapshot.gameDay - joinedOnDay);
   const relationScore = 38 + (Math.abs(generationSeed) % 58);
-  const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75);
-  const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4));
+  const lawBoost = snapshot.militaryLawCurrent?.rules?.npcCommandDrift ?? 0;
+  const progressionScore = Math.floor(tenure * 0.22 + relationScore * 0.8 + (snapshot.morale + snapshot.health) * 0.15 + influenceRecord * 0.75 + lawBoost);
+  const commandPower = Math.max(12, Math.min(100, 18 + progressionScore - slot * 1.4 + lawBoost * 0.6));
   const rank = universalRankFromScore(progressionScore * 0.35 + commandPower * 0.55);
   const npcName = identity.name;
   const ceremonyAwards = awardsByNpc.get(npcName) ?? [];
@@ -288,7 +289,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       uniformTone: uniformTone(snapshot.branch),
       medals: playerMedals,
       ribbons: playerRibbons.slice(0, 12),
-      commandAuthority: Math.min(100, 40 + snapshot.gameDay / 5 + influenceRecord * 0.8),
+      commandAuthority: Math.min(100, 40 + snapshot.gameDay / 5 + influenceRecord * 0.8 + (snapshot.militaryLawCurrent?.rules?.promotionPointMultiplierPct ?? 100) / 50),
       influenceRecord,
       position: snapshot.playerPosition
     },
@@ -299,7 +300,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
       title: 'Operation Readiness Grid',
       objective: 'Stabilize supply corridors with realistic pacing and persistent smart-NPC progression.',
       sanctions: 'Commanders can issue warning, duty restriction, and promotion hold for failed orders or insubordination.',
-      commandRule: 'Hierarchy authority flows from theater to division/subdivision leads with morale impact on non-compliance.',
+      commandRule: `Hierarchy authority mengikuti Military Law v${snapshot.militaryLawCurrent?.version ?? 0} dengan batas masa jabatan Chief ${snapshot.militaryLawCurrent?.rules?.chiefOfStaffTermLimitDays ?? 0} hari.`,
       recruitmentWindow: snapshot.morale > 72 ? 'Special recruitment open (Tier-1 & specialist tracks).' : 'Standard recruitment only.',
       mandatoryAssignmentEveryDays: 10,
       raiderThreatLevel: raider.raiderThreatLevel,

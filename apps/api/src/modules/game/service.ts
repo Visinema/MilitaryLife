@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
-import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, MilitaryLawEntry, MilitaryLawPresetId, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
@@ -68,6 +68,96 @@ const RECRUITMENT_TRACKS: RecruitmentTrack[] = [
 
 
 const REGISTERED_DIVISION_NAMES = Array.from(new Set(RECRUITMENT_TRACKS.map((track) => track.division)));
+
+const MILITARY_LAW_PRESETS: Array<{
+  id: MilitaryLawPresetId;
+  title: string;
+  summary: string;
+  rules: MilitaryLawEntry['rules'];
+}> = [
+  {
+    id: 'BALANCED_COMMAND',
+    title: 'Balanced Command Charter',
+    summary: 'Formasi stabil: kursi kabinet seimbang, masa jabatan Chief menengah, jabatan spesialis aktif terbatas.',
+    rules: {
+      cabinetSeatCount: 6,
+      chiefOfStaffTermLimitDays: 72,
+      optionalPosts: ['Inspector General', 'Strategic Cyber Marshal'],
+      promotionPointMultiplierPct: 100,
+      npcCommandDrift: 0
+    }
+  },
+  {
+    id: 'EXPEDITIONARY_MANDATE',
+    title: 'Expeditionary Mandate',
+    summary: 'Fokus operasi ekspedisi: kursi kabinet lebih banyak, jabatan lapangan tambahan, akselerasi karier cepat.',
+    rules: {
+      cabinetSeatCount: 8,
+      chiefOfStaffTermLimitDays: 54,
+      optionalPosts: ['Expeditionary Commander', 'Raider Response Chancellor', 'Logistics War Comptroller'],
+      promotionPointMultiplierPct: 114,
+      npcCommandDrift: 5
+    }
+  },
+  {
+    id: 'DISCIPLINE_FIRST',
+    title: 'Discipline First Doctrine',
+    summary: 'Fokus disiplin ketat: masa jabatan Chief lebih pendek, struktur kabinet ringkas, kemajuan karier lebih selektif.',
+    rules: {
+      cabinetSeatCount: 5,
+      chiefOfStaffTermLimitDays: 42,
+      optionalPosts: ['Chief Compliance Officer'],
+      promotionPointMultiplierPct: 90,
+      npcCommandDrift: -4
+    }
+  },
+  {
+    id: 'CIVIL_OVERSIGHT',
+    title: 'Civil Oversight Accord',
+    summary: 'Pendekatan transparansi: kursi kabinet moderat, jabatan audit aktif, promosi stabil tanpa lonjakan ekstrem.',
+    rules: {
+      cabinetSeatCount: 7,
+      chiefOfStaffTermLimitDays: 60,
+      optionalPosts: ['Civil Liaison Marshal', 'Budget Oversight Secretary'],
+      promotionPointMultiplierPct: 98,
+      npcCommandDrift: 2
+    }
+  }
+];
+
+function getMilitaryLawPreset(id: MilitaryLawPresetId) {
+  return MILITARY_LAW_PRESETS.find((item) => item.id === id) ?? MILITARY_LAW_PRESETS[0];
+}
+
+function mlcEligibleMembers(state: DbGameStateRow): number {
+  const base = 4 + Math.floor(state.current_day / 14);
+  const rankFactor = state.rank_index >= 9 ? 2 : state.rank_index >= 7 ? 1 : 0;
+  return Math.max(5, Math.min(MAX_ACTIVE_NPCS, base + rankFactor));
+}
+
+function composeMilitaryLawEntry(
+  state: DbGameStateRow,
+  presetId: MilitaryLawPresetId,
+  votesFor: number,
+  votesAgainst: number,
+  initiatedBy: string
+): MilitaryLawEntry {
+  const preset = getMilitaryLawPreset(presetId);
+  const previousVersion = state.military_law_current?.version ?? 0;
+  return {
+    version: previousVersion + 1,
+    presetId,
+    title: preset.title,
+    summary: preset.summary,
+    enactedDay: state.current_day,
+    votesFor,
+    votesAgainst,
+    councilMembers: votesFor + votesAgainst,
+    initiatedBy,
+    rules: preset.rules
+  };
+}
+
 
 function academyAllowedDivisions(divisionFreedomScore: number): string[] {
   if (divisionFreedomScore >= 80) return REGISTERED_DIVISION_NAMES;
@@ -147,6 +237,8 @@ interface StateCheckpoint {
   fundSecretaryNpc: string | null;
   corruptionRisk: number;
   courtPendingCases: DbGameStateRow['court_pending_cases'];
+  militaryLawCurrent: DbGameStateRow['military_law_current'];
+  militaryLawLogs: DbGameStateRow['military_law_logs'];
   pendingEventId: number | null;
   pendingEventPayload: DbGameStateRow['pending_event_payload'];
 }
@@ -188,6 +280,8 @@ function createStateCheckpoint(state: DbGameStateRow): StateCheckpoint {
     fundSecretaryNpc: state.fund_secretary_npc,
     corruptionRisk: state.corruption_risk,
     courtPendingCases: state.court_pending_cases,
+    militaryLawCurrent: state.military_law_current,
+    militaryLawLogs: state.military_law_logs,
     pendingEventId: state.pending_event_id,
     pendingEventPayload: state.pending_event_payload
   };
@@ -230,6 +324,8 @@ function hasStateChanged(state: DbGameStateRow, checkpoint: StateCheckpoint): bo
     state.fund_secretary_npc !== checkpoint.fundSecretaryNpc ||
     state.corruption_risk !== checkpoint.corruptionRisk ||
     state.court_pending_cases !== checkpoint.courtPendingCases ||
+    state.military_law_current !== checkpoint.militaryLawCurrent ||
+    state.military_law_logs !== checkpoint.militaryLawLogs ||
     state.pending_event_id !== checkpoint.pendingEventId ||
     state.pending_event_payload !== checkpoint.pendingEventPayload
   );
@@ -984,8 +1080,8 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.ceremony_recent_awards = [];
     state.player_medals = [];
     state.player_ribbons = [];
-    state.player_position = 'Platoon Leader';
-    state.player_division = 'General Command';
+    state.player_position = 'No Position';
+    state.player_division = 'Nondivisi';
     state.npc_award_history = {};
     state.raider_last_attack_day = 0;
     state.raider_casualties = [];
@@ -995,6 +1091,8 @@ export async function restartWorldFromZero(request: FastifyRequest, reply: Fasti
     state.fund_secretary_npc = null;
     state.corruption_risk = 18;
     state.court_pending_cases = [];
+    state.military_law_current = null;
+    state.military_law_logs = [];
 
     await client.query('DELETE FROM decision_logs WHERE profile_id = $1', [profileId]);
 
@@ -1696,6 +1794,76 @@ export async function getNews(request: FastifyRequest, reply: FastifyReply, filt
         filter: filterType ?? null,
         snapshot: buildSnapshot(state, nowMs)
       }
+    };
+  });
+}
+
+export async function getMilitaryLawState(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: false }, async ({ state, nowMs }) => {
+    const current = state.military_law_current;
+    const logs = state.military_law_logs.slice().reverse().slice(0, 20);
+    return {
+      payload: {
+        current,
+        logs,
+        presets: MILITARY_LAW_PRESETS,
+        mlcEligibleMembers: mlcEligibleMembers(state),
+        snapshot: buildSnapshot(state, nowMs)
+      }
+    };
+  });
+}
+
+export async function voteMilitaryLaw(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: { presetId: MilitaryLawPresetId; rationale?: string }
+): Promise<void> {
+  await withLockedState(request, reply, { queueEvents: true }, async ({ state, nowMs }) => {
+    const members = mlcEligibleMembers(state);
+    const momentum = state.morale + state.military_stability + Math.max(0, state.rank_index * 3);
+    const supportBase = Math.min(members, Math.max(3, Math.floor((momentum % (members * 2)) / 2) + Math.ceil(members * 0.35)));
+    const votesFor = Math.min(members, supportBase + (state.military_law_current ? 0 : 1));
+    const votesAgainst = Math.max(0, members - votesFor);
+    const approved = votesFor > votesAgainst;
+
+    if (!approved) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Voting MLC gagal mencapai mayoritas. Rapat perubahan Military Law ditunda.',
+          snapshot: buildSnapshot(state, nowMs)
+        }
+      };
+    }
+
+    const enacted = composeMilitaryLawEntry(state, payload.presetId, votesFor, votesAgainst, state.player_name);
+    state.military_law_current = enacted;
+    state.military_law_logs = [...state.military_law_logs, enacted].slice(-40);
+
+    state.national_stability = clampScore(state.national_stability + (enacted.rules.npcCommandDrift >= 0 ? 2 : -1));
+    state.military_stability = clampScore(state.military_stability + (enacted.rules.npcCommandDrift >= 0 ? 3 : 1));
+    state.promotion_points = Math.max(0, Math.round(state.promotion_points * (enacted.rules.promotionPointMultiplierPct / 100)));
+
+    const details = {
+      approved: true,
+      rationale: payload.rationale?.trim() ?? null,
+      law: enacted,
+      activeOptionalPosts: enacted.rules.optionalPosts,
+      effect: {
+        promotionPointMultiplierPct: enacted.rules.promotionPointMultiplierPct,
+        npcCommandDrift: enacted.rules.npcCommandDrift,
+        chiefOfStaffTermLimitDays: enacted.rules.chiefOfStaffTermLimitDays,
+        cabinetSeatCount: enacted.rules.cabinetSeatCount
+      }
+    };
+
+    return {
+      payload: {
+        type: 'MILITARY_LAW_VOTE',
+        snapshot: buildSnapshot(state, nowMs),
+        details
+      } as ActionResult
     };
   });
 }

@@ -44,8 +44,10 @@ export async function createProfileAndGameState(
         health,
         promotion_points,
         days_in_rank,
-        next_event_day
-      ) VALUES ($1, $2, $3, 0, 0, 0, 70, 80, 0, 0, 3)
+        next_event_day,
+        player_position,
+        player_division
+      ) VALUES ($1, $2, $3, 0, 0, 0, 70, 80, 0, 0, 3, 'No Position', 'Nondivisi')
     `,
     [insertedProfileId, input.sessionId, input.nowMs]
   );

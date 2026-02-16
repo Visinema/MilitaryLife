@@ -1,11 +1,17 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
-import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, NewsItem, NewsType } from '@mls/shared/game-types';
+import type { ActionResult, CeremonyReport, DecisionResult, GameSnapshot, MedalCatalogItem, MilitaryLawEntry, MilitaryLawPresetId, NewsItem, NewsType } from '@mls/shared/game-types';
 
 type HttpMethod = 'GET' | 'POST';
 
 export type TravelPlace = 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN';
 export type CommandAction = 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION';
 export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
+
+
+export type MilitaryLawProposalPayload = {
+  presetId: MilitaryLawPresetId;
+  rationale?: string;
+};
 
 type RequestOptions = {
   cache?: RequestCache;
@@ -214,6 +220,30 @@ export const api = {
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
   },
+  militaryLaw() {
+    return request<{
+      current: MilitaryLawEntry | null;
+      logs: MilitaryLawEntry[];
+      presets: Array<{
+        id: MilitaryLawPresetId;
+        title: string;
+        summary: string;
+        rules: {
+          cabinetSeatCount: number;
+          chiefOfStaffTermLimitDays: number;
+          optionalPosts: string[];
+          promotionPointMultiplierPct: number;
+          npcCommandDrift: number;
+        };
+      }>;
+      mlcEligibleMembers: number;
+      snapshot: GameSnapshot;
+    }>('/game/military-law', 'GET');
+  },
+  militaryLawVote(payload: MilitaryLawProposalPayload) {
+    return request<ActionResult>('/game/actions/military-law-vote', 'POST', payload);
+  },
+
   npcActivity() {
     return request<{
       generatedAt: number;

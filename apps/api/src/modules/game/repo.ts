@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { BranchCode, CountryCode, PauseReason } from '@mls/shared/constants';
-import type { AcademyCertificate, CeremonyRecipient, RaiderCasualty } from '@mls/shared/game-types';
+import type { AcademyCertificate, CeremonyRecipient, MilitaryLawEntry, RaiderCasualty } from '@mls/shared/game-types';
 
 export interface DbGameStateRow {
   profile_id: string;
@@ -44,6 +44,8 @@ export interface DbGameStateRow {
   fund_secretary_npc: string | null;
   corruption_risk: number;
   court_pending_cases: Array<{ id: string; day: number; title: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'PENDING' | 'IN_REVIEW' | 'CLOSED'; requestedBy: string }>;
+  military_law_current: MilitaryLawEntry | null;
+  military_law_logs: MilitaryLawEntry[];
   pending_event_payload: {
     title: string;
     description: string;
@@ -200,6 +202,39 @@ function toJsonbParam(value: unknown, fallback: unknown): string {
   return JSON.stringify(value);
 }
 
+
+
+function parseMilitaryLawEntry(value: unknown): MilitaryLawEntry | null {
+  if (!value) return null;
+  const source = typeof value === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return null;
+        }
+      })()
+    : value;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+  const candidate = source as Partial<MilitaryLawEntry>;
+  if (typeof candidate.version !== 'number' || typeof candidate.presetId !== 'string' || typeof candidate.title !== 'string') return null;
+  if (!candidate.rules || typeof candidate.rules !== 'object') return null;
+  return candidate as MilitaryLawEntry;
+}
+
+function parseMilitaryLawLogs(value: unknown): MilitaryLawEntry[] {
+  if (Array.isArray(value)) return value.map((item) => parseMilitaryLawEntry(item)).filter((item): item is MilitaryLawEntry => Boolean(item)).slice(-40);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map((item) => parseMilitaryLawEntry(item)).filter((item): item is MilitaryLawEntry => Boolean(item)).slice(-40) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export async function getProfileIdByUserId(client: PoolClient, userId: string): Promise<string | null> {
   const result = await client.query<{ id: string }>(`SELECT id FROM profiles WHERE user_id = $1`, [userId]);
   return result.rows[0]?.id ?? null;
@@ -250,6 +285,8 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
         gs.fund_secretary_npc,
         gs.corruption_risk,
         gs.court_pending_cases,
+        gs.military_law_current,
+        gs.military_law_logs,
         gs.pending_event_payload,
         gs.version
       FROM profiles p
@@ -270,6 +307,8 @@ export async function lockGameStateByProfileId(client: PoolClient, profileId: st
   row.npc_award_history = parseNpcAwardHistory(row.npc_award_history);
   row.raider_casualties = parseRaiderCasualties(row.raider_casualties);
   row.court_pending_cases = parseCourtCases(row.court_pending_cases);
+  row.military_law_current = parseMilitaryLawEntry(row.military_law_current);
+  row.military_law_logs = parseMilitaryLawLogs(row.military_law_logs);
   return row;
 }
 
@@ -348,7 +387,9 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
         fund_secretary_npc = $35,
         corruption_risk = $36,
         court_pending_cases = $37::jsonb,
-        pending_event_payload = $38::jsonb,
+        military_law_current = $38::jsonb,
+        military_law_logs = $39::jsonb,
+        pending_event_payload = $40::jsonb,
         version = version + 1,
         updated_at = now()
       WHERE profile_id = $1
@@ -391,6 +432,8 @@ export async function updateGameState(client: PoolClient, state: DbGameStateRow)
       state.fund_secretary_npc,
       state.corruption_risk,
       toJsonbParam(state.court_pending_cases, []),
+      toJsonbParam(state.military_law_current, null),
+      toJsonbParam(state.military_law_logs, []),
       toJsonbParam(state.pending_event_payload, null)
     ]
   );

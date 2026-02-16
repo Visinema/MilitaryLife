@@ -65,6 +65,30 @@ export interface RaiderCasualty {
 }
 
 
+
+export type MilitaryLawPresetId = 'BALANCED_COMMAND' | 'EXPEDITIONARY_MANDATE' | 'DISCIPLINE_FIRST' | 'CIVIL_OVERSIGHT';
+
+export interface MilitaryLawRuleSet {
+  cabinetSeatCount: number;
+  chiefOfStaffTermLimitDays: number;
+  optionalPosts: string[];
+  promotionPointMultiplierPct: number;
+  npcCommandDrift: number;
+}
+
+export interface MilitaryLawEntry {
+  version: number;
+  presetId: MilitaryLawPresetId;
+  title: string;
+  summary: string;
+  enactedDay: number;
+  votesFor: number;
+  votesAgainst: number;
+  councilMembers: number;
+  initiatedBy: string;
+  rules: MilitaryLawRuleSet;
+}
+
 export type NewsType = 'DISMISSAL' | 'MISSION' | 'PROMOTION' | 'MEDAL';
 
 export interface NewsItem {
@@ -146,6 +170,9 @@ export interface GameSnapshot {
     status: 'PENDING' | 'IN_REVIEW' | 'CLOSED';
     requestedBy: string;
   }>;
+  militaryLawCurrent: MilitaryLawEntry | null;
+  militaryLawLogs: MilitaryLawEntry[];
+  mlcEligibleMembers: number;
 }
 
 export interface DecisionResult {
@@ -160,7 +187,7 @@ export interface DecisionResult {
 }
 
 export interface ActionResult {
-  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION' | 'RECRUITMENT' | 'V3_MISSION' | 'COURT_REVIEW' | 'APPOINT_SECRETARY';
+  type: 'TRAINING' | 'DEPLOYMENT' | 'CAREER_REVIEW' | 'MILITARY_ACADEMY' | 'TRAVEL' | 'COMMAND' | 'SOCIAL_INTERACTION' | 'RECRUITMENT' | 'V3_MISSION' | 'COURT_REVIEW' | 'APPOINT_SECRETARY' | 'MILITARY_LAW_VOTE';
   snapshot: GameSnapshot;
   details: Record<string, unknown>;
 }
