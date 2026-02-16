@@ -144,6 +144,12 @@ Legacy compatibility (tetap hidup sementara):
   - `GET /game/news` -> gunakan `GET /game/v5/social/timeline`
   - `GET /game/ceremony` dan `POST /game/actions/ceremony-complete` -> gunakan jalur `game/v5/ceremony/*`
   - `POST /game/actions/raider-defense` -> status raider otomatis via tick + `game/v5/expansion/state`
+  - `POST /game/actions/v3-mission` -> gunakan `POST /game/v5/dom/sessions/:sessionId/execute`
+  - `POST /game/actions/mission-call-response` -> gunakan `POST /game/v5/dom/sessions/:sessionId/join`
+  - `POST /game/actions/mission-plan` -> gunakan `POST /game/v5/missions/plan` atau jalur DOM
+  - `POST /game/actions/court-review` -> gunakan `POST /game/v5/court/cases/:caseId/verdict`
+  - `GET /game/military-law` dan `POST /game/actions/military-law-vote` -> gunakan `GET /game/v5/councils` + `POST /game/v5/councils/:councilId/vote`
+  - `GET /game/v3/medals` -> gunakan `GET /game/v5/dom/cycle/current`, `GET /game/v5/ceremony/current`, dan `GET /game/v5/expansion/state`
 
 ## 7. Migration & Compatibility
 

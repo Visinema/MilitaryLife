@@ -88,7 +88,6 @@ export function DashboardShell() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [openedCertificateId, setOpenedCertificateId] = useState<string | null>(null);
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
-  const [missionCallBusy, setMissionCallBusy] = useState<null | 'YES' | 'NO'>(null);
   const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
@@ -501,22 +500,6 @@ export function DashboardShell() {
     };
   }, [pageReady, pathname, router, snapshot?.ceremonyDue, snapshot?.gameDay]);
 
-  const respondMissionCall = useCallback(async (participate: boolean) => {
-    setMissionCallBusy(participate ? 'YES' : 'NO');
-    try {
-      const response = await api.respondMissionCall(participate);
-      setSnapshot(response.snapshot);
-      setError(null);
-      if (participate) {
-        router.push('/dashboard/deployment?missionCall=1');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal merespons panggilan misi');
-    } finally {
-      setMissionCallBusy(null);
-    }
-  }, [router, setError, setSnapshot]);
-
   const safeCertificates = useMemo(() => (Array.isArray(snapshot?.certificates) ? snapshot.certificates : []), [snapshot]);
 
   useEffect(() => {
@@ -833,37 +816,6 @@ export function DashboardShell() {
 
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-
-      {snapshot.activeMission?.status === 'ACTIVE' && !snapshot.activeMission.playerParticipates ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4">
-          <div className="w-full max-w-lg rounded-md border border-amber-400/70 bg-panel p-4 shadow-panel">
-            <p className="text-xs uppercase tracking-[0.12em] text-amber-200">Panggilan Misi Otomatis · Day {snapshot.activeMission.issuedDay}</p>
-            <h3 className="mt-1 text-base font-semibold text-amber-100">Ikut misi atau tidak?</h3>
-            <p className="mt-2 text-sm text-muted">
-              Jika ikut: Anda langsung ke halaman deployment misi dan waktu game tetap pause. Jika tidak: misi berjalan otomatis oleh 8 NPC di background.
-            </p>
-            <p className="mt-2 text-xs text-amber-100/90">
-              Mission: {snapshot.activeMission.missionType} · Danger: {snapshot.activeMission.dangerTier}
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={() => void respondMissionCall(true)}
-                disabled={missionCallBusy !== null}
-                className="rounded border border-emerald-500 bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-              >
-                {missionCallBusy === 'YES' ? 'Memproses...' : 'Ya, ikuti misi'}
-              </button>
-              <button
-                onClick={() => void respondMissionCall(false)}
-                disabled={missionCallBusy !== null}
-                className="rounded border border-border bg-bg px-3 py-1.5 text-sm text-text disabled:opacity-50"
-              >
-                {missionCallBusy === 'NO' ? 'Memproses...' : 'Tidak, jalankan NPC'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {snapshot.pendingDecision ? (
         <DecisionModal

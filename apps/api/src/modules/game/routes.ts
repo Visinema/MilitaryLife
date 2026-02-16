@@ -13,13 +13,7 @@ import {
   socialInteractionSchema,
   recruitmentApplySchema,
   newsQuerySchema,
-  v3MissionSchema,
-  appointSecretarySchema,
-  courtReviewSchema,
-  militaryLawVoteSchema,
-  gameTimeScaleSchema,
-  missionCallResponseSchema,
-  missionPlanSchema
+  gameTimeScaleSchema
 } from './schema.js';
 import {
   chooseDecision,
@@ -43,15 +37,7 @@ import {
   runRaiderDefense,
   runRecruitmentApply,
   getNews,
-  runV3Mission,
-  appointFundSecretary,
-  reviewMilitaryCourtCase,
-  getMedalCatalog,
-  getMilitaryLawState,
-  voteMilitaryLaw,
-  setGameTimeScale,
-  respondMissionCall,
-  saveMissionPlan
+  setGameTimeScale
 } from './service.js';
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -210,77 +196,11 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-
-  app.get('/v3/medals', async (request, reply) => {
-    await getMedalCatalog(request, reply);
-  });
-
-  app.get('/military-law', async (request, reply) => {
-    await getMilitaryLawState(request, reply);
-  });
-
-
-  app.post('/actions/military-law-vote', async (request, reply) => {
-    try {
-      const body = parseOrThrow(militaryLawVoteSchema, request.body ?? {});
-      await voteMilitaryLaw(request, reply, body);
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-
   app.post('/actions/time-scale', async (request, reply) => {
     try {
       const body = parseOrThrow(gameTimeScaleSchema, request.body ?? {});
       const scale: 1 | 3 = body.scale === 3 ? 3 : 1;
       await setGameTimeScale(request, reply, { scale });
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-  app.post('/actions/v3-mission', async (request, reply) => {
-    try {
-      const body = parseOrThrow(v3MissionSchema, request.body ?? {});
-      await runV3Mission(request, reply, { missionType: body.missionType, dangerTier: body.dangerTier ?? 'MEDIUM', playerParticipates: body.playerParticipates ?? false });
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-  app.post('/actions/mission-call-response', async (request, reply) => {
-    try {
-      const body = parseOrThrow(missionCallResponseSchema, request.body ?? {});
-      await respondMissionCall(request, reply, { participate: body.participate });
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-
-  app.post('/actions/mission-plan', async (request, reply) => {
-    try {
-      const body = parseOrThrow(missionPlanSchema, request.body ?? {});
-      await saveMissionPlan(request, reply, body);
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-  app.post('/actions/appoint-secretary', async (request, reply) => {
-    try {
-      const body = parseOrThrow(appointSecretarySchema, request.body ?? {});
-      await appointFundSecretary(request, reply, body.npcName);
-    } catch (err) {
-      sendValidationError(reply, err);
-    }
-  });
-
-  app.post('/actions/court-review', async (request, reply) => {
-    try {
-      const body = parseOrThrow(courtReviewSchema, request.body ?? {});
-      await reviewMilitaryCourtCase(request, reply, body.caseId, body.verdict);
     } catch (err) {
       sendValidationError(reply, err);
     }

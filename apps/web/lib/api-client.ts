@@ -1,4 +1,5 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
+import { GAME_MS_PER_DAY } from '@mls/shared/constants';
 import type {
   AcademyBatchState,
   ActionResult,
@@ -15,11 +16,6 @@ import type {
   GameSnapshot,
   GameSnapshotV5,
   MailboxMessage,
-  MedalCatalogItem,
-  MilitaryLawCabinetOptionId,
-  MilitaryLawChiefTermOptionId,
-  MilitaryLawEntry,
-  MilitaryLawOptionalPostOptionId,
   MissionInstanceV5,
   NewsItem,
   NewsType,
@@ -37,24 +33,6 @@ type HttpMethod = 'GET' | 'POST';
 export type TravelPlace = 'BASE_HQ' | 'BORDER_OUTPOST' | 'LOGISTICS_HUB' | 'TACTICAL_TOWN';
 export type CommandAction = 'PLAN_MISSION' | 'ISSUE_SANCTION' | 'ISSUE_PROMOTION';
 export type SocialInteractionType = 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
-
-
-export type MilitaryLawProposalPayload =
-  | {
-      articleKey: 'chiefTerm';
-      optionId: MilitaryLawChiefTermOptionId;
-      rationale?: string;
-    }
-  | {
-      articleKey: 'cabinet';
-      optionId: MilitaryLawCabinetOptionId;
-      rationale?: string;
-    }
-  | {
-      articleKey: 'optionalPosts';
-      optionId: MilitaryLawOptionalPostOptionId;
-      rationale?: string;
-    };
 
 type RequestOptions = {
   cache?: RequestCache;
@@ -149,13 +127,161 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown, opti
   return payload as T;
 }
 
+function splitAssignment(assignment: string): { division: string; position: string } {
+  const parts = assignment
+    .split('-')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (parts.length >= 2) {
+    return { division: parts[0] ?? 'Nondivisi', position: parts.slice(1).join(' - ') };
+  }
+  return {
+    division: assignment.trim() || 'Nondivisi',
+    position: assignment.trim() || 'Staff Officer'
+  };
+}
+
+function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, expansion?: ExpansionStateV51 | null): GameSnapshot {
+  const worldDay = snapshot.world.currentDay;
+  const gameTimeScale: 1 | 3 = snapshot.world.gameTimeScale === 3 ? 3 : 1;
+  const serverReferenceTimeMs = snapshot.serverNowMs - Math.floor((worldDay * GAME_MS_PER_DAY) / gameTimeScale);
+  const assignment = splitAssignment(snapshot.player.assignment);
+  const ceremonyDue = Boolean(snapshot.pendingCeremony && snapshot.pendingCeremony.status === 'PENDING');
+  const nextCeremonyDay = worldDay < 15 ? 15 : worldDay % 15 === 0 ? worldDay + 15 : worldDay + (15 - (worldDay % 15));
+  const governance = expansion?.governanceSummary;
+  const councils = expansion?.councils ?? [];
+  const openCourtCases = expansion?.openCourtCases ?? [];
+  const playerAwards = (snapshot.pendingCeremony?.awards ?? []).filter((award) => award.recipientName === snapshot.player.playerName);
+  const npcAwardHistory: Record<string, { medals: string[]; ribbons: string[] }> = {};
+  for (const award of snapshot.pendingCeremony?.awards ?? []) {
+    if (award.recipientName === snapshot.player.playerName) continue;
+    const existing = npcAwardHistory[award.recipientName] ?? { medals: [], ribbons: [] };
+    npcAwardHistory[award.recipientName] = {
+      medals: [...existing.medals, award.medal].slice(-12),
+      ribbons: [...existing.ribbons, award.ribbon].slice(-12)
+    };
+  }
+
+  const activeMission = snapshot.activeMission
+    ? {
+        missionId: snapshot.activeMission.missionId,
+        issuedDay: snapshot.activeMission.issuedDay,
+        missionType: snapshot.activeMission.missionType,
+        dangerTier: snapshot.activeMission.dangerTier,
+        playerParticipates: true,
+        status: snapshot.activeMission.status === 'RESOLVED' ? 'RESOLVED' as const : 'ACTIVE' as const,
+        participants: [{ name: snapshot.player.playerName, role: 'PLAYER' as const }],
+        plan: snapshot.activeMission.plan
+          ? {
+              strategy: snapshot.activeMission.plan.strategy,
+              objective: snapshot.activeMission.plan.objective,
+              prepChecklist: snapshot.activeMission.plan.prepChecklist,
+              plannedBy: snapshot.player.playerName,
+              plannedAtDay: snapshot.activeMission.issuedDay
+            }
+          : null,
+        archivedUntilCeremonyDay: null
+      }
+    : null;
+
+  const secretaryEscalationRisk: 'LOW' | 'MEDIUM' | 'HIGH' =
+    (governance?.corruptionRisk ?? 0) >= 70 ? 'HIGH' : (governance?.corruptionRisk ?? 0) >= 45 ? 'MEDIUM' : 'LOW';
+
+  return {
+    serverNowMs: snapshot.serverNowMs,
+    serverReferenceTimeMs,
+    gameDay: worldDay,
+    inGameDate: `Day ${worldDay}`,
+    age: 18 + Math.floor(worldDay / 365),
+    playerName: snapshot.player.playerName,
+    country: 'US',
+    branch: snapshot.player.branch,
+    rankCode: `R-${snapshot.player.rankIndex}`,
+    rankIndex: snapshot.player.rankIndex,
+    moneyCents: snapshot.player.moneyCents,
+    morale: snapshot.player.morale,
+    health: snapshot.player.health,
+    paused: false,
+    pauseReason: null,
+    pauseToken: null,
+    pauseExpiresAtMs: null,
+    gameTimeScale,
+    lastMissionDay: snapshot.activeMission?.issuedDay ?? 0,
+    academyTier: expansion?.academyBatch?.tier ?? 0,
+    academyCertifiedOfficer: (expansion?.academyBatch?.tier ?? 0) >= 1,
+    academyCertifiedHighOfficer: (expansion?.academyBatch?.tier ?? 0) >= 2,
+    lastTravelPlace: null,
+    certificates: [],
+    divisionFreedomScore: expansion?.recruitmentRace.playerEntry ? Math.round(expansion.recruitmentRace.playerEntry.compositeScore) : 0,
+    preferredDivision: assignment.division,
+    divisionAccess: null,
+    pendingDecision: null,
+    missionCallDue: false,
+    missionCallIssuedDay: null,
+    activeMission,
+    ceremonyDue,
+    nextCeremonyDay,
+    ceremonyCompletedDay: ceremonyDue ? Math.max(0, nextCeremonyDay - 15) : worldDay,
+    ceremonyRecentAwards: (snapshot.pendingCeremony?.awards ?? []).map((award) => ({
+      order: award.orderNo,
+      npcName: award.recipientName,
+      division: 'N/A',
+      unit: 'N/A',
+      position: 'N/A',
+      medalName: award.medal,
+      ribbonName: award.ribbon,
+      reason: award.reason
+    })),
+    playerMedals: playerAwards.map((award) => award.medal),
+    playerRibbons: playerAwards.map((award) => award.ribbon),
+    npcAwardHistory,
+    playerPosition: assignment.position,
+    playerDivision: assignment.division,
+    raiderLastAttackDay: expansion?.raiderThreat?.lastAttackDay ?? 0,
+    raiderCasualties: [],
+    nationalStability: governance?.nationalStability ?? 70,
+    militaryStability: governance?.militaryStability ?? 70,
+    militaryFundCents: governance?.militaryFundCents ?? 0,
+    fundSecretaryNpc: null,
+    secretaryVacancyDays: 0,
+    secretaryEscalationRisk,
+    corruptionRisk: governance?.corruptionRisk ?? 0,
+    pendingCourtCases: openCourtCases.map((item) => ({
+      id: item.caseId,
+      day: item.requestedDay,
+      title: `${item.caseType} - ${item.targetType}`,
+      severity: item.caseType === 'DISMISSAL' ? 'HIGH' : item.caseType === 'DEMOTION' ? 'MEDIUM' : 'LOW',
+      status: item.status,
+      requestedBy: 'Court System V5'
+    })),
+    militaryLawCurrent: null,
+    militaryLawLogs: [],
+    mlcEligibleMembers: councils.find((item) => item.councilType === 'MLC')?.quorum ?? 0
+  };
+}
+
+async function requestSnapshotV5Fallback(): Promise<{ snapshot: GameSnapshot }> {
+  const payload = await request<{ state: ExpansionStateV51; snapshot: GameSnapshotV5 | null }>('/game/v5/expansion/state', 'GET');
+  if (!payload.snapshot) {
+    throw new ApiError(503, 'Snapshot V5 belum siap. Coba lagi beberapa saat.');
+  }
+  return {
+    snapshot: mapV5SnapshotToLegacy(payload.snapshot, payload.state)
+  };
+}
+
 function requestSnapshot(): Promise<{ snapshot: GameSnapshot }> {
   if (snapshotInFlight) {
     return snapshotInFlight;
   }
 
   snapshotInFlight = request<{ snapshot: GameSnapshot }>('/game/snapshot', 'GET')
-    .then((payload) => payload)
+    .catch(async (error) => {
+      if (error instanceof ApiError && (error.status >= 500 || error.status === 404 || error.status === 408)) {
+        return requestSnapshotV5Fallback();
+      }
+      throw error;
+    })
     .finally(() => {
       snapshotInFlight = null;
     });
@@ -652,59 +778,12 @@ export const api = {
   recruitmentApply(payload: { trackId: string; answers: Record<string, string> }) {
     return request<ActionResult>('/game/actions/recruitment-apply', 'POST', payload);
   },
-
-  v3Mission(payload: { missionType: 'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'; dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'; playerParticipates: boolean }) {
-    return request<ActionResult>('/game/actions/v3-mission', 'POST', payload);
-  },
-  respondMissionCall(participate: boolean) {
-    return request<ActionResult>('/game/actions/mission-call-response', 'POST', { participate });
-  },
-  missionPlan(payload: { strategy: string; objective: string; prepChecklist: string[] }) {
-    return request<ActionResult>('/game/actions/mission-plan', 'POST', payload);
-  },
-  appointSecretary(npcName: string) {
-    return request<ActionResult>('/game/actions/appoint-secretary', 'POST', { npcName });
-  },
-  courtReview(payload: { caseId: string; verdict: 'UPHOLD' | 'DISMISS' | 'REASSIGN' }) {
-    return request<ActionResult>('/game/actions/court-review', 'POST', payload);
-  },
-  medalCatalog() {
-    return request<{ items: MedalCatalogItem[]; note: string; snapshot: GameSnapshot }>('/game/v3/medals', 'GET');
-  },
   news(type?: NewsType) {
     const query = type ? `?type=${type}` : '';
     return request<{ items: NewsItem[]; generatedAt: number; rangeDays: number; filter: NewsType | null; snapshot: GameSnapshot }>(`/game/news${query}`, 'GET');
   },
   pool(limit = 20) {
     return request<{ items: Array<Record<string, unknown>> }>(`/events/pool?limit=${limit}`, 'GET', undefined, { cache: 'force-cache' });
-  },
-  militaryLaw() {
-    return request<{
-      current: MilitaryLawEntry | null;
-      logs: MilitaryLawEntry[];
-      articleOptions: {
-        chiefTerm: Array<{ id: MilitaryLawChiefTermOptionId; label: string; valueDays: number }>;
-        cabinet: Array<{ id: MilitaryLawCabinetOptionId; label: string; seatCount: number }>;
-        optionalPosts: Array<{ id: MilitaryLawOptionalPostOptionId; label: string; posts: string[] }>;
-      };
-      mlcEligibleMembers: number;
-      governance: {
-        canPlayerVote: boolean;
-        meetingActive: boolean;
-        meetingDay: number;
-        totalMeetingDays: number;
-        scheduledSelection: {
-          chiefTermOptionId: MilitaryLawChiefTermOptionId;
-          cabinetOptionId: MilitaryLawCabinetOptionId;
-          optionalPostOptionId: MilitaryLawOptionalPostOptionId;
-        } | null;
-        note: string;
-      };
-      snapshot: GameSnapshot;
-    }>('/game/military-law', 'GET');
-  },
-  militaryLawVote(payload: MilitaryLawProposalPayload) {
-    return request<ActionResult>('/game/actions/military-law-vote', 'POST', payload);
   },
 
   npcActivity() {
