@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import type { CeremonyCycleV5, DomOperationCycle, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 
@@ -21,7 +21,7 @@ function extractSessionMedalQuota(cycle: DomOperationCycle | null): number {
   }, 0);
 }
 
-export default function CeremonyPage() {
+function CeremonyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const forcedAccess = searchParams.get('forced') === '1';
@@ -214,5 +214,13 @@ export default function CeremonyPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function CeremonyPage() {
+  return (
+    <Suspense fallback={<div className="rounded-md border border-border bg-panel p-4 text-sm text-muted">Loading ceremony console...</div>}>
+      <CeremonyPageContent />
+    </Suspense>
   );
 }
