@@ -374,6 +374,7 @@ export function DashboardShell() {
     if (!snapshot) return;
     if (!pageReady) return;
     if (typeof window === 'undefined') return;
+    if (document.visibilityState !== 'visible') return;
 
     let checkingBoundary = false;
 
@@ -444,7 +445,7 @@ export function DashboardShell() {
     };
 
     tickMission();
-    const timer = window.setInterval(tickMission, 900);
+    const timer = window.setInterval(tickMission, snapshot.gameTimeScale === 3 ? 320 : 900);
     return () => {
       window.clearInterval(timer);
     };
@@ -478,7 +479,7 @@ export function DashboardShell() {
       setSnapshot(response.snapshot);
       setError(null);
       if (participate) {
-        router.push('/dashboard/deployment');
+        router.push('/dashboard/deployment?missionCall=1');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal merespons panggilan misi');
@@ -818,7 +819,7 @@ export function DashboardShell() {
               <button
                 onClick={() => void respondMissionCall(true)}
                 disabled={missionCallBusy !== null}
-                className="rounded border border-amber-200/60 bg-amber-200/20 px-3 py-1.5 text-sm text-amber-50 disabled:opacity-50"
+                className="rounded border border-emerald-500 bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
               >
                 {missionCallBusy === 'YES' ? 'Memproses...' : 'Ya, ikuti misi'}
               </button>

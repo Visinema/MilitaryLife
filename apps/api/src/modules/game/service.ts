@@ -697,13 +697,44 @@ function ensureNoPendingDecision(state: DbGameStateRow): string | null {
 }
 
 function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boolean): Array<{ name: string; role: 'PLAYER' | 'NPC' }> {
-  const npcParticipants = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS)
-    .slice(0, 8)
+  const casualtySlots = new Set((state.raider_casualties ?? []).map((item) => item.slot));
+  const activeNpcRoster = buildNpcRegistry(state.branch, MAX_ACTIVE_NPCS)
+    .filter((npc) => !casualtySlots.has(npc.slot));
+  const dynamicSeat = Math.max(4, Math.min(8, activeNpcRoster.length));
+  const npcParticipants = activeNpcRoster
+    .slice(0, dynamicSeat)
     .map((npc) => ({ name: npc.name, role: 'NPC' as const }));
   if (!playerParticipates) {
     return npcParticipants;
   }
-  return [{ name: state.player_name, role: 'PLAYER' as const }, ...npcParticipants.slice(0, 7)];
+  return [{ name: state.player_name, role: 'PLAYER' as const }, ...npcParticipants.slice(0, Math.max(3, dynamicSeat - 1))];
+}
+
+function computeMissionParticipantStats(
+  participants: Array<{ name: string; role: 'PLAYER' | 'NPC' }>,
+  state: DbGameStateRow,
+  dangerTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME',
+  success: boolean
+): Array<{ name: string; role: 'PLAYER' | 'NPC'; tactical: number; support: number; leadership: number; resilience: number; total: number }> {
+  const dangerWeight = { LOW: 4, MEDIUM: 8, HIGH: 12, EXTREME: 16 }[dangerTier];
+  return participants.map((member, idx) => {
+    const seed = state.current_day * 37 + member.name.length * 13 + idx * 17 + state.rank_index * 19 + (success ? 23 : 7);
+    const tactical = Math.max(0, Math.min(100, 40 + dangerWeight + (seed % 23)));
+    const support = Math.max(0, Math.min(100, 34 + Math.floor(dangerWeight / 2) + ((seed * 3) % 29)));
+    const leadershipBase = member.role === 'PLAYER' ? 44 : 30;
+    const leadership = Math.max(0, Math.min(100, leadershipBase + Math.floor(state.rank_index * 2.2) + ((seed * 5) % 21)));
+    const resilience = Math.max(0, Math.min(100, 30 + Math.floor((state.health + state.morale) / 5) + ((seed * 7) % 17)));
+    const total = tactical + support + leadership + resilience;
+    return {
+      name: member.name,
+      role: member.role,
+      tactical,
+      support,
+      leadership,
+      resilience,
+      total
+    };
+  }).sort((a, b) => b.total - a.total);
 }
 
 function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
@@ -1989,6 +2020,7 @@ export async function runV3Mission(
           participants: buildMissionParticipants(state, payload.playerParticipates)
         };
     const delta = computeMissionDelta(payload);
+    const missionParticipantStats = computeMissionParticipantStats(state.active_mission.participants, state, payload.dangerTier, delta.success);
 
     state.money_cents = Math.max(0, state.money_cents + Math.floor(delta.fundDelta / 2));
     state.military_fund_cents = Math.max(0, state.military_fund_cents + delta.fundDelta);
@@ -1997,16 +2029,16 @@ export async function runV3Mission(
     state.national_stability = clampScore(state.national_stability + delta.stabilityDelta);
     state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
     state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
+    const missionPromotionBonus = Math.max(1, Math.round((delta.success ? 5 : 2) + delta.successScore / 26));
+    state.promotion_points += missionPromotionBonus;
     state.last_mission_day = state.current_day;
     if (state.active_mission) {
       state.active_mission = {
         ...state.active_mission,
         status: 'RESOLVED',
+        participantStats: missionParticipantStats,
         archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day)
       };
-    }
-    if (state.paused_at_ms && state.pause_reason === 'MODAL') {
-      resumeState(state, nowMs);
     }
 
     maybeCreateCourtCase(state);
@@ -2016,7 +2048,10 @@ export async function runV3Mission(
       missionType: payload.missionType,
       dangerTier: payload.dangerTier,
       playerParticipates: payload.playerParticipates,
-      npcOnly: !payload.playerParticipates
+      npcOnly: !payload.playerParticipates,
+      missionPromotionBonus,
+      participantStats: missionParticipantStats,
+      requiresAcknowledgementBeforeResume: Boolean(payload.playerParticipates)
     };
 
     return {
@@ -2072,6 +2107,7 @@ export async function respondMissionCall(
     } as const;
 
     const delta = computeMissionDelta(missionPayload);
+    const missionParticipantStats = computeMissionParticipantStats(state.active_mission.participants, state, missionPayload.dangerTier, delta.success);
     state.money_cents = Math.max(0, state.money_cents + Math.floor(delta.fundDelta / 2));
     state.military_fund_cents = Math.max(0, state.military_fund_cents + delta.fundDelta);
     state.morale = clampScore(state.morale + delta.moraleDelta);
@@ -2079,8 +2115,15 @@ export async function respondMissionCall(
     state.national_stability = clampScore(state.national_stability + delta.stabilityDelta);
     state.military_stability = clampScore(state.military_stability + delta.stabilityDelta + (delta.success ? 1 : -2));
     state.corruption_risk = clampScore(state.corruption_risk + delta.corruptionDelta + (state.fund_secretary_npc ? -1 : 2));
+    const missionPromotionBonus = Math.max(1, Math.round((delta.success ? 4 : 2) + delta.successScore / 30));
+    state.promotion_points += missionPromotionBonus;
     state.last_mission_day = state.current_day;
-    state.active_mission = { ...state.active_mission, status: 'RESOLVED', archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day) };
+    state.active_mission = {
+      ...state.active_mission,
+      status: 'RESOLVED',
+      participantStats: missionParticipantStats,
+      archivedUntilCeremonyDay: nextCeremonyDayFrom(state.current_day)
+    };
 
     if (state.paused_at_ms && state.pause_reason === 'MODAL') {
       resumeState(state, nowMs);
@@ -2097,7 +2140,9 @@ export async function respondMissionCall(
           missionType: missionPayload.missionType,
           dangerTier: missionPayload.dangerTier,
           playerParticipates: missionPayload.playerParticipates,
-          autoTriggered: true
+          autoTriggered: true,
+          missionPromotionBonus,
+          participantStats: missionParticipantStats
         }
       } as ActionResult
     };

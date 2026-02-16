@@ -277,6 +277,22 @@ function parseActiveMission(value: unknown): ActiveMissionState | null {
           .filter((item): item is { name: string; role: 'PLAYER' | 'NPC' } => Boolean(item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'))
           .map((item) => ({ name: item.name, role: item.role === 'PLAYER' ? 'PLAYER' : 'NPC' }))
       : [],
+    participantStats: Array.isArray((mission as { participantStats?: unknown }).participantStats)
+      ? ((mission as { participantStats: unknown[] }).participantStats
+          .filter((item): item is { name: string; role: 'PLAYER' | 'NPC'; tactical: number; support: number; leadership: number; resilience: number; total: number } => (
+            Boolean(item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string')
+          ))
+          .map((item) => ({
+            name: item.name,
+            role: item.role === 'PLAYER' ? 'PLAYER' : 'NPC',
+            tactical: Number(item.tactical) || 0,
+            support: Number(item.support) || 0,
+            leadership: Number(item.leadership) || 0,
+            resilience: Number(item.resilience) || 0,
+            total: Number(item.total) || 0
+          }))
+          .slice(0, 16))
+      : [],
     plan: normalizedPlan,
     archivedUntilCeremonyDay: typeof mission.archivedUntilCeremonyDay === 'number' ? mission.archivedUntilCeremonyDay : null
   };

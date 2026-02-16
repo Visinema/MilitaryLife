@@ -119,28 +119,70 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
   const baseQuota = Math.floor(chief.competenceScore / 28);
   const quota = hasMissionPrestasi ? Math.max(1, Math.min(8, baseQuota + Math.floor(highPerformers / 6) - awardSaturation - strictnessPenalty)) : 0;
 
-  const recipients: CeremonyRecipient[] = [];
-  for (const candidate of candidatePool) {
-    if (recipients.length >= quota) break;
-    const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
-    if (!award) continue;
-    if (candidate.competenceScore < chief.competenceScore - 16) continue;
-    const isMissionParticipant = missionParticipants.has(candidate.name);
-    if (!isMissionParticipant && candidate.name !== state.player_name) continue;
-    const rollGate = (currentCeremonyDay + candidate.name.length + candidate.competenceScore) % 100;
-    if (rollGate > 42) continue;
-    if (!hasMissionPrestasi) continue;
+  const missionStatsPool = (state.active_mission?.participantStats ?? []).slice();
+  const missionStatsLeaderByField = [
+    { field: 'tactical', label: 'tactical execution' },
+    { field: 'support', label: 'support logistics' },
+    { field: 'leadership', label: 'leadership command' },
+    { field: 'resilience', label: 'resilience under fire' }
+  ].map((entry) => {
+    const rankedByField = missionStatsPool
+      .slice()
+      .sort((a, b) => (Number((b as Record<string, unknown>)[entry.field]) || 0) - (Number((a as Record<string, unknown>)[entry.field]) || 0));
+    return {
+      field: entry.field,
+      label: entry.label,
+      winner: rankedByField[0] ?? null,
+      winnerScore: Number((rankedByField[0] as Record<string, unknown> | undefined)?.[entry.field]) || 0
+    };
+  });
 
-    recipients.push({
-      order: recipients.length + 1,
-      npcName: candidate.name,
-      division: candidate.division,
-      unit: candidate.unit,
-      position: candidate.position,
-      medalName: award.medalName,
-      ribbonName: award.ribbonName,
-      reason: `Performance score ${candidate.competenceScore} dengan status ${isMissionParticipant ? 'partisipan misi aktif' : 'cadangan komando'} lolos seleksi ketat Chief-of-Staff AI.`
-    });
+  const recipients: CeremonyRecipient[] = [];
+  const awarded = new Set<string>();
+  if (hasMissionPrestasi) {
+    for (const leader of missionStatsLeaderByField) {
+      if (!leader.winner) continue;
+      if (awarded.has(leader.winner.name)) continue;
+      if (recipients.length >= quota) break;
+      const candidate = candidatePool.find((item) => item.name === leader.winner?.name);
+      if (!candidate) continue;
+      const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
+      if (!award) continue;
+
+      recipients.push({
+        order: recipients.length + 1,
+        npcName: candidate.name,
+        division: candidate.division,
+        unit: candidate.unit,
+        position: candidate.position,
+        medalName: award.medalName,
+        ribbonName: award.ribbonName,
+        reason: `Kontributor misi tertinggi pada bidang ${leader.label} (${leader.winnerScore}) dengan total skor ${leader.winner.total}.`
+      });
+      awarded.add(candidate.name);
+    }
+
+    for (const candidate of candidatePool) {
+      if (recipients.length >= quota) break;
+      if (awarded.has(candidate.name)) continue;
+      const award = pickUniqueAward(state, candidate.name, recipients.length + currentCeremonyDay);
+      if (!award) continue;
+      if (candidate.competenceScore < chief.competenceScore - 16) continue;
+      const isMissionParticipant = missionParticipants.has(candidate.name);
+      if (!isMissionParticipant && candidate.name !== state.player_name) continue;
+
+      recipients.push({
+        order: recipients.length + 1,
+        npcName: candidate.name,
+        division: candidate.division,
+        unit: candidate.unit,
+        position: candidate.position,
+        medalName: award.medalName,
+        ribbonName: award.ribbonName,
+        reason: `Performa misi + komando ${candidate.competenceScore} menjaga stabilitas operasi pada siklus ini.`
+      });
+      awarded.add(candidate.name);
+    }
   }
 
   const logs = [
@@ -151,6 +193,7 @@ export function buildCeremonyReport(state: DbGameStateRow): CeremonyReport {
     `Recipients selected: ${recipients.length}. Tidak semua personel/partisipan otomatis mendapat prestasi atau pita medali tiap siklus.`,
     `Deteksi misi aktif: ${state.active_mission ? `${state.active_mission.missionType} (${state.active_mission.status})` : 'tidak ada'}.`,
     `Peserta misi terdeteksi: ${missionParticipants.size > 0 ? Array.from(missionParticipants).join(', ') : 'tidak ada'}.`,
+    `Pemenang kontribusi per bidang: ${missionStatsLeaderByField.filter((item) => item.winner).map((item) => `${item.label}=${item.winner?.name}`).join(', ') || 'belum ada data kontribusi'}.`,
     'Ceremony closes with branch-wide directives for next 15-day operational cycle.'
   ];
 

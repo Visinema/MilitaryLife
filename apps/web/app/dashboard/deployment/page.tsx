@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
@@ -20,6 +20,7 @@ const STRATEGY_OPTIONS = [
 ];
 
 function DeploymentPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const fromMissionCall = searchParams.get('missionCall') === '1';
   const snapshot = useGameStore((state) => state.snapshot);
@@ -29,6 +30,16 @@ function DeploymentPageContent() {
   const [busy, setBusy] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
   const [missionRespondBusy, setMissionRespondBusy] = useState(false);
+  const [resultAckBusy, setResultAckBusy] = useState(false);
+  const [missionResult, setMissionResult] = useState<null | {
+    success: boolean;
+    successScore: number;
+    fundDelta: number;
+    moraleDelta: number;
+    healthDelta: number;
+    casualties: number;
+    promotionBonus: number;
+  }>(null);
   const [strategy, setStrategy] = useState(STRATEGY_OPTIONS[0]?.id ?? 'layered-security');
   const [objective, setObjective] = useState('Amankan area dan selesaikan objective utama dengan casualty minimal.');
   const [prepChecklist, setPrepChecklist] = useState<string[]>([]);
@@ -59,7 +70,7 @@ function DeploymentPageContent() {
     };
 
     syncSnapshot();
-    const timer = window.setInterval(syncSnapshot, 3000);
+    const timer = window.setInterval(syncSnapshot, snapshot?.gameTimeScale === 3 ? 850 : 3000);
     window.addEventListener('focus', syncSnapshot);
     window.addEventListener('visibilitychange', syncSnapshot);
     return () => {
@@ -68,7 +79,7 @@ function DeploymentPageContent() {
       window.removeEventListener('focus', syncSnapshot);
       window.removeEventListener('visibilitychange', syncSnapshot);
     };
-  }, [setSnapshot]);
+  }, [setSnapshot, snapshot?.gameTimeScale]);
 
   const activeMission = snapshot?.activeMission ?? null;
   const missionPlanningMode = Boolean(activeMission && activeMission.status === 'ACTIVE' && activeMission.playerParticipates);
@@ -119,11 +130,39 @@ function DeploymentPageContent() {
         playerParticipates: true
       });
       setSnapshot(response.snapshot);
-      setMessage('Misi aktif selesai dijalankan. Laporan misi akan tetap terlihat untuk kebutuhan upacara sampai upacara diselesaikan.');
+      const details = (response.details ?? {}) as Record<string, unknown>;
+      setMissionResult({
+        success: Boolean(details.success),
+        successScore: Number(details.successScore) || 0,
+        fundDelta: Number(details.fundDelta) || 0,
+        moraleDelta: Number(details.moraleDelta) || 0,
+        healthDelta: Number(details.healthDelta) || 0,
+        casualties: Number(details.casualties) || 0,
+        promotionBonus: Number(details.missionPromotionBonus) || 0
+      });
+      setMessage('Hasil misi sudah tersedia. Lanjutkan untuk unpause dan kembali ke dashboard.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Gagal menjalankan misi aktif');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const acknowledgeMissionResult = async () => {
+    if (!snapshot?.paused || !snapshot.pauseToken) {
+      router.replace('/dashboard');
+      return;
+    }
+
+    setResultAckBusy(true);
+    try {
+      const resumed = await api.resume(snapshot.pauseToken);
+      setSnapshot(resumed.snapshot);
+      router.replace('/dashboard');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Gagal unpause setelah hasil misi.');
+    } finally {
+      setResultAckBusy(false);
     }
   };
 
@@ -176,7 +215,7 @@ function DeploymentPageContent() {
                 <button
                   onClick={() => void respondMissionCall(true)}
                   disabled={missionRespondBusy}
-                  className="rounded border border-amber-200/60 bg-amber-200/20 px-3 py-1.5 text-sm text-amber-50 disabled:opacity-50"
+                  className="rounded border border-emerald-500 bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 >
                   {missionRespondBusy ? 'Memproses...' : 'Ikut misi'}
                 </button>
@@ -273,6 +312,31 @@ function DeploymentPageContent() {
       )}
 
       {message ? <p className="rounded border border-border bg-panel px-3 py-2 text-sm text-muted">{message}</p> : null}
+
+      {missionResult ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-lg rounded-md border border-emerald-500/60 bg-panel p-5 shadow-panel">
+            <p className="text-xs uppercase tracking-[0.12em] text-emerald-200">Hasil Misi</p>
+            <h3 className="mt-1 text-base font-semibold text-text">{missionResult.success ? 'Misi Berhasil' : 'Misi Gagal'}</h3>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-muted">
+              <p>Success Score: <span className="text-text">{missionResult.successScore}</span></p>
+              <p>Casualties: <span className="text-text">{missionResult.casualties}</span></p>
+              <p>Fund Delta: <span className="text-text">{missionResult.fundDelta}</span></p>
+              <p>Morale Delta: <span className="text-text">{missionResult.moraleDelta}</span></p>
+              <p>Health Delta: <span className="text-text">{missionResult.healthDelta}</span></p>
+              <p>Bonus Promosi: <span className="text-emerald-300">+{missionResult.promotionBonus}</span></p>
+            </div>
+            <p className="mt-3 text-xs text-muted">Konfirmasi hasil ini untuk unpause game lalu kembali ke dashboard utama.</p>
+            <button
+              onClick={() => void acknowledgeMissionResult()}
+              disabled={resultAckBusy}
+              className="mt-4 rounded border border-emerald-500 bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              {resultAckBusy ? 'Memproses...' : 'Lanjut ke Dashboard'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
