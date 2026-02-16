@@ -89,7 +89,7 @@ function DeploymentPageContent() {
     setStrategy(activeMission.plan.strategy || STRATEGY_OPTIONS[0]?.id || 'layered-security');
     setObjective(activeMission.plan.objective || '');
     setPrepChecklist(Array.isArray(activeMission.plan.prepChecklist) ? activeMission.plan.prepChecklist : []);
-  }, [activeMission?.missionId]);
+  }, [activeMission?.missionId, activeMission?.plan]);
 
   const squadMembers = useMemo(
     () => (activeMission?.participants ?? []).map((item) => `${item.name}${item.role === 'PLAYER' ? ' (Anda)' : ''}`),

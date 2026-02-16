@@ -104,7 +104,7 @@ export default function PeoplePage() {
       });
     }, 1800);
     return () => window.clearInterval(timer);
-  }, [selectedNpc?.id]);
+  }, [selectedNpc]);
 
   useEffect(() => {
     const loadActivity = () => {

@@ -242,7 +242,7 @@ export default function RecruitmentPage() {
       const first = track.internalHierarchy[0]?.name;
       return first ? { [first]: true } : {};
     });
-  }, [track.id]);
+  }, [track.id, track.internalHierarchy]);
 
   const submit = async () => {
     if (!snapshot) return;
@@ -295,7 +295,7 @@ export default function RecruitmentPage() {
         </select>
 
         <p className="text-muted">Persyaratan: min rank {track.minRankIndex}, Officer Cert: {track.needOfficerCert ? 'Ya' : 'Tidak'}, High Command Cert: {track.needHighCommandCert ? 'Ya' : 'Tidak'}</p>
-        <p className="text-muted">Jika lolos Military Judge Corps, tab "Pending Sidang" akan aktif di menu Pengadilan Militer.</p>
+        <p className="text-muted">Jika lolos Military Judge Corps, tab &quot;Pending Sidang&quot; akan aktif di menu Pengadilan Militer.</p>
 
         <div className="rounded border border-border/60 bg-bg/50 p-2">
           <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Aset Divisi/Satuan/Korps</p>

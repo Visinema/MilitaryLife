@@ -178,7 +178,7 @@ export function DashboardShell() {
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [loadSnapshot, noProfile, snapshot?.paused]);
+  }, [loadSnapshot, noProfile, snapshot]);
 
   const onCreateProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

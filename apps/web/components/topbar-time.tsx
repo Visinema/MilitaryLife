@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { deriveLiveGameDay, inGameDateFromDay } from '@/lib/clock';
 
@@ -15,7 +15,7 @@ interface TopbarTimeProps {
 }
 
 export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualContinue, controlBusy, onToggleTimeScale, timeScaleBusy }: TopbarTimeProps) {
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '4.0.0';
 
   useEffect(() => {
@@ -23,8 +23,8 @@ export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualCon
     return () => window.clearInterval(timer);
   }, [snapshot.gameTimeScale]);
 
-  const day = useMemo(() => deriveLiveGameDay(snapshot, clockOffsetMs), [snapshot, clockOffsetMs, tick]);
-  const date = useMemo(() => inGameDateFromDay(day), [day]);
+  const day = deriveLiveGameDay(snapshot, clockOffsetMs);
+  const date = inGameDateFromDay(day);
 
   return (
     <div className="rounded-md border-2 border-border bg-panel px-3 py-2 shadow-panel">
