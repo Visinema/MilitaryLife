@@ -101,7 +101,7 @@ const RIBBON_DEFINITIONS: RibbonDefinition[] = [
 ];
 
 function toBranchLabel(branch: string) {
-  return branch.replace('US_', 'US ').replace('ID_', 'ID ').replaceAll('_', ' ');
+  return branch.replace('US_', 'US ').replaceAll('_', ' ');
 }
 
 function universalRankFromScore(score: number): UniversalRank {

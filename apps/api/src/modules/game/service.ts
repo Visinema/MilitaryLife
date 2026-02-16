@@ -666,7 +666,7 @@ export async function runMilitaryAcademy(
       score,
       grade,
       divisionFreedomLevel: freedomLevel,
-      trainerName: tier === 2 ? 'Lt. Gen. Arman Wibisono' : 'Col. Andi Pratama',
+      trainerName: tier === 2 ? 'Lt. Gen. Michael Anderson' : 'Col. Daniel Hayes',
       issuedAtDay: state.current_day,
       message: 'Congratulations on your successful completion of the academy assessment phase.',
       assignedDivision: state.preferred_division ?? "INFANTRY"
@@ -1127,6 +1127,27 @@ function buildNewsFeed(state: DbGameStateRow, decisionLogs: Array<{ id: number; 
       type: 'DISMISSAL',
       title: 'News Pengadilan Militer',
       detail: `Terdapat ${state.court_pending_cases.filter((item) => item.status !== 'CLOSED').length} sidang aktif menunggu panel hakim.`
+    });
+  }
+
+  const chiefReviewCases = state.court_pending_cases.filter((item) => item.id.startsWith('chief-review-'));
+  if (chiefReviewCases.some((item) => item.status !== 'CLOSED')) {
+    const unresolved = chiefReviewCases.filter((item) => item.status !== 'CLOSED').length;
+    items.push({
+      id: `chief-review-pending-${state.current_day}`,
+      day: state.current_day,
+      type: 'DISMISSAL',
+      title: 'News Pengajuan Pemecatan Chief of Staff',
+      detail: `Posisi sekretaris militer terlambat diisi. ${unresolved} pengajuan evaluasi/pemecatan Chief of Staff masuk pending sidang.`
+    });
+  } else if (chiefReviewCases.length > 0) {
+    const latest = chiefReviewCases.reduce((max, item) => Math.max(max, item.day), 0);
+    items.push({
+      id: `chief-review-resolved-${latest}`,
+      day: latest,
+      type: 'DISMISSAL',
+      title: 'News Pergantian Chief of Staff',
+      detail: 'Sidang evaluasi Chief of Staff telah ditutup: hasil berupa pergantian atau peringatan resmi komando.'
     });
   }
 

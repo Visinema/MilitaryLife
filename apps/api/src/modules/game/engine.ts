@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { AcademyCertificate, ActionResult, DecisionResult, GameSnapshot } from '@mls/shared/game-types';
+import { buildNpcRegistry } from '@mls/shared/npc-registry';
 import type { PauseReason } from '@mls/shared/constants';
 import { clamp, roll, sampleGeometricGap, sampleWeighted } from '../../utils/random.js';
 import { computeAge, computeGameDay, toInGameDate } from './time.js';
@@ -235,6 +236,20 @@ export function resumeState(state: DbGameStateRow, resumeNowMs: number): void {
   state.pause_expires_at_ms = null;
 }
 
+function autoAssignFundSecretary(state: DbGameStateRow): void {
+  if (state.fund_secretary_npc) return;
+  if (state.current_day < 1) return;
+
+  const registry = buildNpcRegistry(state.branch, 12);
+  if (registry.length === 0) return;
+  const seed = state.current_day + state.rank_index * 3 + state.morale + state.health;
+  const candidate = registry[Math.abs(seed) % registry.length];
+  if (!candidate) return;
+
+  state.fund_secretary_npc = `${candidate.name} (Fund Secretary)`;
+  state.corruption_risk = Math.max(0, Math.min(100, state.corruption_risk - 2));
+}
+
 export function synchronizeProgress(state: DbGameStateRow, nowMs: number): number {
   const effectiveNow = state.paused_at_ms ?? nowMs;
   const targetDay = computeGameDay(effectiveNow, state.server_reference_time_ms);
@@ -280,6 +295,8 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
         ].slice(-60);
       }
     }
+
+    autoAssignFundSecretary(state);
   }
   return elapsed;
 }
