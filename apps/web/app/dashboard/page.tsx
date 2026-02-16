@@ -1,6 +1,11 @@
-﻿import { redirect } from 'next/navigation';
+﻿import { DashboardShell } from '@/components/dashboard-shell';
+import { ActionButtons } from '@/components/action-buttons';
 
 export default function DashboardPage() {
-  redirect('/dashboard/v5');
+  return (
+    <div className="space-y-3">
+      <ActionButtons />
+      <DashboardShell />
+    </div>
+  );
 }
-
