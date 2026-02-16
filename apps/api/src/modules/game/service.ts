@@ -1,9 +1,21 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionResult, CeremonyRecipient, DecisionResult, MedalCatalogItem, MilitaryLawEntry, NewsItem, NewsType, RaiderCasualty } from '@mls/shared/game-types';
+import type {
+  ActionResult,
+  CeremonyRecipient,
+  DecisionResult,
+  GameSnapshot,
+  GameSnapshotV5,
+  MedalCatalogItem,
+  MilitaryLawEntry,
+  NewsItem,
+  NewsType,
+  RaiderCasualty
+} from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
+import type { BranchCode } from '@mls/shared/constants';
 import { BRANCH_CONFIG } from './branch-config.js';
 import { buildCeremonyReport } from './ceremony.js';
 import {
@@ -35,7 +47,7 @@ import {
   updateGameState
 } from './repo.js';
 import { attachAuth } from '../auth/service.js';
-import { clearV5World, ensureV5World } from '../game-v5/repo.js';
+import { buildSnapshotV5, clearV5World, ensureV5World } from '../game-v5/repo.js';
 
 interface LockedStateContext {
   client: PoolClient;
@@ -618,13 +630,157 @@ async function withLockedState(
   }
 }
 
+function inferCountryFromBranch(branch: BranchCode): 'US' | 'ID' {
+  return branch.startsWith('ID_') ? 'ID' : 'US';
+}
+
+function splitAssignment(assignment: string): { division: string; position: string } {
+  const parts = assignment.split('-').map((item) => item.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return { division: parts[0] ?? 'Nondivisi', position: parts.slice(1).join(' - ') };
+  }
+  return { division: assignment || 'Nondivisi', position: assignment || 'Staff Officer' };
+}
+
+function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, nowMs: number): GameSnapshot {
+  const worldDay = snapshot.world.currentDay;
+  const gameTimeScale: 1 | 3 = snapshot.world.gameTimeScale === 3 ? 3 : 1;
+  const serverReferenceTimeMs = snapshot.serverNowMs - Math.floor((worldDay * GAME_MS_PER_DAY) / gameTimeScale);
+  const ceremonyCycleDay = worldDay >= 15 ? worldDay - (worldDay % 15) : 0;
+  const ceremonyDue = Boolean(snapshot.pendingCeremony && snapshot.pendingCeremony.status === 'PENDING');
+  const nextCeremonyDay = worldDay < 15 ? 15 : worldDay % 15 === 0 ? worldDay + 15 : worldDay + (15 - (worldDay % 15));
+  const assignment = splitAssignment(snapshot.player.assignment);
+  const branchConfig = BRANCH_CONFIG[snapshot.player.branch];
+  const rankCode = branchConfig?.ranks[snapshot.player.rankIndex] ?? branchConfig?.ranks.at(-1) ?? 'UNKNOWN';
+  const governance = snapshot.expansion?.governanceSummary;
+  const raiderThreat = snapshot.expansion?.raiderThreat;
+  const courtCases = snapshot.expansion?.openCourtCases ?? [];
+
+  return {
+    serverNowMs: nowMs,
+    serverReferenceTimeMs,
+    gameDay: worldDay,
+    inGameDate: `Day ${worldDay}`,
+    age: 18 + Math.floor(worldDay / 365),
+    playerName: snapshot.player.playerName,
+    country: inferCountryFromBranch(snapshot.player.branch),
+    branch: snapshot.player.branch,
+    rankCode,
+    rankIndex: snapshot.player.rankIndex,
+    moneyCents: snapshot.player.moneyCents,
+    morale: snapshot.player.morale,
+    health: snapshot.player.health,
+    paused: false,
+    pauseReason: null,
+    pauseToken: null,
+    pauseExpiresAtMs: null,
+    gameTimeScale,
+    lastMissionDay: snapshot.activeMission?.issuedDay ?? 0,
+    academyTier: snapshot.expansion?.academyBatch?.tier ?? 0,
+    academyCertifiedOfficer: (snapshot.expansion?.academyBatch?.tier ?? 0) >= 1,
+    academyCertifiedHighOfficer: (snapshot.expansion?.academyBatch?.tier ?? 0) >= 2,
+    lastTravelPlace: null,
+    certificates: [],
+    divisionFreedomScore: 0,
+    preferredDivision: assignment.division,
+    divisionAccess: null,
+    pendingDecision: null,
+    missionCallDue: false,
+    missionCallIssuedDay: null,
+    activeMission: null,
+    ceremonyDue,
+    nextCeremonyDay,
+    ceremonyCompletedDay: ceremonyDue ? Math.max(0, ceremonyCycleDay - 15) : ceremonyCycleDay,
+    ceremonyRecentAwards: (snapshot.pendingCeremony?.awards ?? []).map((award) => ({
+      order: award.orderNo,
+      npcName: award.recipientName,
+      division: 'N/A',
+      unit: 'N/A',
+      position: 'N/A',
+      medalName: award.medal,
+      ribbonName: award.ribbon,
+      reason: award.reason
+    })),
+    playerMedals: [],
+    playerRibbons: [],
+    npcAwardHistory: {},
+    playerPosition: assignment.position,
+    playerDivision: assignment.division,
+    raiderLastAttackDay: raiderThreat?.lastAttackDay ?? 0,
+    raiderCasualties: [],
+    nationalStability: governance?.nationalStability ?? 72,
+    militaryStability: governance?.militaryStability ?? 70,
+    militaryFundCents: governance?.militaryFundCents ?? 250_000,
+    fundSecretaryNpc: null,
+    secretaryVacancyDays: 0,
+    secretaryEscalationRisk: 'LOW',
+    corruptionRisk: governance?.corruptionRisk ?? 18,
+    pendingCourtCases: courtCases.map((item) => ({
+      id: item.caseId,
+      day: item.requestedDay,
+      title: `${item.caseType} ${item.targetType}`,
+      severity: item.caseType === 'DISMISSAL' ? 'HIGH' : item.caseType === 'DEMOTION' ? 'MEDIUM' : 'LOW',
+      status: item.status,
+      requestedBy: 'SYSTEM'
+    })),
+    militaryLawCurrent: null,
+    militaryLawLogs: [],
+    mlcEligibleMembers: snapshot.expansion?.councils?.length ?? 0
+  };
+}
+
+async function buildV5BackedLegacySnapshot(request: FastifyRequest, nowMs: number): Promise<GameSnapshot | null> {
+  if (!request.auth?.userId) return null;
+
+  const client = await request.server.db.connect();
+  try {
+    await client.query('BEGIN');
+    const profileId = await getProfileIdByUserId(client, request.auth.userId);
+    if (!profileId) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const profileRow = await client.query<{ player_name: string; branch: BranchCode }>(
+      `SELECT name AS player_name, branch::text AS branch FROM profiles WHERE id = $1 LIMIT 1`,
+      [profileId]
+    );
+    const profile = profileRow.rows[0];
+    if (!profile) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    await ensureV5World(client, { profileId, playerName: profile.player_name, branch: profile.branch }, nowMs);
+    const v5Snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    await client.query('COMMIT');
+    return v5Snapshot ? mapV5SnapshotToLegacy(v5Snapshot, nowMs) : null;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    request.log.error(error, 'legacy-snapshot-v5-fallback-failed');
+    return null;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getSnapshot(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  await withLockedState(
-    request,
-    reply,
-    { queueEvents: true },
-    async ({ state, nowMs }) => ({ payload: { snapshot: buildSnapshot(state, nowMs) } })
-  );
+  try {
+    await withLockedState(
+      request,
+      reply,
+      { queueEvents: true },
+      async ({ state, nowMs }) => ({ payload: { snapshot: buildSnapshot(state, nowMs) } })
+    );
+  } catch (error) {
+    request.log.error(error, 'legacy-snapshot-primary-failed');
+    const fallback = await buildV5BackedLegacySnapshot(request, Date.now());
+    if (fallback) {
+      reply.code(200).send({ snapshot: fallback, source: 'v5-fallback' });
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function pauseGame(

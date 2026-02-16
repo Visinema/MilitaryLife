@@ -93,7 +93,6 @@ function normalizeApiBase(rawValue: string | undefined): string {
 
 const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE);
 
-let snapshotBackoffUntilMs = 0;
 let snapshotInFlight: Promise<{ snapshot: GameSnapshot }> | null = null;
 
 const REQUEST_TIMEOUT_MS: Record<HttpMethod, number> = {
@@ -156,16 +155,7 @@ function requestSnapshot(): Promise<{ snapshot: GameSnapshot }> {
   }
 
   snapshotInFlight = request<{ snapshot: GameSnapshot }>('/game/snapshot', 'GET')
-    .then((payload) => {
-      snapshotBackoffUntilMs = 0;
-      return payload;
-    })
-    .catch((error: unknown) => {
-      if (error instanceof ApiError && error.status >= 500) {
-        snapshotBackoffUntilMs = Date.now() + 15_000;
-      }
-      throw error;
-    })
+    .then((payload) => payload)
     .finally(() => {
       snapshotInFlight = null;
     });
@@ -588,10 +578,6 @@ export const api = {
     return request<{ profileId: string }>('/profile/create', 'POST', payload);
   },
   snapshot() {
-    if (Date.now() < snapshotBackoffUntilMs) {
-      throw new ApiError(503, 'Snapshot sementara cooldown karena backend belum siap');
-    }
-
     return requestSnapshot();
   },
   setTimeScale(scale: 1 | 3) {

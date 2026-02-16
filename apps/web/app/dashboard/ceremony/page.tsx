@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import type { CeremonyCycleV5, DomOperationCycle, ExpansionStateV51 } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
@@ -21,6 +22,7 @@ function extractSessionMedalQuota(cycle: DomOperationCycle | null): number {
 }
 
 export default function CeremonyPage() {
+  const router = useRouter();
   const [data, setData] = useState<CeremonyViewState>({
     ceremony: null,
     domCycle: null,
@@ -61,7 +63,7 @@ export default function CeremonyPage() {
     setError(null);
     try {
       await api.v5CeremonyComplete();
-      await load();
+      router.replace('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara.');
     } finally {

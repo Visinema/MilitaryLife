@@ -90,7 +90,6 @@ export function DashboardShell() {
   const [academyOutcome, setAcademyOutcome] = useState<AcademyOutcome | null>(null);
   const [missionCallBusy, setMissionCallBusy] = useState<null | 'YES' | 'NO'>(null);
   const [expansionState, setExpansionState] = useState<ExpansionStateV51 | null>(null);
-  const snapshotCooldownUntilRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
@@ -100,9 +99,6 @@ export function DashboardShell() {
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotLoadInFlightRef.current) {
-      return;
-    }
-    if (Date.now() < snapshotCooldownUntilRef.current) {
       return;
     }
 
@@ -154,14 +150,12 @@ export function DashboardShell() {
           return;
         }
         if (err.status >= 500 || err.status === 408) {
-          snapshotCooldownUntilRef.current = Date.now() + 15_000;
-          setError('Server sementara bermasalah (5xx/timeout). Menunggu sebelum sinkronisasi ulang...');
+          setError('Server snapshot gagal (5xx/timeout). Sistem akan tetap retry otomatis.');
           return;
         }
         setError(err.message);
         return;
       }
-      snapshotCooldownUntilRef.current = Date.now() + 15_000;
       setError('Unable to load game snapshot');
     } finally {
       snapshotLoadInFlightRef.current = false;

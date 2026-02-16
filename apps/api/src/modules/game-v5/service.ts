@@ -1288,6 +1288,18 @@ export async function completeCeremonyV5(request: FastifyRequest, reply: Fastify
     const done = await completeCeremonyCycle(client, profileId, ceremony.cycleId, nowMs);
     const world = await lockV5World(client, profileId);
     if (world) {
+      const legacyCeremonyDay = done?.ceremonyDay ?? (world.currentDay >= 15 ? world.currentDay - (world.currentDay % 15) : 0);
+      const legacyAwards = (done?.awards ?? []).map((award) => ({
+        order: award.orderNo,
+        npcName: award.recipientName,
+        division: 'N/A',
+        unit: 'N/A',
+        position: 'N/A',
+        medalName: award.medal,
+        ribbonName: award.ribbon,
+        reason: award.reason
+      }));
+
       await updateWorldCore(client, {
         profileId,
         stateVersion: world.stateVersion + 1,
@@ -1306,6 +1318,27 @@ export async function completeCeremonyV5(request: FastifyRequest, reply: Fastify
         militaryDelta: 2,
         corruptionDelta: -1
       });
+      await client.query(
+        `
+          UPDATE game_states
+          SET
+            current_day = GREATEST(current_day, $2),
+            ceremony_completed_day = GREATEST(ceremony_completed_day, $3),
+            ceremony_recent_awards = $4::jsonb,
+            server_reference_time_ms = CASE
+              WHEN pause_reason = 'SUBPAGE'::pause_reason AND paused_at_ms IS NOT NULL
+                THEN server_reference_time_ms + GREATEST(0, $5 - paused_at_ms)
+              ELSE server_reference_time_ms
+            END,
+            paused_at_ms = CASE WHEN pause_reason = 'SUBPAGE'::pause_reason THEN NULL ELSE paused_at_ms END,
+            pause_reason = CASE WHEN pause_reason = 'SUBPAGE'::pause_reason THEN NULL ELSE pause_reason END,
+            pause_token = CASE WHEN pause_reason = 'SUBPAGE'::pause_reason THEN NULL ELSE pause_token END,
+            pause_expires_at_ms = CASE WHEN pause_reason = 'SUBPAGE'::pause_reason THEN NULL ELSE pause_expires_at_ms END,
+            updated_at = now()
+          WHERE profile_id = $1
+        `,
+        [profileId, world.currentDay, legacyCeremonyDay, JSON.stringify(legacyAwards), nowMs]
+      );
     }
 
     const snapshot = await buildSnapshotV5(client, profileId, nowMs);
