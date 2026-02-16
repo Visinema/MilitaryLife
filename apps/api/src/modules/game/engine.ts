@@ -266,14 +266,15 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
       state.military_stability = Math.max(0, Math.min(100, state.military_stability - Math.max(1, Math.floor(escalation / 2))));
 
       if (shouldEscalateSecretaryVacancy(state, sustainedVacancyDays)) {
+        const reviewSeverity: 'LOW' | 'MEDIUM' | 'HIGH' = sustainedVacancyDays >= 8 ? 'HIGH' : sustainedVacancyDays >= 5 ? 'MEDIUM' : 'LOW';
         state.court_pending_cases = [
           ...state.court_pending_cases,
           {
             id: `chief-review-${state.current_day}`,
             day: state.current_day,
             title: 'Pengajuan evaluasi Chief of Staff karena kursi sekretaris kosong > 2 hari',
-            severity: sustainedVacancyDays >= 8 ? 'HIGH' : sustainedVacancyDays >= 5 ? 'MEDIUM' : 'LOW',
-            status: 'PENDING',
+            severity: reviewSeverity,
+            status: 'PENDING' as const,
             requestedBy: 'Subordinate Council'
           }
         ].slice(-60);

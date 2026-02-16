@@ -27,19 +27,38 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api/v1';
 let snapshotBackoffUntilMs = 0;
 let snapshotInFlight: Promise<{ snapshot: GameSnapshot }> | null = null;
 
+const REQUEST_TIMEOUT_MS: Record<HttpMethod, number> = {
+  GET: 8_000,
+  POST: 12_000
+};
+
 async function request<T>(path: string, method: HttpMethod, body?: unknown, options?: RequestOptions): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method,
-    credentials: 'include',
-    headers: body
-      ? {
-          'content-type': 'application/json'
-        }
-      : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-    cache: options?.cache ?? 'no-store',
-    keepalive: method !== 'GET'
-  });
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS[method]);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      credentials: 'include',
+      headers: body
+        ? {
+            'content-type': 'application/json'
+          }
+        : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      cache: options?.cache ?? 'no-store',
+      keepalive: method !== 'GET',
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(408, 'Request timeout. Coba lagi beberapa saat.');
+    }
+    throw error;
+  } finally {
+globalThis.clearTimeout(timeout);
+  }
 
   if (response.status === 204) {
     return undefined as T;

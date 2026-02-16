@@ -4,7 +4,6 @@ import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
 export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
 
-export const WORLD_V2_VERSION = '3.2.0';
 const MAX_NPCS = MAX_ACTIVE_NPCS;
 
 export interface RibbonStyle {
@@ -296,7 +295,7 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     hierarchy,
     stats,
     missionBrief: {
-      title: `Operation Iron Network v${WORLD_V2_VERSION}`,
+      title: 'Operation Readiness Grid',
       objective: 'Stabilize supply corridors with realistic pacing and persistent smart-NPC progression.',
       sanctions: 'Commanders can issue warning, duty restriction, and promotion hold for failed orders or insubordination.',
       commandRule: 'Hierarchy authority flows from theater to division/subdivision leads with morale impact on non-compliance.',

@@ -59,14 +59,18 @@ export default function CeremonyPage() {
     if (!ceremonyDue) return;
     let cancelled = false;
     let pollTimer: number | null = null;
+    let inFlight = false;
 
     const pollSnapshot = async () => {
+      if (cancelled || document.visibilityState !== 'visible' || inFlight) return;
+      inFlight = true;
       try {
         const res = await api.snapshot();
         if (!cancelled) setSnapshot(res.snapshot);
       } catch {
         // noop
       } finally {
+        inFlight = false;
         if (!cancelled) {
           pollTimer = window.setTimeout(() => {
             void pollSnapshot();
@@ -75,11 +79,21 @@ export default function CeremonyPage() {
       }
     };
 
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void pollSnapshot();
+      }
+    };
+
     void pollSnapshot();
+    window.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
 
     return () => {
       cancelled = true;
       if (pollTimer) window.clearTimeout(pollTimer);
+      window.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [ceremonyDue, setSnapshot]);
 

@@ -89,12 +89,17 @@ export function DashboardShell() {
   const hasInitialSnapshotRef = useRef(false);
   const ceremonyRedirectFrameRef = useRef<number | null>(null);
   const lastLiveCeremonyCheckDayRef = useRef<number>(-1);
+  const snapshotLoadInFlightRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
+    if (snapshotLoadInFlightRef.current) {
+      return;
+    }
     if (Date.now() < snapshotCooldownUntilRef.current) {
       return;
     }
 
+    snapshotLoadInFlightRef.current = true;
     if (!hasInitialSnapshotRef.current) {
       setLoading(true);
     }
@@ -115,9 +120,9 @@ export function DashboardShell() {
           setLoading(false);
           return;
         }
-        if (err.status >= 500) {
+        if (err.status >= 500 || err.status === 408) {
           snapshotCooldownUntilRef.current = Date.now() + 15_000;
-          setError('Server sementara bermasalah (5xx). Menunggu sebelum sinkronisasi ulang...');
+          setError('Server sementara bermasalah (5xx/timeout). Menunggu sebelum sinkronisasi ulang...');
           return;
         }
         setError(err.message);
@@ -125,6 +130,8 @@ export function DashboardShell() {
       }
       snapshotCooldownUntilRef.current = Date.now() + 15_000;
       setError('Unable to load game snapshot');
+    } finally {
+      snapshotLoadInFlightRef.current = false;
     }
   }, [router, setError, setLoading, setSnapshot]);
 
@@ -136,13 +143,21 @@ export function DashboardShell() {
     if (noProfile) return;
     if (!snapshot) return;
 
-    const intervalMs = snapshot.paused ? 60_000 : 20_000;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') {
-        return;
-      }
-      void loadSnapshot();
-    }, intervalMs);
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const intervalMs = snapshot.paused ? 60_000 : 20_000;
+      timer = window.setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          void loadSnapshot();
+        }
+        schedule();
+      }, intervalMs);
+    };
+
+    schedule();
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -154,11 +169,12 @@ export function DashboardShell() {
     window.addEventListener('focus', onVisible);
 
     return () => {
-      window.clearInterval(timer);
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [loadSnapshot, noProfile, snapshot]);
+  }, [loadSnapshot, noProfile, snapshot?.paused]);
 
   const onCreateProfile = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
