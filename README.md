@@ -239,6 +239,11 @@ Frontend:
 
 Railway deploy behavior is pinned via `railway.toml` (`build:api` + root `start` command) to avoid monorepo auto-detection failures.
 
+Important build-context guardrail:
+- Do **not** exclude `.nixpacks/` in `.dockerignore`.
+- Railway-generated Dockerfile copies `.nixpacks/nixpkgs-*.nix`; excluding that folder causes build failure:
+  `failed to compute cache key ... "/.nixpacks/nixpkgs-*.nix": not found`.
+
 ## A. Railway (Backend + PostgreSQL)
 
 1. Create a Railway project.

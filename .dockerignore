@@ -2,7 +2,8 @@
 .gitignore
 .vercel
 .railway
-.nixpacks
+# Keep .nixpacks in context: Railway Nixpacks-generated Dockerfile copies
+# .nixpacks/nixpkgs-*.nix during build.
 node_modules
 .pnpm-store
 apps/*/node_modules
