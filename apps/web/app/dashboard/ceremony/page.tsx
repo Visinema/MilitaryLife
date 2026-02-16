@@ -117,7 +117,7 @@ export default function CeremonyPage() {
     <div className="space-y-4">
       <div className="cyber-panel p-3">
         <p className="text-xs uppercase tracking-[0.14em] text-muted">Upacara Medal</p>
-        <h1 className="text-lg font-semibold text-text">Parade 12 Harian · Pemberian Pita oleh Chief of Staff</h1>
+        <h1 className="text-lg font-semibold text-text">Parade 15 Harian · Pemberian Pita oleh Chief of Staff</h1>
         <p className="mt-1 text-xs text-muted">
           {ceremonyDue
             ? 'Upacara aktif dan game dipause sampai upacara diselesaikan.'

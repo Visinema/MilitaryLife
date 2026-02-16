@@ -703,7 +703,10 @@ function buildMissionParticipants(state: DbGameStateRow, playerParticipates: boo
 function maybeIssueMissionCall(state: DbGameStateRow, nowMs: number, timeoutMinutes: number): void {
   const missionIntervalDays = 10;
   if (state.active_mission?.status === 'ACTIVE') return;
-  if (state.current_day < state.mission_call_issued_day + missionIntervalDays) return;
+
+  const currentCycle = Math.floor(state.current_day / missionIntervalDays);
+  const lastIssuedCycle = Math.floor(Math.max(0, state.mission_call_issued_day) / missionIntervalDays);
+  if (currentCycle <= 0 || currentCycle <= lastIssuedCycle) return;
 
   state.active_mission = {
     missionId: `mission-call-${state.current_day}-${randomUUID().slice(0, 8)}`,
@@ -2005,6 +2008,9 @@ export async function respondMissionCall(
     };
 
     if (payload.participate) {
+      if (!state.paused_at_ms) {
+        pauseState(state, 'MODAL', nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+      }
       return {
         payload: {
           type: 'V3_MISSION',
