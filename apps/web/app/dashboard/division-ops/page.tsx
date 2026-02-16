@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
@@ -9,9 +9,12 @@ export default function DivisionOpsPage() {
   const snapshot = useGameStore((s) => s.snapshot);
   const setSnapshot = useGameStore((s) => s.setSnapshot);
   const [result, setResult] = useState<string>('');
+  const [secretaryName, setSecretaryName] = useState('');
   const [dangerTier, setDangerTier] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME'>('MEDIUM');
   const [missionType, setMissionType] = useState<'RECON' | 'COUNTER_RAID' | 'BLACK_OPS' | 'TRIBUNAL_SECURITY'>('RECON');
   const [playerParticipates, setPlayerParticipates] = useState(true);
+
+  const defaultSecretaryName = useMemo(() => `NPC Secretary ${Math.max(1, (snapshot?.gameDay ?? 1) % 30)}`, [snapshot?.gameDay]);
 
   const runMission = async () => {
     try {
@@ -24,11 +27,12 @@ export default function DivisionOpsPage() {
   };
 
   const appointSecretary = async () => {
-    const npc = `NPC Secretary ${Math.max(1, (snapshot?.gameDay ?? 1) % 30)}`;
+    const npc = (secretaryName || defaultSecretaryName).trim();
     try {
       const res = await api.appointSecretary(npc);
       setSnapshot(res.snapshot);
       setResult(`Sekretaris kas ditunjuk: ${npc}`);
+      setSecretaryName('');
     } catch (err) {
       setResult(err instanceof ApiError ? err.message : 'Gagal tunjuk sekretaris');
     }
@@ -65,9 +69,22 @@ export default function DivisionOpsPage() {
           <div className="rounded border border-border/60 bg-bg/60 px-2 py-1">Stabilitas Militer: <span className="text-text">{snapshot?.militaryStability ?? 0}%</span></div>
           <div className="rounded border border-border/60 bg-bg/60 px-2 py-1">Kas Militer: <span className="text-text">${Math.round((snapshot?.militaryFundCents ?? 0) / 100).toLocaleString()}</span></div>
           <div className="rounded border border-border/60 bg-bg/60 px-2 py-1">Korupsi: <span className="text-text">{snapshot?.corruptionRisk ?? 0}%</span></div>
+          <div className="rounded border border-border/60 bg-bg/60 px-2 py-1">Sekretaris kosong: <span className="text-text">{snapshot?.secretaryVacancyDays ?? 0} hari</span></div>
+          <div className="rounded border border-border/60 bg-bg/60 px-2 py-1">Risiko sidang Chief: <span className="text-text">{snapshot?.secretaryEscalationRisk ?? 'LOW'}</span></div>
         </div>
 
-        <button onClick={() => void appointSecretary()} className="rounded border border-border bg-panel px-2 py-1 text-text">Tunjuk Sekretaris Kas (Chief-only)</button>
+        <div className="grid gap-1 sm:grid-cols-[1fr,auto]">
+          <input
+            value={secretaryName}
+            onChange={(e) => setSecretaryName(e.target.value)}
+            placeholder={`Nama sekretaris (default: ${defaultSecretaryName})`}
+            className="rounded border border-border bg-bg px-2 py-1 text-text"
+            maxLength={80}
+          />
+          <button onClick={() => void appointSecretary()} className="rounded border border-border bg-panel px-2 py-1 text-text">Tunjuk Sekretaris Kas (Chief-only)</button>
+        </div>
+
+        <p className="text-muted">Chief of Staff wajib reaktif. Kursi sekretaris kosong lebih dari 2 hari menurunkan reputasi komando dan meningkatkan peluang pengajuan penggantian Chief ke sidang militer.</p>
         {result ? <p className="text-muted">{result}</p> : null}
       </div>
     </div>

@@ -135,6 +135,8 @@ export interface GameSnapshot {
   militaryStability: number;
   militaryFundCents: number;
   fundSecretaryNpc: string | null;
+  secretaryVacancyDays: number;
+  secretaryEscalationRisk: 'LOW' | 'MEDIUM' | 'HIGH';
   corruptionRisk: number;
   pendingCourtCases: Array<{
     id: string;

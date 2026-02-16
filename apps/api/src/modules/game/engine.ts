@@ -255,8 +255,43 @@ export function synchronizeProgress(state: DbGameStateRow, nowMs: number): numbe
     state.national_stability = Math.max(0, Math.min(100, state.national_stability - stabilityDecay));
     state.military_stability = Math.max(0, Math.min(100, state.military_stability - stabilityDecay - (state.corruption_risk >= 50 ? 1 : 0)));
     state.corruption_risk = Math.max(0, Math.min(100, state.corruption_risk + (state.fund_secretary_npc ? 0 : 1)));
+
+    const secretaryVacancyDays = computeSecretaryVacancyDays(state);
+    if (secretaryVacancyDays > 2) {
+      const sustainedVacancyDays = Math.max(0, secretaryVacancyDays - 2);
+      const escalation = Math.min(elapsed, sustainedVacancyDays);
+      const reputationLoss = Math.max(1, Math.floor(escalation / 2));
+      state.promotion_points = Math.max(0, state.promotion_points - reputationLoss);
+      state.morale = Math.max(0, Math.min(100, state.morale - Math.max(1, Math.floor(escalation / 3))));
+      state.military_stability = Math.max(0, Math.min(100, state.military_stability - Math.max(1, Math.floor(escalation / 2))));
+
+      if (sustainedVacancyDays >= 4 && state.current_day % 2 === 0) {
+        state.court_pending_cases = [
+          ...state.court_pending_cases,
+          {
+            id: `chief-review-${state.current_day}`,
+            day: state.current_day,
+            title: 'Pengajuan evaluasi Chief of Staff karena kursi sekretaris kosong > 2 hari',
+            severity: sustainedVacancyDays >= 8 ? 'HIGH' : sustainedVacancyDays >= 5 ? 'MEDIUM' : 'LOW',
+            status: 'PENDING',
+            requestedBy: 'Subordinate Council'
+          }
+        ].slice(-60);
+      }
+    }
   }
   return elapsed;
+}
+
+function computeSecretaryVacancyDays(state: DbGameStateRow): number {
+  if (state.fund_secretary_npc) return 0;
+  return Math.max(0, state.current_day - 2);
+}
+
+function secretaryEscalationRisk(vacancyDays: number): 'LOW' | 'MEDIUM' | 'HIGH' {
+  if (vacancyDays >= 8) return 'HIGH';
+  if (vacancyDays >= 4) return 'MEDIUM';
+  return 'LOW';
 }
 
 
@@ -488,6 +523,7 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
   const currentCeremonyDay = gameDay >= 12 ? Math.floor(gameDay / 12) * 12 : 0;
   const ceremonyDue = currentCeremonyDay >= 12 && state.ceremony_completed_day < currentCeremonyDay;
   const normalizedCertificates = normalizeCertificateInventory(state.certificate_inventory);
+  const secretaryVacancyDays = computeSecretaryVacancyDays(state);
   return {
     serverNowMs: nowMs,
     serverReferenceTimeMs: state.server_reference_time_ms,
@@ -530,6 +566,8 @@ export function buildSnapshot(state: DbGameStateRow, nowMs: number): GameSnapsho
     militaryStability: state.military_stability,
     militaryFundCents: state.military_fund_cents,
     fundSecretaryNpc: state.fund_secretary_npc,
+    secretaryVacancyDays,
+    secretaryEscalationRisk: secretaryEscalationRisk(secretaryVacancyDays),
     corruptionRisk: state.corruption_risk,
     pendingCourtCases: state.court_pending_cases
   };

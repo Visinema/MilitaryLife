@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { CeremonyReport } from '@mls/shared/game-types';
 import { api } from '@/lib/api-client';
 import { useGameStore } from '@/store/game-store';
 
 export default function CeremonyPage() {
+  const router = useRouter();
   const [ceremony, setCeremony] = useState<CeremonyReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,12 +57,31 @@ export default function CeremonyPage() {
 
   useEffect(() => {
     if (!ceremonyDue) return;
-    const timer = window.setInterval(() => {
-      api.snapshot().then((res) => setSnapshot(res.snapshot)).catch(() => null);
-    }, 2200);
-    return () => window.clearInterval(timer);
-  }, [ceremonyDue, setSnapshot]);
+    let cancelled = false;
+    let pollTimer: number | null = null;
 
+    const pollSnapshot = async () => {
+      try {
+        const res = await api.snapshot();
+        if (!cancelled) setSnapshot(res.snapshot);
+      } catch {
+        // noop
+      } finally {
+        if (!cancelled) {
+          pollTimer = window.setTimeout(() => {
+            void pollSnapshot();
+          }, 2200);
+        }
+      }
+    };
+
+    void pollSnapshot();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) window.clearTimeout(pollTimer);
+    };
+  }, [ceremonyDue, setSnapshot]);
 
   const completeCeremony = async () => {
     if (!ceremonyDue || busy) return;
@@ -70,6 +91,7 @@ export default function CeremonyPage() {
       const response = await api.ceremonyComplete();
       setSnapshot(response.snapshot);
       setCeremony(null);
+      router.replace('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menyelesaikan upacara');
     } finally {
