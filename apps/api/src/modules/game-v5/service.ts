@@ -132,10 +132,15 @@ function waitV5Retry(attempt: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+type V5ContextOptions = {
+  skipBootstrapTick?: boolean;
+};
+
 async function withV5Context(
   request: FastifyRequest,
   reply: FastifyReply,
-  handler: (ctx: V5Context) => Promise<{ statusCode?: number; payload: unknown }>
+  handler: (ctx: V5Context) => Promise<{ statusCode?: number; payload: unknown }>,
+  options: V5ContextOptions = {}
 ): Promise<void> {
   await attachAuth(request);
   if (!request.auth?.userId) {
@@ -165,7 +170,9 @@ async function withV5Context(
         }
         const nowMs = Math.max(dbNowMs, world.lastTickMs);
         await setSessionActiveUntil(client, profile.profileId, nowMs, CONTEXT_SESSION_TTL_MS);
-        await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
+        if (!options.skipBootstrapTick) {
+          await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
+        }
 
         const result = await handler({
           client,
@@ -1125,7 +1132,7 @@ export async function startSessionV5(request: FastifyRequest, reply: FastifyRepl
         snapshot
       }
     };
-  });
+  }, { skipBootstrapTick: Boolean(payload.resetWorld) });
 }
 
 export async function heartbeatSessionV5(request: FastifyRequest, reply: FastifyReply, payload: { sessionTtlMs?: number }): Promise<void> {
