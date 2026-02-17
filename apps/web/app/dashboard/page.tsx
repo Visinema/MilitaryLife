@@ -1,10 +1,10 @@
 import dynamic from 'next/dynamic';
 
-const ActionButtons = dynamic(() => import('@/components/action-buttons').then((mod) => mod.ActionButtons), {
+const ActionButtons = dynamic(() => import('@/features/dashboard/components/action-buttons').then((mod) => mod.ActionButtons), {
   loading: () => <div className="cyber-panel h-16 animate-pulse" />
 });
 
-const DashboardShell = dynamic(() => import('@/components/dashboard-shell').then((mod) => mod.DashboardShell), {
+const DashboardShell = dynamic(() => import('@/features/dashboard/components/dashboard-shell').then((mod) => mod.DashboardShell), {
   loading: () => <div className="cyber-panel h-[70vh] animate-pulse" />
 });
 
