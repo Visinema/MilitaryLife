@@ -139,6 +139,28 @@ if (shouldRequireBackendOrigin && !backendForRewrite) {
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+
+  compress: true,
+  images: {
+    formats: ['image/avif', 'image/webp']
+  },
+  async headers() {
+    return [
+      {
+        source: '/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif|css|js|woff|woff2)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }
+        ]
+      },
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'x-dns-prefetch-control', value: 'on' },
+          { key: 'Vary', value: 'Accept-Encoding, Origin' }
+        ]
+      }
+    ];
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: resolveAutoVersion()
   },

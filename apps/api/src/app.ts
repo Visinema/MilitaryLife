@@ -5,6 +5,7 @@ import { dbPlugin } from './plugins/db.js';
 import { cookiePlugin } from './plugins/cookie.js';
 import { compressPlugin } from './plugins/compress.js';
 import { rateLimitPlugin } from './plugins/rate-limit.js';
+import { networkHeadersPlugin } from './plugins/network-headers.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { profileRoutes } from './modules/profile/routes.js';
 import { gameRoutes } from './modules/game/routes.js';
@@ -65,7 +66,8 @@ export async function buildApp() {
 
       cb(null, false);
     },
-    credentials: true
+    credentials: true,
+    maxAge: 86_400
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -86,6 +88,7 @@ export async function buildApp() {
     reply.code(500).send({ error: 'Internal server error' });
   });
 
+  await app.register(networkHeadersPlugin);
   await app.register(cookiePlugin);
   await app.register(compressPlugin);
   await app.register(rateLimitPlugin);
