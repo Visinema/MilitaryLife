@@ -11,7 +11,7 @@ export const DASHBOARD_LINKS: ReadonlyArray<{ href: string; label: string }> = [
   { href: '/dashboard/profile', label: 'Profile' },
   { href: '/dashboard/event-frame', label: 'Event Frame' },
   { href: '/dashboard/decision-log', label: 'Decision Log' },
-  { href: '/dashboard/hierarchy', label: 'Hierarchy V2' },
+  { href: '/dashboard/hierarchy', label: 'Hierarchy V5' },
   { href: '/dashboard/people', label: 'NPC / People' },
   { href: '/dashboard/mailbox', label: 'Mailbox' },
   { href: '/dashboard/social-profile', label: 'Social Profile' }

@@ -284,8 +284,3 @@ export function buildWorldV5(snapshot: GameSnapshot): WorldV5State {
   };
 }
 
-
-// Backward-compatible aliases for legacy imports pending full cleanup.
-export type NpcV2Profile = NpcV5Profile;
-export type WorldV2State = WorldV5State;
-export const buildWorldV2 = buildWorldV5;
