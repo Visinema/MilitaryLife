@@ -132,14 +132,17 @@ export async function getProfileBaseByUserId(client: PoolClient, userId: string)
   return { profileId: row.profile_id, playerName: row.player_name, branch: row.branch };
 }
 
+export async function lockV5RuntimeRows(client: PoolClient, profileId: string): Promise<void> {
+  // Keep lock order deterministic: game_worlds -> player_runtime.
+  // This is used by legacy and V5 flows to prevent cross-endpoint deadlocks.
+  await client.query(`SELECT profile_id FROM game_worlds WHERE profile_id = $1 FOR UPDATE`, [profileId]);
+  await client.query(`SELECT profile_id FROM player_runtime WHERE profile_id = $1 FOR UPDATE`, [profileId]);
+}
+
 export async function clearV5World(client: PoolClient, profileId: string): Promise<void> {
   // Lock core runtime rows first so reset lock ordering matches world tick ordering.
   // This prevents deadlocks with concurrent requests that lock world/runtime then mutate academy/recruitment tables.
-  const lockedWorld = await lockV5World(client, profileId);
-  if (!lockedWorld) {
-    await client.query(`SELECT profile_id FROM game_worlds WHERE profile_id = $1 FOR UPDATE`, [profileId]);
-    await client.query(`SELECT profile_id FROM player_runtime WHERE profile_id = $1 FOR UPDATE`, [profileId]);
-  }
+  await lockV5RuntimeRows(client, profileId);
 
   // academy_batch_members does not have profile_id, so it must be cleared via batch linkage.
   await client.query(

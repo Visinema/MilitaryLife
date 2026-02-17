@@ -49,13 +49,31 @@ import {
   updateGameState
 } from './repo.js';
 import { attachAuth } from '../auth/service.js';
-import { buildSnapshotV5, clearV5World, ensureV5World, listCertifications } from '../game-v5/repo.js';
+import { buildSnapshotV5, clearV5World, ensureV5World, listCertifications, lockV5RuntimeRows } from '../game-v5/repo.js';
 
 interface LockedStateContext {
   client: PoolClient;
   state: DbGameStateRow;
   nowMs: number;
   profileId: string;
+}
+
+const LOCKED_STATE_RETRY_LIMIT = 2;
+const RETRYABLE_TX_ERROR_CODES = new Set(['40P01', '40001']);
+
+function isRetryableTxError(error: unknown): error is { code: string } {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    RETRYABLE_TX_ERROR_CODES.has((error as { code: string }).code)
+  );
+}
+
+function waitForRetry(attempt: number): Promise<void> {
+  const delayMs = 25 * (attempt + 1);
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 
@@ -574,58 +592,74 @@ async function withLockedState(
 
   const client = await request.server.db.connect();
   try {
-    await client.query('BEGIN');
+    for (let attempt = 0; attempt <= LOCKED_STATE_RETRY_LIMIT; attempt += 1) {
+      try {
+        await client.query('BEGIN');
 
-    const profileId = await getProfileIdOrNull(client, request);
-    if (!profileId) {
-      await client.query('ROLLBACK');
-      reply.code(404).send({ error: 'Profile not found' });
-      return;
+        const profileId = await getProfileIdOrNull(client, request);
+        if (!profileId) {
+          await client.query('ROLLBACK');
+          reply.code(404).send({ error: 'Profile not found' });
+          return;
+        }
+
+        if (!request.auth.sessionId) {
+          await client.query('ROLLBACK');
+          reply.code(401).send({ error: 'Invalid session' });
+          return;
+        }
+
+        // Legacy actions can run concurrently with V5 tick requests.
+        // Lock V5 runtime rows first to keep cross-service lock order consistent.
+        await lockV5RuntimeRows(client, profileId);
+
+        const sessionGuard = await ensureSingleActiveSession(client, profileId, request.auth.sessionId);
+        if (sessionGuard === 'conflict') {
+          await client.query('ROLLBACK');
+          reply.code(409).send({ error: 'Another active session is controlling this profile' });
+          return;
+        }
+
+        const state = await lockGameStateByProfileId(client, profileId);
+        if (!state) {
+          await client.query('ROLLBACK');
+          reply.code(404).send({ error: 'Game state not found' });
+          return;
+        }
+
+        const nowMs = Date.now();
+        const initialStateCheckpoint = createStateCheckpoint(state);
+        autoResumeIfExpired(state, nowMs);
+        synchronizeProgress(state, nowMs);
+        maybeIssueMissionCall(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+        enforceMissionCallPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+        enforceCeremonyPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+
+        if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
+          await maybeQueueDecisionEvent(client, state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
+        }
+
+        const result = await execute({ client, state, nowMs, profileId });
+
+        if (hasStateChanged(state, initialStateCheckpoint)) {
+          await updateGameState(client, state);
+        }
+        await client.query('COMMIT');
+
+        reply.code(result.statusCode ?? 200).send(result.payload);
+        return;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        if (isRetryableTxError(err) && attempt < LOCKED_STATE_RETRY_LIMIT) {
+          request.log.warn({ err, attempt: attempt + 1 }, 'game-service-retryable-transaction');
+          await waitForRetry(attempt);
+          continue;
+        }
+        request.log.error(err, 'game-service-failure');
+        throw err;
+      }
     }
-
-    if (!request.auth.sessionId) {
-      await client.query('ROLLBACK');
-      reply.code(401).send({ error: 'Invalid session' });
-      return;
-    }
-
-    const sessionGuard = await ensureSingleActiveSession(client, profileId, request.auth.sessionId);
-    if (sessionGuard === 'conflict') {
-      await client.query('ROLLBACK');
-      reply.code(409).send({ error: 'Another active session is controlling this profile' });
-      return;
-    }
-
-    const state = await lockGameStateByProfileId(client, profileId);
-    if (!state) {
-      await client.query('ROLLBACK');
-      reply.code(404).send({ error: 'Game state not found' });
-      return;
-    }
-
-    const nowMs = Date.now();
-    const initialStateCheckpoint = createStateCheckpoint(state);
-    autoResumeIfExpired(state, nowMs);
-    synchronizeProgress(state, nowMs);
-    maybeIssueMissionCall(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
-    enforceMissionCallPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
-    enforceCeremonyPause(state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
-
-    if (options.queueEvents && !state.paused_at_ms && !state.pending_event_id) {
-      await maybeQueueDecisionEvent(client, state, nowMs, request.server.env.PAUSE_TIMEOUT_MINUTES);
-    }
-
-    const result = await execute({ client, state, nowMs, profileId });
-
-    if (hasStateChanged(state, initialStateCheckpoint)) {
-      await updateGameState(client, state);
-    }
-    await client.query('COMMIT');
-
-    reply.code(result.statusCode ?? 200).send(result.payload);
   } catch (err) {
-    await client.query('ROLLBACK');
-    request.log.error(err, 'game-service-failure');
     throw err;
   } finally {
     client.release();

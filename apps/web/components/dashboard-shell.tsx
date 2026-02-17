@@ -112,15 +112,8 @@ export function DashboardShell() {
       setLoading(true);
     }
     try {
-      const [snapshotResult, expansionResult] = await Promise.allSettled([
-        api.snapshot(),
-        api.v5ExpansionState()
-      ]);
-      if (snapshotResult.status !== 'fulfilled') {
-        throw snapshotResult.reason;
-      }
-
-      setSnapshot(snapshotResult.value.snapshot);
+      const snapshotResult = await api.snapshot();
+      setSnapshot(snapshotResult.snapshot);
       setSnapshotHydrated(true);
       if (inventoryOpen || !hasInitialSnapshotRef.current || options?.force) {
         try {
@@ -132,13 +125,13 @@ export function DashboardShell() {
           }
         }
       }
-      if (expansionResult.status === 'fulfilled') {
-        setExpansionState(expansionResult.value.state);
+      try {
+        const expansionResult = await api.v5ExpansionState();
+        setExpansionState(expansionResult.state);
         expansionEndpointErrorShownRef.current = false;
-      } else {
+      } catch (reason) {
         setExpansionState(null);
         if (!expansionEndpointErrorShownRef.current) {
-          const reason = expansionResult.reason;
           if (reason instanceof ApiError && reason.status === 404) {
             setError('Backend API v5.1 belum tersedia (endpoint /game/v5/* mengembalikan 404). Deploy backend terbaru terlebih dahulu.');
           } else if (reason instanceof Error) {
@@ -187,6 +180,9 @@ export function DashboardShell() {
 
   useEffect(() => {
     if (resetBusy) return;
+    if (actionBusy) return;
+    if (manualControlBusy) return;
+    if (timeScaleBusy) return;
     if (noProfile) return;
     if (!snapshot) return;
 
@@ -197,7 +193,7 @@ export function DashboardShell() {
       if (cancelled) return;
       const intervalMs = snapshot.paused || expansionState?.academyLockActive ? 60_000 : 20_000;
       timer = window.setTimeout(() => {
-        if (document.visibilityState === 'visible') {
+        if (!resetBusy && !actionBusy && !manualControlBusy && !timeScaleBusy && document.visibilityState === 'visible') {
           void loadSnapshot();
         }
         schedule();
@@ -208,6 +204,9 @@ export function DashboardShell() {
 
     const onVisible = () => {
       if (resetBusy) return;
+      if (actionBusy) return;
+      if (manualControlBusy) return;
+      if (timeScaleBusy) return;
       if (document.visibilityState === 'visible') {
         void loadSnapshot();
       }
@@ -222,7 +221,7 @@ export function DashboardShell() {
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [expansionState?.academyLockActive, loadSnapshot, noProfile, resetBusy, snapshot]);
+  }, [actionBusy, expansionState?.academyLockActive, loadSnapshot, manualControlBusy, noProfile, resetBusy, snapshot, timeScaleBusy]);
 
   useEffect(() => {
     if (!expansionState?.academyLockActive) return;
@@ -394,7 +393,7 @@ export function DashboardShell() {
     setResetBusy(true);
     try {
       const response = await api.restartWorld();
-      await api.v5SessionStart({ resetWorld: true });
+      await api.v5SessionStart();
       setSnapshot(response.snapshot);
       setV5InventoryCertificates([]);
       setSnapshotHydrated(true);

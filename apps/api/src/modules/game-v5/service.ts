@@ -81,6 +81,7 @@ import {
   listSocialTimelineEvents,
   listWorldDeltasSince,
   lockCurrentNpcsForUpdate,
+  lockV5RuntimeRows,
   lockV5World,
   markMailboxMessageRead,
   queueNpcReplacement,
@@ -109,6 +110,23 @@ interface V5Context {
 }
 
 const CONTEXT_SESSION_TTL_MS = 90_000;
+const V5_CONTEXT_RETRY_LIMIT = 2;
+const V5_RETRYABLE_TX_ERROR_CODES = new Set(['40P01', '40001']);
+
+function isV5RetryableTxError(error: unknown): error is { code: string } {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    V5_RETRYABLE_TX_ERROR_CODES.has((error as { code: string }).code)
+  );
+}
+
+function waitV5Retry(attempt: number): Promise<void> {
+  const delayMs = 25 * (attempt + 1);
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
 
 async function withV5Context(
   request: FastifyRequest,
@@ -123,30 +141,44 @@ async function withV5Context(
 
   const client = await request.server.db.connect();
   try {
-    await client.query('BEGIN');
-    const profile = await getProfileBaseByUserId(client, request.auth.userId);
-    if (!profile) {
-      await client.query('ROLLBACK');
-      reply.code(404).send({ error: 'Profile not found' });
-      return;
+    for (let attempt = 0; attempt <= V5_CONTEXT_RETRY_LIMIT; attempt += 1) {
+      try {
+        await client.query('BEGIN');
+        const profile = await getProfileBaseByUserId(client, request.auth.userId);
+        if (!profile) {
+          await client.query('ROLLBACK');
+          reply.code(404).send({ error: 'Profile not found' });
+          return;
+        }
+
+        const nowMs = Date.now();
+        await ensureV5World(client, profile, nowMs);
+        // Keep lock acquisition order aligned with legacy service transactions.
+        await lockV5RuntimeRows(client, profile.profileId);
+        await setSessionActiveUntil(client, profile.profileId, nowMs, CONTEXT_SESSION_TTL_MS);
+        await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
+
+        const result = await handler({
+          client,
+          profileId: profile.profileId,
+          userId: request.auth.userId,
+          nowMs
+        });
+
+        await client.query('COMMIT');
+        reply.code(result.statusCode ?? 200).send(result.payload);
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        if (isV5RetryableTxError(error) && attempt < V5_CONTEXT_RETRY_LIMIT) {
+          request.log.warn({ err: error, attempt: attempt + 1 }, 'game-v5-retryable-transaction');
+          await waitV5Retry(attempt);
+          continue;
+        }
+        throw error;
+      }
     }
-
-    const nowMs = Date.now();
-    await ensureV5World(client, profile, nowMs);
-    await setSessionActiveUntil(client, profile.profileId, nowMs, CONTEXT_SESSION_TTL_MS);
-    await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
-
-    const result = await handler({
-      client,
-      profileId: profile.profileId,
-      userId: request.auth.userId,
-      nowMs
-    });
-
-    await client.query('COMMIT');
-    reply.code(result.statusCode ?? 200).send(result.payload);
   } catch (error) {
-    await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
@@ -541,6 +573,30 @@ type AcademyGraduationPayload = {
   message: string;
 };
 
+async function failAcademyBatchCorruptState(
+  client: import('pg').PoolClient,
+  batchId: string,
+  reason: string,
+  totalCadets: number
+): Promise<AcademyGraduationPayload> {
+  const payload: AcademyGraduationPayload = {
+    passed: false,
+    playerRank: 0,
+    totalCadets,
+    certificateCodes: [],
+    message: reason
+  };
+
+  await updateAcademyBatchMeta(client, {
+    batchId,
+    status: 'FAILED',
+    lockEnabled: false,
+    graduationPayload: payload
+  });
+
+  return payload;
+}
+
 async function finalizeAcademyBatchGraduation(
   client: import('pg').PoolClient,
   profileId: string,
@@ -551,7 +607,12 @@ async function finalizeAcademyBatchGraduation(
   const ranked = await rankAcademyBatchMembers(client, batch.batchId);
   const playerRanked = ranked.find((item) => item.holderType === 'PLAYER') ?? null;
   if (!playerRanked) {
-    throw new Error(`Active academy batch missing ranked PLAYER entry: ${batch.batchId}`);
+    return failAcademyBatchCorruptState(
+      client,
+      batch.batchId,
+      `Batch ${batch.batchId} ditutup otomatis karena data peserta PLAYER tidak valid.`,
+      ranked.length
+    );
   }
 
   const passed = playerRanked.finalScore >= ACADEMY_PASS_SCORE;
@@ -633,7 +694,12 @@ async function autoFinalizeAcademyBatchIfReady(
   if (batch.status !== 'ACTIVE' || !batch.lockEnabled) return null;
   const playerMember = await getAcademyBatchMember(client, batch.batchId, 'PLAYER');
   if (!playerMember) {
-    throw new Error(`Active academy batch missing PLAYER member row: ${batch.batchId}`);
+    return failAcademyBatchCorruptState(
+      client,
+      batch.batchId,
+      `Batch ${batch.batchId} ditutup otomatis karena data member PLAYER hilang.`,
+      0
+    );
   }
   if (playerMember.dayProgress < batch.totalDays) return null;
   if (worldDay < batch.endDay) return null;
