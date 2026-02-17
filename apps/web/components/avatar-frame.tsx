@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { NpcV2Profile, RibbonStyle } from '@/lib/world-v2';
+import type { NpcV5Profile, RibbonStyle } from '@/lib/world-v5';
 
 interface AvatarFrameProps {
   name: string;
@@ -78,7 +78,7 @@ export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shou
   );
 }
 
-export function npcUniformTone(npc: NpcV2Profile) {
+export function npcUniformTone(npc: NpcV5Profile) {
   if (npc.branch.includes('NAVY') || npc.branch.includes('AL')) return '#425b70';
   if (npc.status === 'KIA') return '#5c2a3a';
   if (npc.status === 'INJURED') return '#6e5c36';

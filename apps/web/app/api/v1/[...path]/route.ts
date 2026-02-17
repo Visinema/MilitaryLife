@@ -1,5 +1,29 @@
 import { NextRequest } from 'next/server';
 
+const RETIRED_LEGACY_ENDPOINTS = new Set([
+  'game/actions/deployment',
+  'game/actions/ceremony-complete',
+  'game/actions/raider-defense',
+  'game/actions/recruitment-apply',
+  'game/config',
+  'game/ceremony',
+  'game/subpage-snapshot',
+  'game/news',
+  'game/v3/medals',
+  'game/military-law',
+  'game/actions/military-law-vote',
+  'game/actions/v3-mission',
+  'game/actions/mission-call-response',
+  'game/actions/mission-plan',
+  'game/actions/appoint-secretary',
+  'game/actions/court-review',
+  'game/npc-activity'
+]);
+
+function normalizedPath(path: string[]): string {
+  return path.join('/').replace(/^\/+/, '').replace(/\/+$/, '').toLowerCase();
+}
+
 function trimApiPrefix(pathname: string): string {
   return pathname.replace(/\/api(?:\/v1)?\/?$/i, '').replace(/\/$/, '');
 }
@@ -53,6 +77,16 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   }
 
   const { path = [] } = await context.params;
+  const requestPath = normalizedPath(path);
+  if (RETIRED_LEGACY_ENDPOINTS.has(requestPath)) {
+    return Response.json(
+      {
+        error: `Endpoint /api/v1/${requestPath} sudah dipensiunkan. Gunakan endpoint /api/v1/game/v5/* yang setara.`
+      },
+      { status: 410 }
+    );
+  }
+
   const targetUrl = new URL(`${backend}/api/v1/${path.join('/')}`);
   targetUrl.search = request.nextUrl.search;
 

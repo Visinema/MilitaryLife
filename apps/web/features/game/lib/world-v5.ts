@@ -17,7 +17,7 @@ export interface RibbonStyle {
   influenceBuff: number;
 }
 
-export interface NpcV2Profile {
+export interface NpcV5Profile {
   id: string;
   slot: number;
   name: string;
@@ -38,7 +38,7 @@ export interface NpcV2Profile {
   progressionScore: number;
 }
 
-export interface WorldV2State {
+export interface WorldV5State {
   player: {
     branchLabel: string;
     rankLabel: string;
@@ -49,8 +49,8 @@ export interface WorldV2State {
     influenceRecord: number;
     position: string;
   };
-  roster: NpcV2Profile[];
-  hierarchy: NpcV2Profile[];
+  roster: NpcV5Profile[];
+  hierarchy: NpcV5Profile[];
   stats: {
     active: number;
     injured: number;
@@ -97,7 +97,7 @@ function uniformTone(branch: string) {
 function seeded(snapshot: GameSnapshot, i: number) {
   return snapshot.age * 13 + snapshot.rankCode.length * 7 + i * 17;
 }
-function behaviorTag(seedValue: number): NpcV2Profile['behaviorTag'] {
+function behaviorTag(seedValue: number): NpcV5Profile['behaviorTag'] {
   const roll = Math.abs(seedValue) % 4;
   if (roll === 0) return 'DISCIPLINED';
   if (roll === 1) return 'AGGRESSIVE';
@@ -130,7 +130,7 @@ function buildPlayerRibbons(snapshot: GameSnapshot): RibbonStyle[] {
   return awarded.map((name, idx) => ribbonFromAwardName(name, idx));
 }
 
-function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, Array<{ medalName: string; ribbonName: string }>>, casualtyBySlot: Map<number, { role: string }>): NpcV2Profile {
+function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof buildNpcRegistry>[number], influenceRecord: number, awardsByNpc: Map<string, Array<{ medalName: string; ribbonName: string }>>, casualtyBySlot: Map<number, { role: string }>): NpcV5Profile {
   const slot = identity.slot;
   const baseSeed = seeded(snapshot, slot * 3 + 11);
   const generation = 0;
@@ -172,13 +172,13 @@ function buildNpcForSlot(snapshot: GameSnapshot, identity: ReturnType<typeof bui
 }
 
 
-function buildHierarchyWithQuota(roster: NpcV2Profile[]): NpcV2Profile[] {
+function buildHierarchyWithQuota(roster: NpcV5Profile[]): NpcV5Profile[] {
   const sorted = [...roster].sort((a, b) => b.commandPower - a.commandPower);
   const perDivision = new Map<string, number>();
   const perUnit = new Map<string, number>();
   const maxPerDivision = 8;
   const maxPerUnit = 5;
-  const picked: NpcV2Profile[] = [];
+  const picked: NpcV5Profile[] = [];
 
   for (const npc of sorted) {
     const divisionCount = perDivision.get(npc.division) ?? 0;
@@ -202,7 +202,7 @@ function buildHierarchyWithQuota(roster: NpcV2Profile[]): NpcV2Profile[] {
   return picked;
 }
 
-function buildRaiderTeam(hierarchy: NpcV2Profile[], snapshot: GameSnapshot) {
+function buildRaiderTeam(hierarchy: NpcV5Profile[], snapshot: GameSnapshot) {
   const candidates = [...hierarchy].sort((a, b) => b.progressionScore - a.progressionScore).slice(0, 6);
   const team = candidates.map((npc, idx) => ({
     name: npc.name,
@@ -216,7 +216,7 @@ function buildRaiderTeam(hierarchy: NpcV2Profile[], snapshot: GameSnapshot) {
   return { team, raiderThreatLevel };
 }
 
-export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
+export function buildWorldV5(snapshot: GameSnapshot): WorldV5State {
   const playerRibbons = buildPlayerRibbons(snapshot);
   const playerMedals = Array.isArray(snapshot.playerMedals) ? snapshot.playerMedals.slice(-6) : [];
   const influenceRecord = playerRibbons.reduce((sum, ribbon) => sum + ribbon.influenceBuff, 0);
@@ -283,3 +283,9 @@ export function buildWorldV2(snapshot: GameSnapshot): WorldV2State {
     }
   };
 }
+
+
+// Backward-compatible aliases for legacy imports pending full cleanup.
+export type NpcV2Profile = NpcV5Profile;
+export type WorldV2State = WorldV5State;
+export const buildWorldV2 = buildWorldV5;

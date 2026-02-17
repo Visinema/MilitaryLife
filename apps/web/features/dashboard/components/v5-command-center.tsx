@@ -6,18 +6,18 @@ import type { ExpansionStateV51, GameSnapshot } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { api, ApiError, type CommandAction } from '@/lib/api-client';
 import { resolvePlayerAssignment } from '@/lib/player-assignment';
-import { buildWorldV2 } from '@/lib/world-v2';
+import { buildWorldV5 } from '@/lib/world-v5';
 import { useGameStore } from '@/store/game-store';
 import { useDashboardUiStore } from '@/store/dashboard-ui-store';
 import { AvatarFrame } from '@/components/avatar-frame';
 import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 
-interface V2CommandCenterProps {
+interface V5CommandCenterProps {
   snapshot: GameSnapshot;
   expansionState?: ExpansionStateV51 | null;
 }
 
-export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterProps) {
+export function V5CommandCenter({ snapshot, expansionState }: V5CommandCenterProps) {
   const [mobileTab, setMobileTab] = useState<'overview' | 'mission'>('overview');
   const panelTab = useDashboardUiStore((state) => state.panelTab);
   const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
@@ -26,7 +26,7 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
   const [runtimeNpcs, setRuntimeNpcs] = useState<Array<{ npcId: string; name: string; position: string; status: string }>>([]);
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const setError = useGameStore((state) => state.setError);
-  const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
+  const world = useMemo(() => buildWorldV5(snapshot), [snapshot]);
   const assignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
   const normalizedRank = snapshot.rankCode.toLowerCase();
   const commandUnlocked =
@@ -94,7 +94,7 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
       </div>
 
       <section className="cyber-panel border-2 border-border/90 p-2">
-        <p className="text-[11px] uppercase tracking-[0.12em] text-muted">UI V4 · Reworked Layout</p>
+        <p className="text-[11px] uppercase tracking-[0.12em] text-muted">UI V5 · Unified Layout</p>
         <div className="mt-1.5 grid gap-1.5 xl:grid-cols-[1.3fr,1fr]">
           <div className={`${mobileTab !== 'overview' ? 'hidden md:block' : ''}`}>
             <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Main Avatar Frame · Service Profile</p>

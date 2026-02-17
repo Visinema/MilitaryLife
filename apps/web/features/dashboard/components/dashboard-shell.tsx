@@ -11,7 +11,7 @@ import { BRANCH_OPTIONS, COUNTRY_OPTIONS } from '@/lib/constants';
 import { deriveLiveGameDay } from '@/lib/clock';
 import { useGameStore } from '@/store/game-store';
 import { TopbarTime } from '@/components/topbar-time';
-import { V2CommandCenter } from '@/features/dashboard/components/v2-command-center';
+import { V5CommandCenter } from '@/features/dashboard/components/v5-command-center';
 
 const DecisionModal = dynamic(() => import('@/components/decision-modal').then((mod) => mod.DecisionModal), {
   ssr: false
@@ -685,7 +685,7 @@ export function DashboardShell() {
         timeScaleBusy={timeScaleBusy}
       />
       <div className="rounded-md border border-border/60 bg-panel/60 px-3 py-1.5 text-[11px] text-muted">Navigasi V5.1: Quick Tabs desktop dipindah ke header atas untuk akses Status, Perintah, dan semua halaman lebih cepat.</div>
-      <V2CommandCenter snapshot={snapshot} expansionState={expansionState} />
+      <V5CommandCenter snapshot={snapshot} expansionState={expansionState} />
       <div className="cyber-panel space-y-2 p-2.5">
         <div className="grid grid-cols-2 gap-1 lg:grid-cols-5">
           {TRAVEL_PLACES.map((entry) => (
