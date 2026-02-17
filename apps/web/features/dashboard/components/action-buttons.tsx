@@ -40,6 +40,9 @@ export const DASHBOARD_ALL_LINKS: ReadonlyArray<DashboardNavLink> = dedupeLinks(
   ...DASHBOARD_EXPANSION_LINKS
 ]);
 
+// Backward-compatible alias for older imports.
+export const DASHBOARD_LINKS: ReadonlyArray<DashboardNavLink> = DASHBOARD_ALL_LINKS;
+
 export function ActionButtons() {
   const panelTab = useDashboardUiStore((state) => state.panelTab);
   const setPanelTab = useDashboardUiStore((state) => state.setPanelTab);
