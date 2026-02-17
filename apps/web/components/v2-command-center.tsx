@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ExpansionStateV51, GameSnapshot } from '@mls/shared/game-types';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import { api, ApiError, type CommandAction } from '@/lib/api-client';
@@ -23,6 +23,7 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
   const [commandBusy, setCommandBusy] = useState<CommandAction | null>(null);
   const [commandNote, setCommandNote] = useState('');
   const [targetNpcId, setTargetNpcId] = useState<string>('');
+  const [runtimeNpcs, setRuntimeNpcs] = useState<Array<{ npcId: string; name: string; position: string; status: string }>>([]);
   const setSnapshot = useGameStore((state) => state.setSnapshot);
   const setError = useGameStore((state) => state.setError);
   const world = useMemo(() => buildWorldV2(snapshot), [snapshot]);
@@ -37,6 +38,27 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
     normalizedRank.includes('kolonel') ||
     normalizedRank.includes('general') ||
     normalizedRank.includes('jendral');
+
+  useEffect(() => {
+    api
+      .v5Npcs({ limit: 120 })
+      .then((res) => {
+        setRuntimeNpcs(
+          res.items.map((item) => ({
+            npcId: item.npcId,
+            name: item.name,
+            position: item.position,
+            status: item.status
+          }))
+        );
+      })
+      .catch(() => {
+        setRuntimeNpcs([]);
+      });
+  }, [snapshot.gameDay]);
+
+  const runtimeActiveCount = runtimeNpcs.filter((item) => item.status === 'ACTIVE').length;
+  const runtimeKiaCount = runtimeNpcs.filter((item) => item.status === 'KIA').length;
 
   const runCommandAction = async (action: CommandAction) => {
     if (!commandUnlocked) return;
@@ -90,7 +112,7 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
                 `Position: ${assignment.positionLabel}`,
                 `Influence record buff: +${world.player.influenceRecord}`,
                 `Mission assignment: every ${world.missionBrief.mandatoryAssignmentEveryDays} days`,
-                `NPC Active/KIA: ${world.stats.active}/${world.stats.kia}`
+                `NPC Active/KIA: ${runtimeNpcs.length > 0 ? runtimeActiveCount : world.stats.active}/${runtimeNpcs.length > 0 ? runtimeKiaCount : world.stats.kia}`
               ]}
             />
           </div>
@@ -184,9 +206,16 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
                         onChange={(event) => setTargetNpcId(event.target.value)}
                       >
                         <option value="">Target NPC (optional)</option>
-                        {world.hierarchy.slice(0, 8).map((npc) => (
-                          <option key={npc.id} value={npc.id}>
-                            {npc.name} · {npc.role}
+                        {(runtimeNpcs.length > 0
+                          ? runtimeNpcs
+                          : world.hierarchy.slice(0, 8).map((npc) => ({
+                              npcId: npc.id,
+                              name: npc.name,
+                              position: npc.role,
+                              status: npc.status
+                            }))).slice(0, 12).map((npc) => (
+                          <option key={npc.npcId} value={npc.npcId}>
+                            {npc.name} | {npc.position}
                           </option>
                         ))}
                       </select>
@@ -243,3 +272,4 @@ export function V2CommandCenter({ snapshot, expansionState }: V2CommandCenterPro
     </div>
   );
 }
+

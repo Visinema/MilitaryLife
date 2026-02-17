@@ -1,6 +1,7 @@
 import type { GameSnapshot } from '@mls/shared/game-types';
 import { buildNpcRegistry, MAX_ACTIVE_NPCS } from '@mls/shared/npc-registry';
 import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
+import { universalRankLabelFromIndex, type UniversalRankLabel } from '@mls/shared/ranks';
 
 export type NpcStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE';
 export type RibbonPattern = 'SOLID' | 'CENTER_STRIPE' | 'TRI_BAND' | 'CHEVRON' | 'CHECKER' | 'DIAGONAL';
@@ -69,17 +70,15 @@ export interface WorldV2State {
   };
 }
 
-const UNIVERSAL_RANKS = ['Recruit', 'Private', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Brigadier General', 'Major General', 'Lieutenant General', 'General'] as const;
-
-type UniversalRank = (typeof UNIVERSAL_RANKS)[number];
+type UniversalRank = UniversalRankLabel;
 
 function toBranchLabel(branch: string) {
   return branch.replace('US_', 'US ').replaceAll('_', ' ');
 }
 
 function universalRankFromScore(score: number): UniversalRank {
-  const idx = Math.max(0, Math.min(UNIVERSAL_RANKS.length - 1, Math.floor(score / 10)));
-  return UNIVERSAL_RANKS[idx] ?? 'Recruit';
+  const idx = Math.max(0, Math.min(13, Math.floor(score / 10)));
+  return universalRankLabelFromIndex(idx);
 }
 
 function roleFromUniversalRank(rank: UniversalRank, slot: number): string {

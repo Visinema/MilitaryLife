@@ -32,6 +32,10 @@
     "./division-registry": {
       "types": "./dist/division-registry.d.ts",
       "default": "./dist/division-registry.js"
+    },
+    "./ranks": {
+      "types": "./dist/ranks.d.ts",
+      "default": "./dist/ranks.js"
     }
   },
   "scripts": {

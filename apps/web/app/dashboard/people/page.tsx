@@ -1,248 +1,113 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import type { GameSnapshot } from '@mls/shared/game-types';
-import { AvatarFrame, npcUniformTone } from '@/components/avatar-frame';
-import { PersonalStatsPanel } from '@/components/personal-stats-panel';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { GameSnapshot, NpcRuntimeState, NpcRuntimeStatus } from '@mls/shared/game-types';
+import { universalRankLabelFromIndex } from '@mls/shared/ranks';
 import { api } from '@/lib/api-client';
-import { buildWorldV2, type NpcV2Profile, type NpcStatus } from '@/lib/world-v2';
 import { resolvePlayerAssignment } from '@/lib/player-assignment';
 import { useGameStore } from '@/store/game-store';
 
-function statusTone(status: NpcStatus) {
+function statusTone(status: NpcRuntimeStatus) {
   if (status === 'ACTIVE') return 'text-ok border-ok/40 bg-ok/10';
   if (status === 'INJURED') return 'text-yellow-300 border-yellow-700/50 bg-yellow-700/10';
   if (status === 'RESERVE') return 'text-sky-300 border-sky-700/50 bg-sky-800/10';
+  if (status === 'RECRUITING') return 'text-indigo-300 border-indigo-700/50 bg-indigo-800/10';
   return 'text-danger border-danger/40 bg-danger/10';
-}
-
-function initialLog(npc: NpcV2Profile) {
-  return [`${npc.name}: Ready for orders, command.`, `${npc.name}: Unit morale check complete.`];
 }
 
 export default function PeoplePage() {
   const storeSnapshot = useGameStore((state) => state.snapshot);
   const setStoreSnapshot = useGameStore((state) => state.setSnapshot);
+
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(storeSnapshot);
+  const [npcs, setNpcs] = useState<NpcRuntimeState[]>([]);
+  const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Awaited<ReturnType<typeof api.v5NpcDetail>> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [interactionMap, setInteractionMap] = useState<Record<string, string[]>>({});
-  const [interactionBusy, setInteractionBusy] = useState(false);
-  const [lastInteraction, setLastInteraction] = useState<null | {
-    type: 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF';
-    moraleDelta: number;
-    healthDelta: number;
-    promotionPointsDelta: number;
-    moneyDelta: number;
-  }>(null);
-  const [npcActivity, setNpcActivity] = useState<
-    Record<
-      string,
-      {
-        result: string;
-        readiness: number;
-        morale: number;
-        rankInfluence: number;
-        promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED';
-        notificationLetter: string | null;
-      }
-    >
-  >({});
+
+  const loadRoster = useCallback(async () => {
+    const [snapshotRes, npcRes] = await Promise.all([
+      api.snapshot(),
+      api.v5Npcs({ limit: 120 })
+    ]);
+    setSnapshot(snapshotRes.snapshot);
+    setStoreSnapshot(snapshotRes.snapshot);
+    setNpcs(npcRes.items);
+    setSelectedNpcId((current) => current ?? npcRes.items[0]?.npcId ?? null);
+  }, [setStoreSnapshot]);
 
   useEffect(() => {
-    if (storeSnapshot) {
-      setSnapshot(storeSnapshot);
+    loadRoster().catch((err: Error) => setError(err.message));
+  }, [loadRoster]);
+
+  useEffect(() => {
+    if (!selectedNpcId) {
+      setDetail(null);
       return;
     }
-
     api
-      .snapshot()
-      .then((res) => {
-        setSnapshot(res.snapshot);
-        setStoreSnapshot(res.snapshot);
-      })
+      .v5NpcDetail(selectedNpcId)
+      .then((res) => setDetail(res))
       .catch((err: Error) => setError(err.message));
-  }, [setStoreSnapshot, storeSnapshot]);
+  }, [selectedNpcId]);
 
-  const world = useMemo(() => (snapshot ? buildWorldV2(snapshot) : null), [snapshot]);
+  const selectedNpc = useMemo(
+    () => npcs.find((item) => item.npcId === selectedNpcId) ?? null,
+    [npcs, selectedNpcId]
+  );
   const playerAssignment = useMemo(() => resolvePlayerAssignment(snapshot), [snapshot]);
-
-  const selectedNpc = useMemo(() => {
-    if (!world) return null;
-    return world.roster.find((npc) => npc.id === selectedId) ?? world.roster[0] ?? null;
-  }, [selectedId, world]);
-
-  useEffect(() => {
-    if (!world) return;
-    setInteractionMap((prev) => {
-      const next = { ...prev };
-      for (const npc of world.roster) {
-        if (!next[npc.id]) next[npc.id] = initialLog(npc);
-      }
-      return next;
-    });
-  }, [world]);
-
-  useEffect(() => {
-    if (!selectedNpc) return;
-    const selectedNpcId = selectedNpc.id;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      const lines = [
-        `${selectedNpc.name}: Requesting updated mission route.`,
-        `${selectedNpc.name}: NPC squad synced with player movement.`,
-        `${selectedNpc.name}: Executing hierarchy command protocol.`,
-        `${selectedNpc.name}: Reporting contact status from ${selectedNpc.subdivision}.`,
-        `${selectedNpc.name}: Awaiting sanction / reward decision from superior officer.`
-      ];
-
-      setInteractionMap((prev) => {
-        const current = prev[selectedNpcId] ?? initialLog(selectedNpc);
-        const message = lines[(current.length + selectedNpc.relationScore) % lines.length];
-        return { ...prev, [selectedNpcId]: [...current.slice(-9), message] };
-      });
-    }, 1800);
-    return () => window.clearInterval(timer);
-  }, [selectedNpc]);
-
-  useEffect(() => {
-    const loadActivity = () => {
-      api
-        .v5Npcs({ limit: 120 })
-        .then((response) => {
-          setNpcActivity(
-            response.items.reduce<Record<string, { result: string; readiness: number; morale: number; rankInfluence: number; promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED'; notificationLetter: string | null }>>((acc, item) => {
-              const readiness = Math.round((item.tactical + item.support + item.resilience + item.competence) / 4);
-              const morale = Math.max(0, Math.min(100, Math.round((item.relationToPlayer + item.loyalty) / 2)));
-              const rankInfluence = Math.max(1, Math.round(item.promotionPoints / 12));
-              const promotionRecommendation: 'STRONG_RECOMMEND' | 'RECOMMEND' | 'HOLD' | 'NOT_RECOMMENDED' =
-                item.promotionPoints >= 75 && item.integrityRisk < 35
-                  ? 'STRONG_RECOMMEND'
-                  : item.promotionPoints >= 45 && item.integrityRisk < 50
-                    ? 'RECOMMEND'
-                    : item.integrityRisk >= 70 || item.betrayalRisk >= 70
-                      ? 'NOT_RECOMMENDED'
-                      : 'HOLD';
-              const result = item.lastTask?.trim() ? item.lastTask : 'Patroli rutin aktif';
-              const notificationLetter =
-                item.integrityRisk >= 70 || item.betrayalRisk >= 70
-                  ? `Peringatan risiko tinggi pada ${item.name}: integrity=${item.integrityRisk}, betrayal=${item.betrayalRisk}.`
-                  : null;
-              const aliases = [item.npcId, `npc-${item.slotNo}`];
-              for (const alias of aliases) {
-                acc[alias] = {
-                  result,
-                  readiness,
-                  morale,
-                  rankInfluence,
-                  promotionRecommendation,
-                  notificationLetter
-                };
-              }
-              return acc;
-            }, {})
-          );
-        })
-        .catch((err: Error) => {
-          setError(`NPC activity sync gagal: ${err.message}`);
-        });
-    };
-
-    loadActivity();
-    const timer = window.setInterval(loadActivity, 9000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const sendCommand = async (cmd: string, interaction: 'MENTOR' | 'SUPPORT' | 'BOND' | 'DEBRIEF') => {
-    if (!selectedNpc) return;
-    setInteractionBusy(true);
-    const currentNpc = selectedNpc;
-    setInteractionMap((prev) => {
-      const current = prev[currentNpc.id] ?? initialLog(currentNpc);
-      return {
-        ...prev,
-        [currentNpc.id]: [...current.slice(-8), `You: ${cmd}`, `${currentNpc.name}: Processing interaction...`].slice(-10)
-      };
-    });
-
-    try {
-      const response = await api.socialInteraction(`npc-${currentNpc.slot + 1}`, interaction, cmd);
-      setSnapshot(response.snapshot);
-      setStoreSnapshot(response.snapshot);
-      const effect = (response.details?.effect ?? {}) as {
-        moraleDelta?: number;
-        healthDelta?: number;
-        promotionPointsDelta?: number;
-        moneyDelta?: number;
-      };
-      setLastInteraction({
-        type: interaction,
-        moraleDelta: effect.moraleDelta ?? 0,
-        healthDelta: effect.healthDelta ?? 0,
-        promotionPointsDelta: effect.promotionPointsDelta ?? 0,
-        moneyDelta: effect.moneyDelta ?? 0
-      });
-      setInteractionMap((prev) => {
-        const current = prev[currentNpc.id] ?? initialLog(currentNpc);
-        return {
-          ...prev,
-          [currentNpc.id]: [...current.slice(-8), `${currentNpc.name}: Interaction complete. Cohesion updated.`].slice(-10)
-        };
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Social interaction failed');
-      setInteractionMap((prev) => {
-        const current = prev[currentNpc.id] ?? initialLog(currentNpc);
-        return {
-          ...prev,
-          [currentNpc.id]: [...current.slice(-8), `${currentNpc.name}: Unable to complete interaction now.`].slice(-10)
-        };
-      });
-    } finally {
-      setInteractionBusy(false);
-    }
-  };
-
-  const activeLog = selectedNpc ? interactionMap[selectedNpc.id] ?? initialLog(selectedNpc) : [];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between cyber-panel p-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.14em] text-muted">People & NPC Console</p>
-          <h1 className="text-base font-semibold text-text">Smart Social Ops · Realtime NPC</h1>
-          <p className="text-[11px] text-muted">Layout ringkas, interaksi cepat, dampak langsung ke morale/health/promotion.</p>
+          <p className="text-xs uppercase tracking-[0.14em] text-muted">People and NPC Console</p>
+          <h1 className="text-base font-semibold text-text">People Runtime V5</h1>
+          <p className="text-[11px] text-muted">Semua data roster dan detail NPC berasal dari backend V5 runtime.</p>
         </div>
-        <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
-          Back to Dashboard
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              loadRoster().catch((err: Error) => setError(err.message));
+            }}
+            className="rounded border border-border bg-bg px-3 py-2 text-xs text-text"
+          >
+            Refresh
+          </button>
+          <Link href="/dashboard" className="rounded border border-border bg-bg px-3 py-2 text-xs text-text">
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {!world && !error ? <p className="text-sm text-muted">Loading people list...</p> : null}
+      {!snapshot && !error ? <p className="text-sm text-muted">Loading people list...</p> : null}
 
-      {world ? (
-        <div className="grid gap-3 lg:grid-cols-[290px,1fr]">
+      {snapshot ? (
+        <div className="grid gap-3 lg:grid-cols-[320px,1fr]">
           <aside className="cyber-panel p-3">
-            <p className="text-xs uppercase tracking-[0.1em] text-muted">NPC / People List (Scroll Box)</p>
+            <p className="text-xs uppercase tracking-[0.1em] text-muted">Roster V5</p>
+            <div className="mt-2 rounded border border-accent/50 bg-accent/10 px-3 py-2">
+              <p className="text-sm font-semibold text-text">{snapshot.playerName} (You)</p>
+              <p className="text-xs text-muted">
+                {universalRankLabelFromIndex(snapshot.rankIndex ?? 0)} | {snapshot.branch} | {playerAssignment.divisionLabel} | {playerAssignment.positionLabel}
+              </p>
+            </div>
             <div className="mt-2 max-h-[520px] space-y-1.5 overflow-y-auto pr-1">
-              {snapshot ? (
-                <div className="rounded border border-accent/50 bg-accent/10 px-3 py-2">
-                  <p className="text-sm font-semibold text-text">{snapshot.playerName} (You)</p>
-                  <p className="text-xs text-muted">{snapshot.rankCode} · {snapshot.branch} · {playerAssignment.divisionLabel} · {playerAssignment.unitLabel} · {playerAssignment.positionLabel}</p>
-                  <p className="text-xs text-muted">Terdaftar pada roster people aktif.</p>
-                </div>
-              ) : null}
-              {world.roster.map((npc) => (
+              {npcs.map((npc) => (
                 <button
-                  key={npc.id}
-                  onClick={() => setSelectedId(npc.id)}
-                  className={`w-full rounded border px-3 py-2 text-left ${selectedNpc?.id === npc.id ? 'border-accent bg-accent/10' : 'border-border bg-bg/50'}`}
+                  key={npc.npcId}
+                  onClick={() => setSelectedNpcId(npc.npcId)}
+                  className={`w-full rounded border px-3 py-2 text-left ${selectedNpc?.npcId === npc.npcId ? 'border-accent bg-accent/10' : 'border-border bg-bg/50'}`}
                 >
                   <p className="text-sm font-semibold text-text">{npc.name}</p>
-                  <p className="text-xs text-muted">{npc.rank} · {npc.division} · {npc.unit}</p>
-                  <p className="text-xs text-muted">Behavior: {npc.behaviorTag} · Relation: {npc.relationScore} · Score: {npc.progressionScore}</p>
+                  <p className="text-xs text-muted">
+                    {universalRankLabelFromIndex(npc.rankIndex)} | {npc.division} | {npc.position}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {npc.careerStage} | academy T{npc.academyTier} | {npc.strategyMode}
+                  </p>
                   <span className={`mt-1 inline-flex rounded border px-2 py-0.5 text-[10px] uppercase ${statusTone(npc.status)}`}>{npc.status}</span>
                 </button>
               ))}
@@ -251,72 +116,71 @@ export default function PeoplePage() {
 
           <section className="space-y-3">
             {selectedNpc ? (
-              <>
-                <AvatarFrame
-                  name={selectedNpc.name}
-                  subtitle={`${selectedNpc.rank} · ${selectedNpc.role}`}
-                  uniformTone={npcUniformTone(selectedNpc)}
-                  ribbons={selectedNpc.ribbons}
-                  medals={selectedNpc.medals}
-                  shoulderRankCount={2}
-                  details={[
-                    `${selectedNpc.division} / ${selectedNpc.subdivision} / ${selectedNpc.unit}`,
-                    `Behavior: ${selectedNpc.behaviorTag}`,
-                    `Relation score: ${selectedNpc.relationScore}`,
-                    `Status: ${selectedNpc.status}`,
-                    `Progress score: ${selectedNpc.progressionScore}`,
-                    `Server activity: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.result ?? 'syncing...'}`,
-                    `Promotion rec: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.promotionRecommendation ?? 'HOLD'}`,
-                    `Rank influence: ${npcActivity[`npc-${selectedNpc.slot + 1}`]?.rankInfluence ?? 1}`
-                  ]}
-                />
-                <PersonalStatsPanel
-                  title={selectedNpc.name}
-                  seed={selectedNpc.slot + selectedNpc.lastSeenOnDay}
-                  baseMorale={npcActivity[`npc-${selectedNpc.slot + 1}`]?.morale ?? Math.min(100, selectedNpc.relationScore)}
-                  baseHealth={selectedNpc.status === 'INJURED' ? 58 : 82}
-                  baseReadiness={npcActivity[`npc-${selectedNpc.slot + 1}`]?.readiness ?? selectedNpc.commandPower}
-                />
-                {npcActivity[`npc-${selectedNpc.slot + 1}`]?.notificationLetter ? (
-                  <p className="rounded border border-border bg-bg/60 p-2 text-xs text-muted">
-                    {npcActivity[`npc-${selectedNpc.slot + 1}`]?.notificationLetter}
-                  </p>
-                ) : null}
-              </>
-            ) : null}
+              <div className="cyber-panel p-3 text-xs space-y-2">
+                <h2 className="text-sm font-semibold text-text">{selectedNpc.name}</h2>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Identity</p>
+                    <p className="text-muted">Rank: <span className="text-text">{universalRankLabelFromIndex(selectedNpc.rankIndex)}</span> (index {selectedNpc.rankIndex})</p>
+                    <p className="text-muted">Division: <span className="text-text">{selectedNpc.division}</span></p>
+                    <p className="text-muted">Unit: <span className="text-text">{selectedNpc.unit}</span></p>
+                    <p className="text-muted">Position: <span className="text-text">{selectedNpc.position}</span></p>
+                    <p className="text-muted">Status: <span className="text-text">{selectedNpc.status}</span></p>
+                  </div>
 
-            <div className="cyber-panel p-3">
-              <p className="text-xs uppercase tracking-[0.1em] text-muted">Realtime Interaction</p>
-              <div className="mt-2 max-h-44 overflow-y-auto rounded border border-border bg-bg/60 p-2 text-xs text-muted">
-                {activeLog.map((line, idx) => (
-                  <p key={`${selectedNpc?.id ?? 'npc'}-${idx}-${line}`} className="mb-1">
-                    {line}
-                  </p>
-                ))}
+                  <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Career Planner</p>
+                    <p className="text-muted">Strategy: <span className="text-text">{selectedNpc.strategyMode}</span></p>
+                    <p className="text-muted">Stage: <span className="text-text">{selectedNpc.careerStage}</span></p>
+                    <p className="text-muted">Academy tier: <span className="text-text">{selectedNpc.academyTier}</span></p>
+                    <p className="text-muted">Desired division: <span className="text-text">{selectedNpc.desiredDivision ?? '-'}</span></p>
+                    {detail?.academyProgress ? (
+                      <>
+                        <p className="text-muted">Target tier: <span className="text-text">{detail.academyProgress.targetTier}</span></p>
+                        <p className="text-muted">Remaining tier: <span className="text-text">{detail.academyProgress.remainingTier}</span></p>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Stats</p>
+                    <p className="text-muted">Leadership {selectedNpc.leadership} | Competence {selectedNpc.competence} | Intelligence {selectedNpc.intelligence}</p>
+                    <p className="text-muted">Resilience {selectedNpc.resilience} | Tactical {selectedNpc.tactical} | Support {selectedNpc.support}</p>
+                    <p className="text-muted">Loyalty {selectedNpc.loyalty} | Integrity risk {selectedNpc.integrityRisk} | Betrayal risk {selectedNpc.betrayalRisk}</p>
+                    <p className="text-muted">XP {selectedNpc.xp} | Promotion points {selectedNpc.promotionPoints}</p>
+                    <p className="text-muted">Last task: <span className="text-text">{selectedNpc.lastTask ?? '-'}</span></p>
+                  </div>
+
+                  <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Pipeline and Academy</p>
+                    <p className="text-muted">Active application: <span className="text-text">{detail?.careerPlan?.activeApplication?.status ?? '-'}</span></p>
+                    <p className="text-muted">Application id: <span className="text-text">{detail?.careerPlan?.activeApplication?.applicationId ?? '-'}</span></p>
+                    <p className="text-muted">Next action day: <span className="text-text">{detail?.careerPlan?.nextActionDay ?? '-'}</span></p>
+                    <p className="text-muted">Last action day: <span className="text-text">{detail?.careerPlan?.lastActionDay ?? '-'}</span></p>
+                    <p className="text-muted">Certifications: <span className="text-text">{detail?.certifications.length ?? 0}</span></p>
+                  </div>
+                </div>
+
+                <div className="rounded border border-border/60 bg-bg/60 p-2 space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Recent Lifecycle Events</p>
+                  {(detail?.lifecycleEvents ?? []).length === 0 ? (
+                    <p className="text-muted">No lifecycle events yet.</p>
+                  ) : (
+                    <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                      {(detail?.lifecycleEvents ?? []).slice(0, 20).map((item) => (
+                        <p key={`${item.id}-${item.eventType}`} className="rounded border border-border/50 bg-bg/70 px-2 py-1 text-muted">
+                          Day {item.day} | {item.eventType}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-1.5 md:grid-cols-4">
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Mentor session: improve tactical discipline and mission confidence.', 'MENTOR')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Mentor Unit
-                </button>
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Support package approved: supply, medkit, and morale brief delivered.', 'SUPPORT')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Support Log
-                </button>
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Trust-building sync: align goals and clarify personal concerns.', 'BOND')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Build Trust
-                </button>
-                <button disabled={interactionBusy} onClick={() => void sendCommand('Post-action debrief: extract lessons and set immediate improvements.', 'DEBRIEF')} className="rounded border border-border px-2 py-1 text-xs text-text disabled:opacity-50">
-                  Fast Debrief
-                </button>
-              </div>
-              {lastInteraction ? (
-                <p className="mt-2 rounded border border-border bg-bg/60 p-2 text-xs text-muted">
-                  Last interaction ({lastInteraction.type}) · Morale {lastInteraction.moraleDelta >= 0 ? '+' : ''}
-                  {lastInteraction.moraleDelta} · Health {lastInteraction.healthDelta >= 0 ? '+' : ''}
-                  {lastInteraction.healthDelta} · Promotion {lastInteraction.promotionPointsDelta >= 0 ? '+' : ''}
-                  {lastInteraction.promotionPointsDelta} · Funds {Math.round(lastInteraction.moneyDelta / 100)}
-                </p>
-              ) : null}
-            </div>
+            ) : (
+              <div className="cyber-panel p-3 text-xs text-muted">Pilih NPC dari roster untuk melihat detail.</div>
+            )}
           </section>
         </div>
       ) : null}

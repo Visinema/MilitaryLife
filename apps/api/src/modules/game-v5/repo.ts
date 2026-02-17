@@ -20,6 +20,9 @@ import type {
   CertificationRecordV5,
   GameSnapshotV5,
   MissionInstanceV5,
+  NpcCareerPlanState,
+  NpcCareerStage,
+  NpcCareerStrategyMode,
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
@@ -81,6 +84,26 @@ function parseNpcStatus(value: unknown): NpcRuntimeStatus {
   return 'ACTIVE';
 }
 
+function parseNpcCareerStrategyMode(value: unknown): NpcCareerStrategyMode {
+  const candidate = parseString(value, 'BALANCED_T2');
+  if (candidate === 'RUSH_T1' || candidate === 'BALANCED_T2' || candidate === 'DEEP_T3') return candidate;
+  return 'BALANCED_T2';
+}
+
+function parseNpcCareerStage(value: unknown): NpcCareerStage {
+  const candidate = parseString(value, 'CIVILIAN_START');
+  if (
+    candidate === 'CIVILIAN_START' ||
+    candidate === 'ACADEMY' ||
+    candidate === 'DIVISION_PIPELINE' ||
+    candidate === 'IN_DIVISION' ||
+    candidate === 'MUTATION_PIPELINE'
+  ) {
+    return candidate;
+  }
+  return 'CIVILIAN_START';
+}
+
 function toJsonb(value: unknown): string {
   return JSON.stringify(value ?? {});
 }
@@ -110,9 +133,31 @@ function mapNpcRow(row: Record<string, unknown>): NpcRuntimeState {
     trauma: parseNumber(row.trauma, 0),
     xp: parseNumber(row.xp, 0),
     promotionPoints: parseNumber(row.promotion_points, 0),
+    rankIndex: clamp(parseNumber(row.rank_index, 0), 0, 13),
+    academyTier: clamp(parseNumber(row.academy_tier, 0), 0, 3) as 0 | 1 | 2 | 3,
+    strategyMode: parseNpcCareerStrategyMode(row.strategy_mode),
+    careerStage: parseNpcCareerStage(row.career_stage),
+    desiredDivision: row.desired_division == null ? null : parseString(row.desired_division),
     relationToPlayer: parseNumber(row.relation_to_player, 50),
     lastTask: row.last_task == null ? null : parseString(row.last_task),
     updatedAtMs: parseNumber(row.updated_at_ms, Date.now())
+  };
+}
+
+function mapNpcCareerPlanRow(row: Record<string, unknown>): NpcCareerPlanState {
+  return {
+    npcId: parseString(row.npc_id),
+    strategyMode: parseNpcCareerStrategyMode(row.strategy_mode),
+    careerStage: parseNpcCareerStage(row.career_stage),
+    desiredDivision: row.desired_division == null ? null : parseString(row.desired_division),
+    targetTier: clamp(parseNumber(row.target_tier, 1), 1, 3) as 1 | 2 | 3,
+    nextActionDay: parseNumber(row.next_action_day, 0),
+    lastActionDay: row.last_action_day == null ? null : parseNumber(row.last_action_day, 0),
+    lastApplicationId: row.last_application_id == null ? null : parseString(row.last_application_id),
+    meta:
+      row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta)
+        ? (row.meta as Record<string, unknown>)
+        : {}
   };
 }
 
@@ -168,6 +213,7 @@ export async function clearV5World(client: PoolClient, profileId: string): Promi
     'personnel_rank_history',
     'mailbox_messages',
     'social_timeline_events',
+    'npc_career_plans',
     'npc_trait_memory',
     'quota_decision_logs',
     'recruitment_applications_v51',
@@ -194,6 +240,19 @@ export async function clearV5World(client: PoolClient, profileId: string): Promi
   }
 }
 
+function defaultStrategyModeForSlot(slotNo: number, seedBase: number): NpcCareerStrategyMode {
+  const pivot = Math.abs((slotNo * 19 + seedBase) % 9);
+  if (pivot <= 2) return 'RUSH_T1';
+  if (pivot >= 7) return 'DEEP_T3';
+  return 'BALANCED_T2';
+}
+
+function targetTierForStrategyMode(mode: NpcCareerStrategyMode): 1 | 2 | 3 {
+  if (mode === 'RUSH_T1') return 1;
+  if (mode === 'DEEP_T3') return 3;
+  return 2;
+}
+
 export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, nowMs: number): Promise<void> {
   const existing = await client.query<{ profile_id: string }>(`SELECT profile_id FROM game_worlds WHERE profile_id = $1 LIMIT 1`, [profile.profileId]);
   if ((existing.rowCount ?? 0) > 0) return;
@@ -210,7 +269,7 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
   await client.query(
     `
       INSERT INTO player_runtime (profile_id, money_cents, morale, health, rank_index, assignment, command_authority, fatigue)
-      VALUES ($1, 0, 70, 82, 0, 'Nondivisi Cadet', 40, 0)
+      VALUES ($1, 0, 70, 82, 0, 'Nondivisi - Recruit Cadet', 40, 0)
     `,
     [profile.profileId]
   );
@@ -232,7 +291,7 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         identity?.name ?? `NPC ${slotNo}`,
         'Nondivisi',
         'Academy Cadet Unit',
-        'Cadet Trainee'
+        'Recruit Cadet'
       ]
     );
 
@@ -241,9 +300,9 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         INSERT INTO npc_stats (
           profile_id, npc_id, tactical, support, leadership, resilience,
           intelligence, competence, loyalty, integrity_risk, betrayal_risk,
-          fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task
+          fatigue, trauma, xp, promotion_points, rank_index, academy_tier, relation_to_player, last_tick_day, last_task
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 0, 0, 0, $12, 0, NULL)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 0, 0, 0, 0, 0, $12, 0, NULL)
       `,
       [
         profile.profileId,
@@ -275,6 +334,19 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         52 + ((slotNo * 3 + seedBase) % 42),
         34 + ((slotNo * 11 + seedBase) % 50)
       ]
+    );
+
+    const strategyMode = defaultStrategyModeForSlot(slotNo, seedBase);
+    await client.query(
+      `
+        INSERT INTO npc_career_plans (
+          profile_id, npc_id, strategy_mode, career_stage, desired_division,
+          target_tier, next_action_day, last_action_day, last_application_id, meta
+        )
+        VALUES ($1, $2, $3, 'CIVILIAN_START', NULL, $4, 0, NULL, NULL, '{}'::jsonb)
+        ON CONFLICT (profile_id, npc_id) DO NOTHING
+      `,
+      [profile.profileId, npcId, strategyMode, targetTierForStrategyMode(strategyMode)]
     );
   }
 }
@@ -458,11 +530,17 @@ export async function listCurrentNpcRuntime(
         s.trauma,
         s.xp,
         s.promotion_points,
+        s.rank_index,
+        s.academy_tier,
+        cp.strategy_mode,
+        cp.career_stage,
+        cp.desired_division,
         s.relation_to_player,
         s.last_task,
         EXTRACT(EPOCH FROM GREATEST(e.updated_at, s.updated_at))::bigint * 1000 AS updated_at_ms
       FROM npc_entities e
       JOIN npc_stats s ON s.profile_id = e.profile_id AND s.npc_id = e.npc_id
+      LEFT JOIN npc_career_plans cp ON cp.profile_id = e.profile_id AND cp.npc_id = e.npc_id
       WHERE e.profile_id = $1
         AND e.is_current = TRUE
         AND e.slot_no > $2
@@ -506,11 +584,17 @@ export async function getNpcRuntimeById(client: PoolClient, profileId: string, n
         s.trauma,
         s.xp,
         s.promotion_points,
+        s.rank_index,
+        s.academy_tier,
+        cp.strategy_mode,
+        cp.career_stage,
+        cp.desired_division,
         s.relation_to_player,
         s.last_task,
         EXTRACT(EPOCH FROM GREATEST(e.updated_at, s.updated_at))::bigint * 1000 AS updated_at_ms
       FROM npc_entities e
       JOIN npc_stats s ON s.profile_id = e.profile_id AND s.npc_id = e.npc_id
+      LEFT JOIN npc_career_plans cp ON cp.profile_id = e.profile_id AND cp.npc_id = e.npc_id
       WHERE e.profile_id = $1 AND e.npc_id = $2
       LIMIT 1
     `,
@@ -547,11 +631,17 @@ export async function lockCurrentNpcsForUpdate(client: PoolClient, profileId: st
         s.trauma,
         s.xp,
         s.promotion_points,
+        s.rank_index,
+        s.academy_tier,
+        cp.strategy_mode,
+        cp.career_stage,
+        cp.desired_division,
         s.relation_to_player,
         s.last_task,
         EXTRACT(EPOCH FROM GREATEST(e.updated_at, s.updated_at))::bigint * 1000 AS updated_at_ms
       FROM npc_entities e
       JOIN npc_stats s ON s.profile_id = e.profile_id AND s.npc_id = e.npc_id
+      LEFT JOIN npc_career_plans cp ON cp.profile_id = e.profile_id AND cp.npc_id = e.npc_id
       WHERE e.profile_id = $1 AND e.is_current = TRUE
       ORDER BY e.slot_no ASC
       LIMIT $2
@@ -590,9 +680,11 @@ export async function updateNpcRuntimeState(client: PoolClient, profileId: strin
         trauma = $13,
         xp = $14,
         promotion_points = $15,
-        relation_to_player = $16,
-        last_tick_day = $17,
-        last_task = $18,
+        rank_index = $16,
+        academy_tier = $17,
+        relation_to_player = $18,
+        last_tick_day = $19,
+        last_task = $20,
         updated_at = now()
       WHERE profile_id = $1 AND npc_id = $2
     `,
@@ -612,12 +704,282 @@ export async function updateNpcRuntimeState(client: PoolClient, profileId: strin
       npc.trauma,
       npc.xp,
       npc.promotionPoints,
+      clamp(npc.rankIndex, 0, 13),
+      clamp(npc.academyTier, 0, 3),
       npc.relationToPlayer,
       lastTickDay,
       npc.lastTask
     ]
   );
 }
+
+export async function updateNpcAssignmentCurrent(
+  client: PoolClient,
+  input: { profileId: string; npcId: string; division: string; unit: string; position: string }
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE npc_entities
+      SET division = $3, unit = $4, position = $5, updated_at = now()
+      WHERE profile_id = $1 AND npc_id = $2 AND is_current = TRUE
+    `,
+    [input.profileId, input.npcId, input.division, input.unit, input.position]
+  );
+}
+
+export async function upsertNpcCareerPlan(
+  client: PoolClient,
+  input: NpcCareerPlanState & { profileId: string }
+): Promise<NpcCareerPlanState> {
+  const result = await client.query(
+    `
+      INSERT INTO npc_career_plans (
+        profile_id, npc_id, strategy_mode, career_stage, desired_division, target_tier,
+        next_action_day, last_action_day, last_application_id, meta
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      ON CONFLICT (profile_id, npc_id) DO UPDATE
+      SET
+        strategy_mode = EXCLUDED.strategy_mode,
+        career_stage = EXCLUDED.career_stage,
+        desired_division = EXCLUDED.desired_division,
+        target_tier = EXCLUDED.target_tier,
+        next_action_day = EXCLUDED.next_action_day,
+        last_action_day = EXCLUDED.last_action_day,
+        last_application_id = EXCLUDED.last_application_id,
+        meta = EXCLUDED.meta,
+        updated_at = now()
+      RETURNING
+        npc_id, strategy_mode, career_stage, desired_division, target_tier,
+        next_action_day, last_action_day, last_application_id, meta
+    `,
+    [
+      input.profileId,
+      input.npcId,
+      input.strategyMode,
+      input.careerStage,
+      input.desiredDivision,
+      clamp(input.targetTier, 1, 3),
+      Math.max(0, input.nextActionDay),
+      input.lastActionDay == null ? null : Math.max(0, input.lastActionDay),
+      input.lastApplicationId,
+      toJsonb(input.meta ?? {})
+    ]
+  );
+  return mapNpcCareerPlanRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getNpcCareerPlan(
+  client: PoolClient,
+  profileId: string,
+  npcId: string
+): Promise<NpcCareerPlanState | null> {
+  const result = await client.query(
+    `
+      SELECT
+        npc_id, strategy_mode, career_stage, desired_division, target_tier,
+        next_action_day, last_action_day, last_application_id, meta
+      FROM npc_career_plans
+      WHERE profile_id = $1 AND npc_id = $2
+      LIMIT 1
+    `,
+    [profileId, npcId]
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return row ? mapNpcCareerPlanRow(row) : null;
+}
+
+export async function listNpcCareerPlans(
+  client: PoolClient,
+  profileId: string,
+  options?: { npcIds?: string[]; limit?: number }
+): Promise<NpcCareerPlanState[]> {
+  const clauses: string[] = ['profile_id = $1'];
+  const values: unknown[] = [profileId];
+  if (options?.npcIds && options.npcIds.length > 0) {
+    values.push(options.npcIds);
+    clauses.push(`npc_id = ANY($${values.length}::text[])`);
+  }
+  values.push(Math.max(1, Math.min(options?.limit ?? 200, 500)));
+  const limitPlaceholder = `$${values.length}`;
+  const result = await client.query(
+    `
+      SELECT
+        npc_id, strategy_mode, career_stage, desired_division, target_tier,
+        next_action_day, last_action_day, last_application_id, meta
+      FROM npc_career_plans
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY next_action_day ASC, npc_id ASC
+      LIMIT ${limitPlaceholder}
+    `,
+    values
+  );
+  return result.rows.map((row) => mapNpcCareerPlanRow(row as Record<string, unknown>));
+}
+
+export interface NpcTraitMemoryProfile {
+  npcId: string;
+  ambition: number;
+  discipline: number;
+  integrity: number;
+  sociability: number;
+  memory: unknown[];
+}
+
+export async function listNpcTraitMemoryProfiles(
+  client: PoolClient,
+  profileId: string,
+  npcIds: string[]
+): Promise<NpcTraitMemoryProfile[]> {
+  if (npcIds.length === 0) return [];
+  const result = await client.query<{
+    npc_id: string;
+    ambition: number | string;
+    discipline: number | string;
+    integrity: number | string;
+    sociability: number | string;
+    memory: unknown;
+  }>(
+    `
+      SELECT npc_id, ambition, discipline, integrity, sociability, memory
+      FROM npc_trait_memory
+      WHERE profile_id = $1
+        AND npc_id = ANY($2::text[])
+    `,
+    [profileId, npcIds]
+  );
+  return result.rows.map((row) => ({
+    npcId: row.npc_id,
+    ambition: clamp(parseNumber(row.ambition, 50), 0, 100),
+    discipline: clamp(parseNumber(row.discipline, 55), 0, 100),
+    integrity: clamp(parseNumber(row.integrity, 60), 0, 100),
+    sociability: clamp(parseNumber(row.sociability, 50), 0, 100),
+    memory: Array.isArray(row.memory) ? row.memory : []
+  }));
+}
+
+export async function reserveDivisionQuotaSlot(
+  client: PoolClient,
+  input: { profileId: string; division: string; currentDay: number }
+): Promise<{
+  accepted: boolean;
+  reason: 'ACCEPTED' | 'MISSING_QUOTA' | 'COOLDOWN' | 'QUOTA_FULL';
+  quota: DivisionQuotaState | null;
+}> {
+  const quotaResult = await client.query<{
+    division: string;
+    head_npc_id: string | null;
+    quota_total: number | string;
+    quota_used: number | string;
+    status: 'OPEN' | 'COOLDOWN';
+    cooldown_until_day: number | string | null;
+    cooldown_days: number | string;
+    decision_note: string;
+    updated_day: number | string;
+    head_name: string | null;
+  }>(
+    `
+      SELECT
+        q.division,
+        q.head_npc_id,
+        q.quota_total,
+        q.quota_used,
+        q.status,
+        q.cooldown_until_day,
+        q.cooldown_days,
+        q.decision_note,
+        q.updated_day,
+        e.name AS head_name
+      FROM division_quota_states q
+      LEFT JOIN npc_entities e
+        ON e.profile_id = q.profile_id
+       AND e.npc_id = q.head_npc_id
+       AND e.is_current = TRUE
+      WHERE q.profile_id = $1 AND q.division = $2
+      FOR UPDATE
+    `,
+    [input.profileId, input.division]
+  );
+  const row = quotaResult.rows[0];
+  if (!row) {
+    return { accepted: false, reason: 'MISSING_QUOTA', quota: null };
+  }
+
+  const quotaTotal = clamp(parseNumber(row.quota_total, 0), 0, 120);
+  const quotaUsed = clamp(parseNumber(row.quota_used, 0), 0, 120);
+  const cooldownDays = clamp(parseNumber(row.cooldown_days, 2), 1, 30);
+  const quotaBase: DivisionQuotaState = {
+    division: row.division,
+    headNpcId: row.head_npc_id,
+    headName: row.head_name,
+    quotaTotal,
+    quotaUsed,
+    quotaRemaining: Math.max(0, quotaTotal - quotaUsed),
+    status: row.status === 'COOLDOWN' ? 'COOLDOWN' : 'OPEN',
+    cooldownUntilDay: row.cooldown_until_day == null ? null : parseNumber(row.cooldown_until_day, 0),
+    cooldownDays,
+    decisionNote: row.decision_note,
+    updatedDay: parseNumber(row.updated_day, 0)
+  };
+
+  if (quotaBase.status !== 'OPEN') {
+    return { accepted: false, reason: 'COOLDOWN', quota: quotaBase };
+  }
+  if (quotaBase.quotaRemaining <= 0) {
+    return { accepted: false, reason: 'QUOTA_FULL', quota: quotaBase };
+  }
+
+  const nextUsed = clamp(quotaBase.quotaUsed + 1, 0, quotaBase.quotaTotal);
+  const closed = nextUsed >= quotaBase.quotaTotal;
+  const nextStatus: 'OPEN' | 'COOLDOWN' = closed ? 'COOLDOWN' : 'OPEN';
+  const nextCooldownUntilDay = closed ? Math.max(0, input.currentDay) + cooldownDays : null;
+  const nextDecisionNote = closed
+    ? 'Kuota ditutup karena slot terpenuhi pada announcement recruitment.'
+    : quotaBase.decisionNote;
+
+  const updatedResult = await client.query<{
+    division: string;
+    head_npc_id: string | null;
+    quota_total: number | string;
+    quota_used: number | string;
+    status: 'OPEN' | 'COOLDOWN';
+    cooldown_until_day: number | string | null;
+    cooldown_days: number | string;
+    decision_note: string;
+    updated_day: number | string;
+  }>(
+    `
+      UPDATE division_quota_states
+      SET
+        quota_used = $3,
+        status = $4,
+        cooldown_until_day = $5,
+        decision_note = $6,
+        updated_day = $7,
+        updated_at = now()
+      WHERE profile_id = $1 AND division = $2
+      RETURNING
+        division, head_npc_id, quota_total, quota_used, status, cooldown_until_day, cooldown_days, decision_note, updated_day
+    `,
+    [input.profileId, input.division, nextUsed, nextStatus, nextCooldownUntilDay, nextDecisionNote, Math.max(0, input.currentDay)]
+  );
+  const updatedRow = updatedResult.rows[0];
+  const updatedQuota: DivisionQuotaState = {
+    division: parseString(updatedRow?.division, input.division),
+    headNpcId: updatedRow?.head_npc_id ?? quotaBase.headNpcId,
+    headName: quotaBase.headName,
+    quotaTotal: clamp(parseNumber(updatedRow?.quota_total, quotaBase.quotaTotal), 0, 120),
+    quotaUsed: clamp(parseNumber(updatedRow?.quota_used, nextUsed), 0, 120),
+    quotaRemaining: Math.max(0, clamp(parseNumber(updatedRow?.quota_total, quotaBase.quotaTotal), 0, 120) - clamp(parseNumber(updatedRow?.quota_used, nextUsed), 0, 120)),
+    status: updatedRow?.status === 'COOLDOWN' ? 'COOLDOWN' : 'OPEN',
+    cooldownUntilDay: updatedRow?.cooldown_until_day == null ? null : parseNumber(updatedRow.cooldown_until_day, 0),
+    cooldownDays: clamp(parseNumber(updatedRow?.cooldown_days, cooldownDays), 1, 30),
+    decisionNote: parseString(updatedRow?.decision_note, nextDecisionNote),
+    updatedDay: parseNumber(updatedRow?.updated_day, Math.max(0, input.currentDay))
+  };
+  return { accepted: true, reason: 'ACCEPTED', quota: updatedQuota };
+}
+
 export async function insertLifecycleEvent(
   client: PoolClient,
   input: { profileId: string; npcId: string; eventType: string; day: number; details?: Record<string, unknown> }
@@ -717,22 +1079,33 @@ export async function fulfillRecruitmentQueueItem(
     joinedDay: number;
   }
 ): Promise<void> {
+  const strategyMode = defaultStrategyModeForSlot(input.slotNo, input.generationNext * 13);
   await client.query(`UPDATE npc_entities SET is_current = FALSE, updated_at = now() WHERE profile_id = $1 AND slot_no = $2 AND is_current = TRUE`, [input.profileId, input.slotNo]);
   await client.query(
     `
       INSERT INTO npc_entities (profile_id, npc_id, slot_no, generation, name, division, unit, position, status, joined_day, death_day, is_current)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, NULL, TRUE)
     `,
-    [input.profileId, input.npcId, input.slotNo, input.generationNext, input.name, input.division, input.unit, input.position, input.joinedDay]
+    [
+      input.profileId,
+      input.npcId,
+      input.slotNo,
+      input.generationNext,
+      input.name,
+      'Nondivisi',
+      'Academy Cadet Unit',
+      'Recruit Cadet',
+      input.joinedDay
+    ]
   );
   await client.query(
     `
       INSERT INTO npc_stats (
         profile_id, npc_id, tactical, support, leadership, resilience,
         intelligence, competence, loyalty, integrity_risk, betrayal_risk,
-        fatigue, trauma, xp, promotion_points, relation_to_player, last_tick_day, last_task
+        fatigue, trauma, xp, promotion_points, rank_index, academy_tier, relation_to_player, last_tick_day, last_task
       )
-      VALUES ($1, $2, 52, 52, 50, 55, 54, 56, 60, 10, 8, 0, 0, 0, 0, 50, $3, 'recruitment')
+      VALUES ($1, $2, 52, 52, 50, 55, 54, 56, 60, 10, 8, 0, 0, 0, 0, 0, 0, 50, $3, 'recruitment')
     `,
     [input.profileId, input.npcId, input.joinedDay]
   );
@@ -742,7 +1115,28 @@ export async function fulfillRecruitmentQueueItem(
       VALUES ($1, $2, 52, 58, 62, 50, '[]'::jsonb)
       ON CONFLICT (profile_id, npc_id) DO NOTHING
     `,
-    [input.profileId, input.npcId]
+      [input.profileId, input.npcId]
+  );
+  await client.query(
+    `
+      INSERT INTO npc_career_plans (
+        profile_id, npc_id, strategy_mode, career_stage, desired_division,
+        target_tier, next_action_day, last_action_day, last_application_id, meta
+      )
+      VALUES ($1, $2, $3, 'CIVILIAN_START', NULL, $4, $5, NULL, NULL, '{}'::jsonb)
+      ON CONFLICT (profile_id, npc_id) DO UPDATE
+      SET
+        strategy_mode = EXCLUDED.strategy_mode,
+        career_stage = EXCLUDED.career_stage,
+        desired_division = EXCLUDED.desired_division,
+        target_tier = EXCLUDED.target_tier,
+        next_action_day = EXCLUDED.next_action_day,
+        last_action_day = EXCLUDED.last_action_day,
+        last_application_id = EXCLUDED.last_application_id,
+        meta = EXCLUDED.meta,
+        updated_at = now()
+    `,
+    [input.profileId, input.npcId, strategyMode, targetTierForStrategyMode(strategyMode), Math.max(0, input.joinedDay)]
   );
   await client.query(`UPDATE recruitment_queue SET status = 'FULFILLED', new_npc_id = $3 WHERE id = $1 AND profile_id = $2`, [input.queueId, input.profileId, input.npcId]);
 }

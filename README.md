@@ -55,25 +55,25 @@ Key files:
 | # | Fitur | Status Saat Ini | Gap | Spesifikasi Final | Endpoint | Data Model | Acceptance |
 |---|---|---|---|---|---|---|---|
 | 1 | Pangkat, promosi, demosi | Parsial | Riwayat rank belum jadi source utama | Semua perubahan rank tercatat bertanggal + alasan | `GET /game/v5/personnel/rank-history` | `personnel_rank_history` | Promosi/demosi (termasuk court) masuk history |
-| 2 | Divisi, lamar divisi, jabatan | Parsial | Proses lamar belum 4 tahap formal | Catalog divisi + pipeline lamaran + mutasi jabatan | `GET /game/v5/divisions/catalog` | `recruitment_pipeline_applications`, `personnel_assignment_history` | Tidak bisa lompat tahap |
-| 3 | Akademi, ijazah, gelar prefix/suffix | Parsial | Durasi lama 8 hari statis | Tier academy `4/5/6` hari + gelar dinamis nama | `GET /game/v5/academy/programs`, `GET /game/v5/academy/titles` | `academy_batches.total_days`, `education_titles` | Tier 1=4, Tier 2=5, Tier 3=6 |
+| 2 | Divisi, lamar divisi, jabatan | Ada | Monitoring mutasi lintas divisi masih dituning | Catalog divisi + pipeline lamaran + mutasi jabatan | `GET /game/v5/divisions/catalog` | `recruitment_pipeline_applications`, `personnel_assignment_history` | Tidak bisa lompat tahap |
+| 3 | Akademi, ijazah, gelar prefix/suffix | Ada | Balancing sertifikasi lanjutan masih iteratif | Tier academy `4/5/6` hari + gelar dinamis nama | `GET /game/v5/academy/programs`, `GET /game/v5/academy/titles` | `academy_batches.total_days`, `education_titles` | Tier 1=4, Tier 2=5, Tier 3=6 |
 | 4 | Hierarki + command chain forwarding | Parsial | Penalty chain break belum terstandar | Forwarding chain + ack + dampak stabilitas | `GET /game/v5/expansion/state` (ringkasan) | state runtime + timeline | Chain break menghasilkan event/penalty |
 | 5 | Pengadilan militer | Parsial | Dampak verdict belum selalu menulis state personel | Verdict formal update rank/divisi/jabatan + surat | `GET /game/v5/court/cases`, `POST /game/v5/court/cases/:caseId/verdict` | `court_cases_v2` | Verdict menutup case + update state |
 | 6 | Military Law (MLC editable) | Ada | Integrasi runtime multiplier belum penuh | Perubahan hukum lewat council vote + log | `GET /game/v5/councils`, `POST /game/v5/councils/:councilId/vote` | `councils`, `council_votes` | Quorum + eligibility vote berlaku |
-| 7 | Rekrutmen divisi 4 tahap | Parsial | Masih ada jalur instan legacy | Pipeline `REGISTRATION -> TRYOUT -> SELECTION -> ANNOUNCEMENT` | `POST /game/v5/divisions/applications/*` | `recruitment_pipeline_applications` | Announcement hanya day 4 |
+| 7 | Rekrutmen divisi 4 tahap | Ada | Wrapper legacy tetap dipertahankan untuk kompatibilitas | Pipeline `REGISTRATION -> TRYOUT -> SELECTION -> ANNOUNCEMENT` | `POST /game/v5/divisions/applications/*`, `POST /game/v5/recruitment/apply` | `recruitment_pipeline_applications` | Announcement hanya day 4 |
 | 8 | Misi DOM 13 hari 3 sesi | Belum/Parsial | Siklus DOM belum jadi model utama | Tiap 13 hari generate 3 sesi, player hanya 1 sesi | `GET /game/v5/dom/cycle/current`, `POST /game/v5/dom/sessions/:sessionId/*` | `dom_operation_cycles`, `dom_operation_sessions` | Selalu 3 sesi per cycle |
-| 9 | Smart Human NPC | Parsial | Trait/memory belum diekspos penuh | Rule-based traits + risiko integritas/pengkhianatan | runtime tick + snapshot | `npc_stats`, `npc_trait_memory` | Perilaku berbeda antar NPC |
+| 9 | Smart Human NPC | Ada | Tuning prioritas planner per tick masih berjalan | Planner deterministik berbasis trait/memory + career stage | runtime tick + snapshot | `npc_stats`, `npc_trait_memory`, `npc_career_plans` | Input state sama menghasilkan keputusan sama |
 | 10 | Stabilitas internal/negara | Ada | Balancing lanjut bisa dituning per patch | Stability terhubung misi/court/corruption/raider/chain-break | `GET /game/v5/expansion/state` | `game_states` (governance fields) | Nilai stabilitas bergerak by event |
 | 11 | Serangan teroris/raider | Ada | Variasi skenario serangan masih bisa ditambah | Serangan periodik + casualty permanen + replacement queue + countdown | `GET /game/v5/expansion/state`, `GET /game/v5/social/timeline` | `npc_entities`, `recruitment_queue`, `social_timeline_events` | KIA permanen + queue replacement + countdown tampil |
 | 12 | Berita + event chances | Ada | Taxonomy domain event bisa diperluas | Event bus lintas sistem + filter domain/severity + date grouping | `GET /game/v5/social/timeline` | `social_timeline_events` | Event tampil berdasarkan date + severity |
 | 13 | Kematian NPC permanen + rekrut otomatis | Ada | UX countdown replacement belum lengkap | Permanent death + auto replacement due-day | `GET /game/v5/session/sync` | `npc_entities`, `recruitment_queue` | Replacement otomatis setelah due day |
 | 14 | Upacara, medali, prestasi | Ada | Formula pool medali masih dapat di-tune | Ceremony + medal pool lintas 3 sesi DOM (kompetisi ketat) | `GET /game/v5/ceremony/current`, `GET /game/v5/dom/cycle/current` | `ceremony_cycles`, `ceremony_awards`, `dom_operation_sessions.result` | Distribusi medali berbasis hasil + pool cycle |
-| 15 | Tryout divisi/korps/satuan | Parsial | Tryout belum selalu day-gated | Tryout hanya sesudah registration (day-2) | `POST /game/v5/divisions/applications/:id/tryout` | `recruitment_pipeline_applications` | Gagal jika lompat tahap |
+| 15 | Tryout divisi/korps/satuan | Ada | Soal tryout masih bisa diperluas per divisi | Tryout hanya sesudah registration (day-2) | `POST /game/v5/divisions/applications/:id/tryout` | `recruitment_pipeline_applications` | Gagal jika lompat tahap |
 | 16 | Stats health/intelligence/kompetensi + substats | Parsial | Substats integritas/loyalitas belum penuh di semua flow | Tambah intelligence/competence/loyalty/integrity/betrayal risk | `GET /game/v5/npcs` | `npc_stats` | Nilai tersimpan dan update tiap tick |
-| 17 | Rekam jejak NPC+player bertanggal | Parsial | Timeline lintas sistem belum konsisten | Timeline sosial + history rank/assignment | `GET /game/v5/social/timeline` | `social_timeline_events`, history tables | Semua mutasi penting ada timestamp |
+| 17 | Rekam jejak NPC+player bertanggal | Ada | Ringkasan timeline UI masih disederhanakan | Timeline sosial + history rank/assignment | `GET /game/v5/social/timeline` | `social_timeline_events`, history tables | Semua mutasi penting ada timestamp |
 | 18 | Potensi korupsi & penghianatan | Parsial | Trigger investigasi otomatis belum penuh | Risk model + integrasi court/news/mailbox | `GET /game/v5/expansion/state` | `npc_stats`, `npc_trait_memory`, court | Threshold memicu case/event |
 | 19 | Dewan militer tambahan | Parsial | Council selain MLC belum standar | `MLC`, `DOM`, `Personnel Board`, `Strategic Council` | `GET /game/v5/councils` | `councils`, `council_votes` | Quorum menutup voting |
-| 20 | Mailbox + side notification NPC->player | Parsial | Surat belum persisten/mark-read merata | Mailbox persisten + unread summary | `GET /game/v5/mailbox`, `POST /game/v5/mailbox/:messageId/read` | `mailbox_messages` | Unread counter + mark-read valid |
+| 20 | Mailbox + side notification NPC->player | Ada | Kategori notifikasi masih dapat diperkaya | Mailbox persisten + unread summary | `GET /game/v5/mailbox`, `POST /game/v5/mailbox/:messageId/read` | `mailbox_messages` | Unread counter + mark-read valid |
 
 ### Delivery 3 Fase (V5-Centric)
 
@@ -87,6 +87,10 @@ Key files:
 - Recruitment pipeline: total `4` hari, `4` tahap.
 - DOM operation cycle: tiap `13` hari, `3` sesi per cycle.
 - DOM session rule: player hanya bisa join `1` sesi per cycle.
+- Fair Start Contract:
+  - World baru/reset: player + seluruh NPC mulai dari `Nondivisi` dengan rank `Recruit` (`rank_index=0`).
+  - Replacement NPC: selalu spawn ulang dari state fair-start yang sama.
+  - Gate masuk divisi: minimal lulus academy Tier-1, lalu tetap wajib memenuhi requirement tier divisi.
 
 ## 6. Public API V5 (Base `/api/v1/game/v5`)
 
@@ -168,6 +172,7 @@ Legacy compatibility (state saat ini):
   - `021_v6_mailbox_and_social_timeline.sql`
   - `022_v6_stats_integrity_betrayal.sql`
   - `023_v6_command_chain_and_penalties.sql`
+  - `024_v6_npc_fair_start_and_career_planner.sql`
 - Prinsip migrasi:
   - Idempotent (`IF NOT EXISTS`, `ON CONFLICT`).
   - Backfill default untuk data lama.

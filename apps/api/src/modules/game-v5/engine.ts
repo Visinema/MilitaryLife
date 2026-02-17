@@ -1,12 +1,17 @@
 ﻿import type { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import type {
   CeremonyCycleV5,
   MissionInstanceV5,
+  NpcCareerPlanState,
+  NpcCareerStage,
+  NpcCareerStrategyMode,
   NpcRuntimeState,
   WorldDelta
 } from '@mls/shared/game-types';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
 import { buildNpcRegistry } from '@mls/shared/npc-registry';
+import { REGISTERED_DIVISIONS } from '@mls/shared/division-registry';
 import {
   V5_MAX_NPCS,
   applyLegacyGovernanceDelta,
@@ -17,19 +22,29 @@ import {
   getLatestSocialTimelineEventByType,
   getLegacyGovernanceSnapshot,
   getLatestMission,
+  getRecruitmentPipelineApplication,
+  insertAssignmentHistory,
+  insertRankHistory,
   insertMailboxMessage,
   insertLifecycleEvent,
   insertSocialTimelineEvent,
   listActiveWorldProfilesForTick,
+  listDivisionQuotaStates,
   listDueCommandChainOrdersForPenalty,
+  listNpcCareerPlans,
   listCurrentNpcRuntime,
   listDueRecruitmentQueueForUpdate,
+  listNpcTraitMemoryProfiles,
   listRecentLifecycleEvents,
   listRecruitmentQueue,
   lockCurrentNpcsForUpdate,
   lockV5World,
   pruneWorldDeltas,
   queueNpcReplacement,
+  reserveDivisionQuotaSlot,
+  updateNpcAssignmentCurrent,
+  upsertNpcCareerPlan,
+  upsertRecruitmentPipelineApplication,
   upsertCourtCaseV2,
   updateCommandChainOrderStatus,
   updateNpcRuntimeState,
@@ -178,6 +193,635 @@ function buildCycleAwards(
   }));
 }
 
+const ACADEMY_DAYS_BY_TIER: Record<1 | 2 | 3, number> = {
+  1: 4,
+  2: 5,
+  3: 6
+};
+
+function academyDaysForTier(tier: number): number {
+  if (tier >= 3) return ACADEMY_DAYS_BY_TIER[3];
+  if (tier <= 1) return ACADEMY_DAYS_BY_TIER[1];
+  return ACADEMY_DAYS_BY_TIER[2];
+}
+
+function strategyTier(mode: NpcCareerStrategyMode): 1 | 2 | 3 {
+  if (mode === 'RUSH_T1') return 1;
+  if (mode === 'DEEP_T3') return 3;
+  return 2;
+}
+
+function requirementLabelForDivision(division: string): 'STANDARD' | 'ADVANCED' | 'ELITE' {
+  const token = division.toLowerCase();
+  if (token.includes('judge') || token.includes('court') || token.includes('cyber') || token.includes('air defense')) {
+    return 'ELITE';
+  }
+  if (token.includes('armored') || token.includes('special') || token.includes('signal')) {
+    return 'ADVANCED';
+  }
+  return 'STANDARD';
+}
+
+function minimumAcademyTierForDivision(division: string): 1 | 2 | 3 {
+  const requirement = requirementLabelForDivision(division);
+  if (requirement === 'ELITE') return 3;
+  if (requirement === 'ADVANCED') return 2;
+  return 1;
+}
+
+type PlannerTraitProfile = {
+  ambition: number;
+  discipline: number;
+  integrity: number;
+  sociability: number;
+  memory: unknown[];
+};
+
+function fallbackTraitProfile(npc: NpcRuntimeState): PlannerTraitProfile {
+  return {
+    ambition: clamp(Math.round((npc.leadership + npc.intelligence) / 2), 0, 100),
+    discipline: clamp(Math.round((npc.resilience + npc.competence) / 2), 0, 100),
+    integrity: clamp(Math.round(100 - npc.integrityRisk), 0, 100),
+    sociability: clamp(Math.round((npc.relationToPlayer + npc.loyalty) / 2), 0, 100),
+    memory: []
+  };
+}
+
+function chooseStrategyMode(npc: NpcRuntimeState, traits: PlannerTraitProfile): NpcCareerStrategyMode {
+  const ambitionPressure = traits.ambition + Math.round((100 - npc.betrayalRisk) * 0.18);
+  if (ambitionPressure >= 74 && traits.discipline <= 48) return 'RUSH_T1';
+  if (traits.ambition + traits.discipline + traits.integrity >= 212) return 'DEEP_T3';
+  return 'BALANCED_T2';
+}
+
+function chooseDesiredDivision(
+  npc: NpcRuntimeState,
+  traits: PlannerTraitProfile,
+  strategyMode: NpcCareerStrategyMode
+): string {
+  const choices = REGISTERED_DIVISIONS.map((item) => item.name);
+  let bestDivision = choices[0] ?? 'Special Operations Division';
+  let bestScore = -Infinity;
+
+  for (const division of choices) {
+    const requiredTier = minimumAcademyTierForDivision(division);
+    const strategyBias =
+      strategyMode === 'DEEP_T3'
+        ? requiredTier * 8
+        : strategyMode === 'RUSH_T1'
+          ? (4 - requiredTier) * 8
+          : 5;
+    const baseReadiness =
+      npc.intelligence * 0.24 +
+      npc.competence * 0.25 +
+      npc.leadership * 0.2 +
+      traits.ambition * 0.16 +
+      traits.discipline * 0.15;
+    const integrityBoost = traits.integrity * 0.06 - npc.integrityRisk * 0.07 - npc.betrayalRisk * 0.05;
+    const seed = hashSeed(`${npc.npcId}:${division}:${strategyMode}`);
+    const deterministicJitter = (seed % 13) - 6;
+    const score = baseReadiness + strategyBias + integrityBoost + deterministicJitter;
+    if (score > bestScore) {
+      bestScore = score;
+      bestDivision = division;
+    }
+  }
+
+  return bestDivision;
+}
+
+function plannerPriority(npc: NpcRuntimeState, plan: NpcCareerPlanState, currentDay: number): number {
+  const stageWeight: Record<NpcCareerStage, number> = {
+    CIVILIAN_START: 160,
+    ACADEMY: 130,
+    DIVISION_PIPELINE: 180,
+    IN_DIVISION: 60,
+    MUTATION_PIPELINE: 190
+  };
+  const dueBonus = plan.nextActionDay <= currentDay ? 800 : Math.max(0, 180 - (plan.nextActionDay - currentDay) * 20);
+  return (
+    dueBonus +
+    stageWeight[plan.careerStage] +
+    npc.academyTier * 12 +
+    npc.promotionPoints * 0.04 -
+    npc.fatigue * 0.15
+  );
+}
+
+function planMeta(input: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!input) return {};
+  return { ...input };
+}
+
+function readMetaNumber(meta: Record<string, unknown>, key: string): number | null {
+  const value = meta[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Math.trunc(Number(value));
+  return null;
+}
+
+function writeMetaNumber(meta: Record<string, unknown>, key: string, value: number | null): void {
+  if (value == null) {
+    delete meta[key];
+    return;
+  }
+  meta[key] = Math.trunc(value);
+}
+
+function toNpcCareerPlanFromRuntime(npc: NpcRuntimeState): NpcCareerPlanState {
+  return {
+    npcId: npc.npcId,
+    strategyMode: npc.strategyMode,
+    careerStage: npc.careerStage,
+    desiredDivision: npc.desiredDivision,
+    targetTier: strategyTier(npc.strategyMode),
+    nextActionDay: 0,
+    lastActionDay: null,
+    lastApplicationId: null,
+    meta: {}
+  };
+}
+
+function deterministicTryoutScore(
+  npc: NpcRuntimeState,
+  traits: PlannerTraitProfile,
+  division: string,
+  currentDay: number
+): number {
+  const seed = hashSeed(`${npc.npcId}:${division}:${currentDay}:TRYOUT`);
+  const jitter = (seed % 17) - 8;
+  const base =
+    npc.intelligence * 0.34 +
+    npc.competence * 0.28 +
+    npc.leadership * 0.19 +
+    traits.discipline * 0.19 -
+    npc.fatigue * 0.12;
+  return clamp(Math.round(base + jitter), 25, 100);
+}
+
+function deterministicFinalScore(
+  npc: NpcRuntimeState,
+  traits: PlannerTraitProfile,
+  tryoutScore: number
+): number {
+  const stability =
+    npc.leadership * 0.3 +
+    npc.resilience * 0.22 +
+    npc.loyalty * 0.22 +
+    traits.integrity * 0.18 +
+    (100 - npc.integrityRisk) * 0.08;
+  const academyBonus = npc.academyTier * 4;
+  return Number(clamp(tryoutScore * 0.62 + stability * 0.28 + academyBonus, 0, 100).toFixed(2));
+}
+
+export function computeNpcRankIndexFromProgress(input: {
+  xp: number;
+  promotionPoints: number;
+  leadership: number;
+  competence: number;
+  resilience: number;
+  academyTier: number;
+}): number {
+  const weightedScore =
+    input.promotionPoints * 0.42 +
+    input.xp * 0.08 +
+    input.leadership * 0.3 +
+    input.competence * 0.2 +
+    input.resilience * 0.15 +
+    clamp(input.academyTier, 0, 3) * 15;
+  return clamp(Math.floor(weightedScore / 55), 0, 13);
+}
+
+async function runNpcCareerPlanner(
+  client: PoolClient,
+  profileId: string,
+  currentDay: number,
+  npcs: NpcRuntimeState[],
+  budgetOps: number
+): Promise<Set<string>> {
+  const plannerUpdatedIds = new Set<string>();
+  const activeNpcs = npcs.filter((item) => item.status !== 'KIA');
+  if (activeNpcs.length === 0) return plannerUpdatedIds;
+
+  const cappedBudget = clamp(budgetOps, 1, Math.min(48, activeNpcs.length));
+  const npcIds = activeNpcs.map((item) => item.npcId);
+  const [traits, plans, quotaBoard] = await Promise.all([
+    listNpcTraitMemoryProfiles(client, profileId, npcIds),
+    listNpcCareerPlans(client, profileId, { npcIds, limit: npcIds.length + 8 }),
+    listDivisionQuotaStates(client, profileId)
+  ]);
+  const traitById = new Map(traits.map((item) => [item.npcId, item]));
+  const planById = new Map(plans.map((item) => [item.npcId, item]));
+  const quotaByDivision = new Map(quotaBoard.map((item) => [item.division, item]));
+
+  const candidates = [...activeNpcs]
+    .map((npc) => {
+      const plan = planById.get(npc.npcId) ?? toNpcCareerPlanFromRuntime(npc);
+      return { npc, plan, priority: plannerPriority(npc, plan, currentDay) };
+    })
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, cappedBudget);
+
+  for (const candidate of candidates) {
+    const npc = candidate.npc;
+    const existingPlan = candidate.plan;
+    const traitsForNpc = traitById.get(npc.npcId) ?? fallbackTraitProfile(npc);
+    const strategyMode = chooseStrategyMode(npc, traitsForNpc);
+    const meta = planMeta(existingPlan.meta);
+    let plan: NpcCareerPlanState = {
+      ...existingPlan,
+      strategyMode,
+      targetTier: strategyTier(strategyMode),
+      meta
+    };
+    let npcChanged = false;
+    let planChanged =
+      !planById.has(npc.npcId) ||
+      existingPlan.strategyMode !== strategyMode ||
+      existingPlan.targetTier !== strategyTier(strategyMode);
+    let assignmentChanged = false;
+    const oldDivision = npc.division;
+    const oldPosition = npc.position;
+
+    if (!plan.desiredDivision && npc.division.toLowerCase() !== 'nondivisi') {
+      plan.desiredDivision = npc.division;
+      planChanged = true;
+    }
+
+    if (plan.nextActionDay > currentDay) {
+      if (planChanged) {
+        await upsertNpcCareerPlan(client, { profileId, ...plan });
+      }
+      continue;
+    }
+
+    if (plan.careerStage === 'CIVILIAN_START') {
+      const desired = chooseDesiredDivision(npc, traitsForNpc, strategyMode);
+      plan = {
+        ...plan,
+        desiredDivision: desired,
+        careerStage: 'ACADEMY',
+        targetTier: Math.max(strategyTier(strategyMode), minimumAcademyTierForDivision(desired)) as 1 | 2 | 3,
+        nextActionDay: currentDay,
+        lastActionDay: currentDay
+      };
+      planChanged = true;
+    }
+
+    if (plan.careerStage === 'ACADEMY') {
+      const targetTier = Math.max(
+        plan.targetTier,
+        plan.desiredDivision ? minimumAcademyTierForDivision(plan.desiredDivision) : 1
+      ) as 1 | 2 | 3;
+      plan.targetTier = targetTier;
+      if (npc.academyTier >= targetTier) {
+        plan.careerStage = npc.division.toLowerCase() === 'nondivisi' ? 'DIVISION_PIPELINE' : 'IN_DIVISION';
+        plan.nextActionDay = currentDay;
+        plan.lastActionDay = currentDay;
+        writeMetaNumber(meta, 'academyStartDay', null);
+        writeMetaNumber(meta, 'academyTargetTier', null);
+        planChanged = true;
+      } else {
+        const startDay = readMetaNumber(meta, 'academyStartDay');
+        const metaTier = readMetaNumber(meta, 'academyTargetTier');
+        if (startDay == null || metaTier !== targetTier) {
+          writeMetaNumber(meta, 'academyStartDay', currentDay);
+          writeMetaNumber(meta, 'academyTargetTier', targetTier);
+          plan.nextActionDay = currentDay + academyDaysForTier(targetTier);
+          plan.lastActionDay = currentDay;
+          npc.lastTask = `academy-training-t${targetTier}`;
+          planChanged = true;
+          npcChanged = true;
+        } else if (currentDay >= startDay + academyDaysForTier(targetTier)) {
+          npc.academyTier = targetTier as 0 | 1 | 2 | 3;
+          npc.lastTask = `academy-graduated-t${targetTier}`;
+          plan.careerStage = npc.division.toLowerCase() === 'nondivisi' ? 'DIVISION_PIPELINE' : 'IN_DIVISION';
+          plan.nextActionDay = currentDay;
+          plan.lastActionDay = currentDay;
+          writeMetaNumber(meta, 'academyStartDay', null);
+          writeMetaNumber(meta, 'academyTargetTier', null);
+          planChanged = true;
+          npcChanged = true;
+
+          await insertLifecycleEvent(client, {
+            profileId,
+            npcId: npc.npcId,
+            eventType: 'ACADEMY_PASS',
+            day: currentDay,
+            details: { source: 'NPC_CAREER_PLANNER', tier: targetTier }
+          });
+          await insertSocialTimelineEvent(client, {
+            profileId,
+            actorType: 'NPC',
+            actorNpcId: npc.npcId,
+            eventType: 'NPC_ACADEMY_MILESTONE',
+            title: `Academy Tier ${targetTier} Completed`,
+            detail: `${npc.name} menyelesaikan academy tier ${targetTier}.`,
+            eventDay: currentDay,
+            meta: { npcId: npc.npcId, tier: targetTier }
+          });
+          await insertMailboxMessage(client, {
+            messageId: `mail-npc-academy-${npc.npcId}-${currentDay}`,
+            profileId,
+            senderType: 'NPC',
+            senderNpcId: npc.npcId,
+            subject: `Academy Milestone: ${npc.name}`,
+            body: `${npc.name} menyelesaikan academy tier ${targetTier} dan siap ke tahap berikutnya.`,
+            category: 'GENERAL',
+            relatedRef: npc.npcId,
+            createdDay: currentDay
+          });
+        }
+      }
+    }
+
+    if (plan.careerStage === 'IN_DIVISION') {
+      if (strategyMode === 'DEEP_T3' && npc.academyTier < 3) {
+        plan.careerStage = 'ACADEMY';
+        plan.targetTier = 3;
+        plan.nextActionDay = currentDay;
+        plan.lastActionDay = currentDay;
+        planChanged = true;
+      } else {
+        const currentTier = minimumAcademyTierForDivision(npc.division);
+        const eligibleMutationTargets = [...quotaByDivision.values()].filter((item) => {
+          const tier = minimumAcademyTierForDivision(item.division);
+          return (
+            item.division !== npc.division &&
+            item.status === 'OPEN' &&
+            item.quotaRemaining > 0 &&
+            tier > currentTier &&
+            npc.academyTier >= tier
+          );
+        });
+        if (eligibleMutationTargets.length > 0) {
+          eligibleMutationTargets.sort((a, b) => {
+            const seedA = hashSeed(`${npc.npcId}:${a.division}:MUTATION`);
+            const seedB = hashSeed(`${npc.npcId}:${b.division}:MUTATION`);
+            const scoreA = minimumAcademyTierForDivision(a.division) * 10 + (seedA % 7);
+            const scoreB = minimumAcademyTierForDivision(b.division) * 10 + (seedB % 7);
+            return scoreB - scoreA;
+          });
+          const target = eligibleMutationTargets[0]?.division ?? plan.desiredDivision;
+          if (target) {
+            plan.desiredDivision = target;
+            plan.targetTier = Math.max(plan.targetTier, minimumAcademyTierForDivision(target)) as 1 | 2 | 3;
+            plan.careerStage = 'MUTATION_PIPELINE';
+            plan.nextActionDay = currentDay;
+            plan.lastActionDay = currentDay;
+            plan.lastApplicationId = null;
+            planChanged = true;
+          }
+        }
+      }
+    }
+
+    if (plan.careerStage === 'DIVISION_PIPELINE' || plan.careerStage === 'MUTATION_PIPELINE') {
+      const pipelineKind = plan.careerStage;
+      const desiredDivision = plan.desiredDivision ?? chooseDesiredDivision(npc, traitsForNpc, strategyMode);
+      plan.desiredDivision = desiredDivision;
+      const requiredTier = minimumAcademyTierForDivision(desiredDivision);
+      if (npc.academyTier < requiredTier) {
+        plan.careerStage = 'ACADEMY';
+        plan.targetTier = Math.max(requiredTier, strategyTier(strategyMode)) as 1 | 2 | 3;
+        plan.nextActionDay = currentDay;
+        plan.lastActionDay = currentDay;
+        planChanged = true;
+      } else {
+        let application =
+          plan.lastApplicationId != null
+            ? await getRecruitmentPipelineApplication(client, profileId, plan.lastApplicationId)
+            : null;
+
+        if (application && (application.holderType !== 'NPC' || application.npcId !== npc.npcId)) {
+          application = null;
+          plan.lastApplicationId = null;
+          planChanged = true;
+        }
+
+        if (
+          application &&
+          (application.status === 'ANNOUNCEMENT_ACCEPTED' || application.status === 'ANNOUNCEMENT_REJECTED')
+        ) {
+          application = null;
+          plan.lastApplicationId = null;
+          planChanged = true;
+        }
+
+        if (!application) {
+          const applicationId = `rapnpc-${profileId.slice(0, 8)}-${npc.slotNo}-${currentDay}-${randomUUID().slice(0, 6)}`;
+          application = await upsertRecruitmentPipelineApplication(client, {
+            profileId,
+            applicationId,
+            holderType: 'NPC',
+            npcId: npc.npcId,
+            holderName: npc.name,
+            division: desiredDivision,
+            status: 'REGISTRATION',
+            registeredDay: currentDay,
+            tryoutDay: null,
+            selectionDay: null,
+            announcementDay: null,
+            tryoutScore: 0,
+            finalScore: 0,
+            note: pipelineKind === 'MUTATION_PIPELINE' ? 'NPC_MUTATION_REGISTRATION' : 'NPC_DIVISION_REGISTRATION'
+          });
+          plan.lastApplicationId = application.applicationId;
+          plan.nextActionDay = currentDay + 1;
+          plan.lastActionDay = currentDay;
+          planChanged = true;
+          await insertSocialTimelineEvent(client, {
+            profileId,
+            actorType: 'NPC',
+            actorNpcId: npc.npcId,
+            eventType: pipelineKind === 'MUTATION_PIPELINE' ? 'NPC_MUTATION_REGISTERED' : 'NPC_DIVISION_REGISTERED',
+            title: pipelineKind === 'MUTATION_PIPELINE' ? 'Mutation Pipeline Registered' : 'Division Pipeline Registered',
+            detail: `${npc.name} mendaftar ke ${desiredDivision}.`,
+            eventDay: currentDay,
+            meta: { npcId: npc.npcId, division: desiredDivision, applicationId: application.applicationId }
+          });
+          await insertMailboxMessage(client, {
+            messageId: `mail-npc-reg-${npc.npcId}-${currentDay}`,
+            profileId,
+            senderType: 'NPC',
+            senderNpcId: npc.npcId,
+            subject: `NPC Pipeline Registration: ${npc.name}`,
+            body: `${npc.name} mendaftar ke ${desiredDivision} (Day 1/4).`,
+            category: 'GENERAL',
+            relatedRef: application.applicationId,
+            createdDay: currentDay
+          });
+        } else if (application.status === 'REGISTRATION') {
+          const requiredDay = application.registeredDay + 1;
+          if (currentDay >= requiredDay) {
+            const tryoutScore = deterministicTryoutScore(npc, traitsForNpc, desiredDivision, currentDay);
+            application = await upsertRecruitmentPipelineApplication(client, {
+              profileId,
+              ...application,
+              status: 'TRYOUT',
+              tryoutDay: currentDay,
+              tryoutScore,
+              note: pipelineKind === 'MUTATION_PIPELINE' ? 'NPC_MUTATION_TRYOUT' : 'NPC_DIVISION_TRYOUT'
+            });
+            plan.lastActionDay = currentDay;
+            plan.nextActionDay = application.registeredDay + 2;
+            planChanged = true;
+          } else {
+            plan.nextActionDay = requiredDay;
+            planChanged = true;
+          }
+        } else if (application.status === 'TRYOUT') {
+          const requiredDay = application.registeredDay + 2;
+          if (currentDay >= requiredDay) {
+            const finalScore = deterministicFinalScore(npc, traitsForNpc, application.tryoutScore);
+            application = await upsertRecruitmentPipelineApplication(client, {
+              profileId,
+              ...application,
+              status: 'SELECTION',
+              selectionDay: currentDay,
+              finalScore,
+              note: pipelineKind === 'MUTATION_PIPELINE' ? 'NPC_MUTATION_SELECTION' : 'NPC_DIVISION_SELECTION'
+            });
+            plan.lastActionDay = currentDay;
+            plan.nextActionDay = application.registeredDay + 3;
+            planChanged = true;
+          } else {
+            plan.nextActionDay = requiredDay;
+            planChanged = true;
+          }
+        } else if (application.status === 'SELECTION') {
+          const requiredDay = application.registeredDay + 3;
+          if (currentDay >= requiredDay) {
+            const meetsScore = application.finalScore >= 68;
+            const quotaDecision = meetsScore
+              ? await reserveDivisionQuotaSlot(client, {
+                  profileId,
+                  division: desiredDivision,
+                  currentDay
+                })
+              : { accepted: false as const, reason: 'QUOTA_FULL' as const, quota: null as null };
+            const accepted = meetsScore && quotaDecision.accepted;
+            const announced = await upsertRecruitmentPipelineApplication(client, {
+              profileId,
+              ...application,
+              status: accepted ? 'ANNOUNCEMENT_ACCEPTED' : 'ANNOUNCEMENT_REJECTED',
+              announcementDay: currentDay,
+              note: accepted
+                ? 'NPC_PIPELINE_ANNOUNCEMENT_ACCEPTED'
+                : meetsScore
+                  ? `NPC_PIPELINE_ANNOUNCEMENT_REJECTED_${quotaDecision.reason}`
+                  : 'NPC_PIPELINE_ANNOUNCEMENT_REJECTED_SCORE'
+            });
+            plan.lastApplicationId = announced.applicationId;
+            plan.lastActionDay = currentDay;
+
+            if (accepted) {
+              const newDivision = desiredDivision;
+              const newPosition = 'Probationary Officer';
+              npc.division = newDivision;
+              npc.unit = `${newDivision} Intake Unit`;
+              npc.position = newPosition;
+              npc.lastTask = pipelineKind === 'MUTATION_PIPELINE' ? 'mutation-assigned' : 'division-intake';
+              plan.careerStage = 'IN_DIVISION';
+              plan.nextActionDay = currentDay + 2;
+              npcChanged = true;
+              assignmentChanged = true;
+              await updateNpcAssignmentCurrent(client, {
+                profileId,
+                npcId: npc.npcId,
+                division: npc.division,
+                unit: npc.unit,
+                position: npc.position
+              });
+              await insertAssignmentHistory(client, {
+                profileId,
+                actorType: 'NPC',
+                npcId: npc.npcId,
+                oldDivision,
+                newDivision: npc.division,
+                oldPosition,
+                newPosition: npc.position,
+                reason:
+                  pipelineKind === 'MUTATION_PIPELINE'
+                    ? 'NPC_MUTATION_PIPELINE_ACCEPTED'
+                    : 'NPC_RECRUITMENT_PIPELINE_ACCEPTED',
+                changedDay: currentDay
+              });
+            } else if (!meetsScore && npc.academyTier < 3) {
+              plan.careerStage = 'ACADEMY';
+              plan.targetTier = Math.max(requiredTier, Math.min(3, npc.academyTier + 1)) as 1 | 2 | 3;
+              plan.nextActionDay = currentDay;
+            } else {
+              plan.nextActionDay = currentDay + 2;
+            }
+            planChanged = true;
+
+            await insertSocialTimelineEvent(client, {
+              profileId,
+              actorType: 'NPC',
+              actorNpcId: npc.npcId,
+              eventType:
+                pipelineKind === 'MUTATION_PIPELINE'
+                  ? accepted
+                    ? 'NPC_MUTATION_ACCEPTED'
+                    : 'NPC_MUTATION_REJECTED'
+                  : accepted
+                    ? 'NPC_DIVISION_ACCEPTED'
+                    : 'NPC_DIVISION_REJECTED',
+              title: accepted ? 'NPC Pipeline Accepted' : 'NPC Pipeline Rejected',
+              detail: accepted
+                ? `${npc.name} diterima ke ${desiredDivision}.`
+                : `${npc.name} belum diterima ke ${desiredDivision}.`,
+              eventDay: currentDay,
+              meta: {
+                npcId: npc.npcId,
+                division: desiredDivision,
+                finalScore: application.finalScore,
+                accepted
+              }
+            });
+            await insertMailboxMessage(client, {
+              messageId: `mail-npc-ann-${npc.npcId}-${currentDay}`,
+              profileId,
+              senderType: 'NPC',
+              senderNpcId: npc.npcId,
+              subject: accepted ? `NPC Accepted: ${npc.name}` : `NPC Rejected: ${npc.name}`,
+              body: accepted
+                ? `${npc.name} diterima di ${desiredDivision} melalui pipeline 4 tahap.`
+                : `${npc.name} belum lolos di ${desiredDivision}.`,
+              category: accepted ? 'MUTATION' : 'GENERAL',
+              relatedRef: announced.applicationId,
+              createdDay: currentDay
+            });
+
+            if (quotaDecision.accepted && quotaDecision.quota) {
+              quotaByDivision.set(quotaDecision.quota.division, quotaDecision.quota);
+            }
+          } else {
+            plan.nextActionDay = requiredDay;
+            planChanged = true;
+          }
+        }
+      }
+    }
+
+    if (planChanged) {
+      await upsertNpcCareerPlan(client, { profileId, ...plan });
+      npc.strategyMode = plan.strategyMode;
+      npc.careerStage = plan.careerStage;
+      npc.desiredDivision = plan.desiredDivision;
+      plannerUpdatedIds.add(npc.npcId);
+    }
+
+    if (npcChanged || assignmentChanged) {
+      await updateNpcRuntimeState(client, profileId, npc, currentDay);
+      plannerUpdatedIds.add(npc.npcId);
+    }
+  }
+
+  return plannerUpdatedIds;
+}
+
 export async function runWorldTick(
   client: PoolClient,
   profileId: string,
@@ -268,6 +912,26 @@ export async function runWorldTick(
       (task === 'patrol' ? -1 : 1);
     npc.betrayalRisk = clamp(Math.round(npc.betrayalRisk + betrayalPressure - npc.intelligence * 0.03), 0, 100);
     npc.position = bumpPosition(npc.position, promotionGain);
+    const computedRankIndex = computeNpcRankIndexFromProgress({
+      xp: npc.xp,
+      promotionPoints: npc.promotionPoints,
+      leadership: npc.leadership,
+      competence: npc.competence,
+      resilience: npc.resilience,
+      academyTier: npc.academyTier
+    });
+    if (computedRankIndex !== npc.rankIndex) {
+      await insertRankHistory(client, {
+        profileId,
+        actorType: 'NPC',
+        npcId: npc.npcId,
+        oldRankIndex: npc.rankIndex,
+        newRankIndex: computedRankIndex,
+        reason: 'NPC_PROGRESS_AUTO_RANK',
+        changedDay: currentDay
+      });
+      npc.rankIndex = computedRankIndex;
+    }
 
     const injuryRisk = (npc.fatigue + npc.trauma + activeMissionPressure * 8 + (seed % 35) + noise) / 2;
     const kiaRisk = (npc.fatigue + npc.trauma + activeMissionPressure * 14 + (seed % 50) + noise) / 3;
@@ -406,6 +1070,18 @@ export async function runWorldTick(
         details: { slotNo: item.slotNo, generation: item.generationNext }
       });
       changedNpcIds.add(npcId);
+    }
+  }
+
+  const plannerBudget = clamp(Math.floor((options?.maxNpcOps ?? V5_MAX_NPCS) / 4), 8, 48);
+  const plannerUpdatedIds = await runNpcCareerPlanner(client, profileId, currentDay, npcs, plannerBudget);
+  if (plannerUpdatedIds.size > 0) {
+    const npcById = new Map(npcs.map((item) => [item.npcId, item]));
+    for (const npcId of plannerUpdatedIds) {
+      const latest = npcById.get(npcId);
+      if (!latest) continue;
+      changedNpcIds.add(npcId);
+      changedNpcStates.push({ ...latest, updatedAtMs: nowMs });
     }
   }
 
@@ -668,6 +1344,11 @@ export async function runWorldTick(
   const pendingCeremony = await getCurrentCeremony(client, profileId);
   const queue = await listRecruitmentQueue(client, profileId);
   const recentEvents = await listRecentLifecycleEvents(client, profileId, 15);
+  const latestChangedStateById = new Map<string, NpcRuntimeState>();
+  for (const state of changedNpcStates) {
+    latestChangedStateById.set(state.npcId, state);
+  }
+  const mergedChangedStates = Array.from(latestChangedStateById.values());
 
   const delta: WorldDelta = {
     fromVersion: world.stateVersion,
@@ -681,9 +1362,9 @@ export async function runWorldTick(
       assignment,
       commandAuthority
     },
-    activeNpcCount: changedNpcStates.filter((item) => item.status === 'ACTIVE').length,
+    activeNpcCount: mergedChangedStates.filter((item) => item.status === 'ACTIVE').length,
     changedNpcIds: Array.from(changedNpcIds),
-    changedNpcStates,
+    changedNpcStates: mergedChangedStates,
     activeMission: updatedMission,
     pendingCeremony: pendingCeremony?.status === 'PENDING' ? pendingCeremony : null,
     recruitmentQueue: queue,

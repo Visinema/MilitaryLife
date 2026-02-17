@@ -5,3 +5,4 @@ export * from './game-types.js';
 export * from './npc-registry.js';
 
 export * from './division-registry.js';
+export * from './ranks.js';

@@ -1,5 +1,6 @@
 import type { AuthMeResponse } from '@mls/shared/api-types';
 import { GAME_MS_PER_DAY } from '@mls/shared/constants';
+import { universalRankLabelFromIndex } from '@mls/shared/ranks';
 import type {
   AcademyCertificate,
   AcademyBatchState,
@@ -17,6 +18,7 @@ import type {
   GameSnapshotV5,
   MailboxMessage,
   MissionInstanceV5,
+  NpcCareerPlanState,
   NpcLifecycleEvent,
   NpcRuntimeState,
   NpcRuntimeStatus,
@@ -195,7 +197,7 @@ function mapV5SnapshotToLegacy(snapshot: GameSnapshotV5, expansion?: ExpansionSt
     playerName: snapshot.player.playerName,
     country: 'US',
     branch: snapshot.player.branch,
-    rankCode: `R-${snapshot.player.rankIndex}`,
+    rankCode: universalRankLabelFromIndex(snapshot.player.rankIndex),
     rankIndex: snapshot.player.rankIndex,
     moneyCents: snapshot.player.moneyCents,
     morale: snapshot.player.morale,
@@ -336,7 +338,19 @@ export const api = {
     return request<{ items: NpcRuntimeState[]; nextCursor: number | null }>(`/game/v5/npcs${suffix}`, 'GET');
   },
   v5NpcDetail(npcId: string) {
-    return request<{ npc: NpcRuntimeState; lifecycleEvents: NpcLifecycleEvent[]; certifications: CertificationRecordV5[] }>(`/game/v5/npcs/${encodeURIComponent(npcId)}`, 'GET');
+    return request<{
+      npc: NpcRuntimeState;
+      lifecycleEvents: NpcLifecycleEvent[];
+      certifications: CertificationRecordV5[];
+      careerPlan: (NpcCareerPlanState & { activeApplication: RecruitmentPipelineState | null }) | null;
+      academyProgress: {
+        academyTier: 0 | 1 | 2 | 3;
+        minimumT1Passed: boolean;
+        targetTier: 1 | 2 | 3;
+        requiredTierForDesiredDivision: 1 | 2 | 3 | null;
+        remainingTier: number;
+      };
+    }>(`/game/v5/npcs/${encodeURIComponent(npcId)}`, 'GET');
   },
   v5MissionPlan(payload: {
     missionType: MissionInstanceV5['missionType'];
@@ -480,6 +494,15 @@ export const api = {
       };
       playerEntry: RecruitmentCompetitionEntry | null;
       raceTop10: RecruitmentCompetitionEntry[];
+      stage?: 'REGISTRATION' | 'TRYOUT' | 'SELECTION' | 'ANNOUNCEMENT';
+      application?: RecruitmentPipelineState;
+      schedule?: {
+        registrationDay: number;
+        tryoutDay: number;
+        selectionDay: number;
+        announcementDay: number;
+        totalDays: number;
+      };
       message: string;
       state: ExpansionStateV51;
       snapshot: GameSnapshotV5 | null;

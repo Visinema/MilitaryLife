@@ -255,6 +255,13 @@ export interface ActionResult {
 }
 
 export type NpcRuntimeStatus = 'ACTIVE' | 'INJURED' | 'KIA' | 'RESERVE' | 'RECRUITING';
+export type NpcCareerStrategyMode = 'RUSH_T1' | 'BALANCED_T2' | 'DEEP_T3';
+export type NpcCareerStage =
+  | 'CIVILIAN_START'
+  | 'ACADEMY'
+  | 'DIVISION_PIPELINE'
+  | 'IN_DIVISION'
+  | 'MUTATION_PIPELINE';
 
 export interface NpcRuntimeState {
   npcId: string;
@@ -280,9 +287,26 @@ export interface NpcRuntimeState {
   trauma: number;
   xp: number;
   promotionPoints: number;
+  rankIndex: number;
+  academyTier: 0 | 1 | 2 | 3;
+  strategyMode: NpcCareerStrategyMode;
+  careerStage: NpcCareerStage;
+  desiredDivision: string | null;
   relationToPlayer: number;
   lastTask: string | null;
   updatedAtMs: number;
+}
+
+export interface NpcCareerPlanState {
+  npcId: string;
+  strategyMode: NpcCareerStrategyMode;
+  careerStage: NpcCareerStage;
+  desiredDivision: string | null;
+  targetTier: 1 | 2 | 3;
+  nextActionDay: number;
+  lastActionDay: number | null;
+  lastApplicationId: string | null;
+  meta: Record<string, unknown>;
 }
 
 export interface NpcLifecycleEvent {

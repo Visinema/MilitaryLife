@@ -14,6 +14,7 @@ import type {
   ExpansionStateV51,
   MailboxMessage,
   MissionInstanceV5,
+  NpcCareerPlanState,
   NpcRuntimeStatus,
   RecruitmentPipelineState,
   SocialTimelineEvent,
@@ -51,6 +52,7 @@ import {
   getLegacyGovernanceSnapshot,
   getLatestMission,
   getMailboxSummary,
+  getNpcCareerPlan,
   getNpcRuntimeById,
   getProfileBaseByUserId,
   getRecruitmentPipelineApplication,
@@ -85,6 +87,7 @@ import {
   lockV5World,
   markMailboxMessageRead,
   queueNpcReplacement,
+  reserveDivisionQuotaSlot,
   resolveMission,
   setSessionActiveUntil,
   updateCommandChainOrderStatus,
@@ -369,6 +372,13 @@ function requirementTierForDivision(division: string): { label: 'STANDARD' | 'AD
     return { label: 'ADVANCED', minExtraCerts: 2 };
   }
   return { label: 'STANDARD', minExtraCerts: 1 };
+}
+
+function minimumAcademyTierForDivision(division: string): 1 | 2 | 3 {
+  const requirement = requirementTierForDivision(division);
+  if (requirement.label === 'ELITE') return 3;
+  if (requirement.label === 'ADVANCED') return 2;
+  return 1;
 }
 
 async function getAcademyLockInfo(client: import('pg').PoolClient, profileId: string): Promise<{ locked: boolean; batchId: string | null }> {
@@ -1201,12 +1211,45 @@ export async function getNpcDetailV5(request: FastifyRequest, reply: FastifyRepl
 
     const events = await listRecentLifecycleEvents(client, profileId, 30);
     const certifications = await listCertifications(client, profileId, { holderType: 'NPC', npcId });
+    const careerPlan = await getNpcCareerPlan(client, profileId, npcId);
+    const activeApplication =
+      careerPlan?.lastApplicationId != null
+        ? await getRecruitmentPipelineApplication(client, profileId, careerPlan.lastApplicationId)
+        : null;
+
+    const desiredDivision = careerPlan?.desiredDivision ?? npc.desiredDivision ?? null;
+    const requiredTier = desiredDivision ? minimumAcademyTierForDivision(desiredDivision) : 1;
+    const strategyTargetTier = npc.strategyMode === 'DEEP_T3' ? 3 : npc.strategyMode === 'RUSH_T1' ? 1 : 2;
+    const targetTier = Math.max(
+      requiredTier,
+      careerPlan?.targetTier ?? strategyTargetTier
+    ) as 1 | 2 | 3;
+    const academyProgress = {
+      academyTier: npc.academyTier,
+      minimumT1Passed: npc.academyTier >= 1,
+      targetTier,
+      requiredTierForDesiredDivision: desiredDivision ? requiredTier : null,
+      remainingTier: Math.max(0, targetTier - npc.academyTier)
+    };
+    const careerPlanSummary: NpcCareerPlanState | null = careerPlan
+      ? {
+          ...careerPlan,
+          desiredDivision
+        }
+      : null;
 
     return {
       payload: {
         npc,
         lifecycleEvents: events.filter((item) => item.npcId === npcId),
-        certifications
+        certifications,
+        careerPlan: careerPlanSummary
+          ? {
+              ...careerPlanSummary,
+              activeApplication
+            }
+          : null,
+        academyProgress
       }
     };
   });
@@ -2235,336 +2278,380 @@ export async function applyRecruitmentV51(
       return { statusCode: 404, payload: { error: 'Division tidak terdaftar.' } };
     }
 
-    const state = await buildExpansionState(client, profileId, nowMs, division);
-    const quota = state.quotaBoard.find((item) => item.division === division);
-    if (!quota) {
-      return { statusCode: 404, payload: { error: 'Division quota tidak ditemukan.' } };
-    }
-    if (quota.status !== 'OPEN' || quota.quotaRemaining <= 0) {
-      return {
-        statusCode: 409,
-        payload: {
-          error: 'Kuota divisi sedang ditutup/cooldown.',
-          quota
-        }
-      };
-    }
-
+    const requirement = requirementTierForDivision(division);
     const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
     const certSummary = summarizePlayerCertifications(playerCerts);
-    const requirement = requirementTierForDivision(division);
-
-    if (!certSummary.hasBaseDiploma) {
+    const minimumAcademyTier = minimumAcademyTierForDivision(division);
+    if (!certSummary.hasBaseDiploma || certSummary.extraCertCount < requirement.minExtraCerts) {
       return {
         statusCode: 409,
         payload: {
-          error: 'Sertifikasi dasar academy (diploma) belum terdeteksi.',
-          code: 'MISSING_BASE_DIPLOMA',
+          error: !certSummary.hasBaseDiploma
+            ? 'Sertifikasi dasar academy (diploma) belum terdeteksi.'
+            : `Sertifikasi tambahan belum cukup (${certSummary.extraCertCount}/${requirement.minExtraCerts}).`,
+          code: !certSummary.hasBaseDiploma ? 'MISSING_BASE_DIPLOMA' : 'MISSING_EXTRA_CERT',
           requirement,
-          playerEligibility: {
-            hasBaseDiploma: false,
-            baseDiplomaCode: null,
-            baseDiplomaGrade: null,
-            extraCertCount: certSummary.extraCertCount,
-            requiredExtraCerts: requirement.minExtraCerts,
-            missingExtraCerts: requirement.minExtraCerts,
-            bonusScore: 0,
-            bonusCap: 8,
-            eligible: false
-          }
+          minimumAcademyTier
         }
       };
     }
 
-    if (certSummary.extraCertCount < requirement.minExtraCerts) {
+    const activeApplications = await listRecruitmentPipelineApplications(client, profileId, { holderType: 'PLAYER', limit: 20 });
+    const activeApplication = activeApplications.find(
+      (item) => item.status === 'REGISTRATION' || item.status === 'TRYOUT' || item.status === 'SELECTION'
+    );
+    if (activeApplication && activeApplication.division !== division) {
       return {
         statusCode: 409,
         payload: {
-          error: `Sertifikasi tambahan belum cukup (${certSummary.extraCertCount}/${requirement.minExtraCerts}).`,
-          code: 'MISSING_EXTRA_CERT',
-          requirement,
-          playerEligibility: {
-            hasBaseDiploma: true,
-            baseDiplomaCode: certSummary.baseDiplomaCode,
-            baseDiplomaGrade: certSummary.baseDiplomaGrade,
-            extraCertCount: certSummary.extraCertCount,
-            requiredExtraCerts: requirement.minExtraCerts,
-            missingExtraCerts: requirement.minExtraCerts - certSummary.extraCertCount,
-            bonusScore: 0,
-            bonusCap: 8,
-            eligible: false
-          }
+          error: `Masih ada aplikasi aktif di ${activeApplication.division}.`,
+          code: 'ACTIVE_APPLICATION_EXISTS',
+          application: activeApplication
         }
       };
     }
 
-    const academyBatch = await buildAcademyBatchStateForProfile(client, profileId, world.currentDay, world.playerName);
-    const diplomaScore = clamp(academyBatch?.playerStanding?.finalScore ?? 72, 0, 100);
-    const playerDailyScores = academyBatch?.batchId ? (await getAcademyBatchMember(client, academyBatch.batchId, 'PLAYER'))?.dailyScores.map((item) => item.score) ?? [] : [];
-    const dailyConsistency = clamp(playerDailyScores.length > 0 ? consistencyScore(playerDailyScores) : 70, 0, 100);
-    const certStrength = clamp(48 + certSummary.extraCertCount * 12 + gradeBonus(certSummary.baseDiplomaGrade ?? 'C'), 0, 100);
-    const examScore = scoreRecruitmentExam(division, payload.answers);
-    const serviceReputation = clamp(world.commandAuthority * 0.6 + world.morale * 0.4, 0, 100);
-    const playerComposite = computeCompositeScore({
-      diplomaScore,
-      dailyConsistency,
-      certStrength,
-      examScore,
-      serviceReputation,
-      extraCertCount: certSummary.extraCertCount,
-      requiredExtraCerts: requirement.minExtraCerts
-    });
-
-    const candidateCount = clamp(Math.max(12, quota.quotaRemaining * 4), 12, 48);
-    const npcRoster = await listCurrentNpcRuntime(client, profileId, { limit: V5_MAX_NPCS });
-    const npcCandidates = npcRoster.items.filter((item) => item.status !== 'KIA').slice(0, candidateCount);
-
-    const candidates: Array<{
-      holderType: 'PLAYER' | 'NPC';
-      npcId: string | null;
-      name: string;
-      appliedDay: number;
-      appliedOrder: number;
-      examScore: number;
-      compositeScore: number;
-      fatigue: number;
-      extraCertCount: number;
-      baseDiplomaScore: number;
-      stableId: string;
-      eligible: boolean;
-      ineligibleCode: string | null;
-      ineligibleReason: string | null;
-    }> = [
-      {
-        holderType: 'PLAYER',
-        npcId: null,
-        name: world.playerName,
-        appliedDay: world.currentDay,
-        appliedOrder: 1,
-        examScore,
-        compositeScore: playerComposite,
-        fatigue: 0,
-        extraCertCount: certSummary.extraCertCount,
-        baseDiplomaScore: diplomaScore,
-        stableId: 'PLAYER',
-        eligible: true,
-        ineligibleCode: null,
-        ineligibleReason: null
+    const payloadFor = async (
+      application: RecruitmentPipelineState,
+      input: {
+        stage: 'REGISTRATION' | 'TRYOUT' | 'SELECTION' | 'ANNOUNCEMENT';
+        accepted?: boolean;
+        message: string;
+        code: string;
+        reason: string;
+        quota?: DivisionQuotaState | null;
       }
-    ];
-
-    for (let npcIndex = 0; npcIndex < npcCandidates.length; npcIndex += 1) {
-      const npc = npcCandidates[npcIndex];
-      const seed = hashSeed(`${division}:${npc.npcId}:${world.currentDay}`);
-      const npcExtraCert = clamp(Math.floor((npc.promotionPoints + npc.xp) / 55), 0, 6);
-      const npcDiploma = clamp(Math.round((npc.leadership + npc.support) / 2), 50, 98);
-      const npcConsistency = clamp(Math.round(76 - npc.fatigue * 0.25 + npc.resilience * 0.18), 35, 99);
-      const npcCertStrength = clamp(45 + npcExtraCert * 11 + ((seed % 20) - 8), 30, 100);
-      const npcExamScore = clamp(54 + (seed % 42) - Math.floor(npc.fatigue / 5), 25, 100);
-      const npcService = clamp((npc.leadership + npc.resilience) / 2, 0, 100);
-      const meetsBaseDiploma = npcDiploma >= ACADEMY_PASS_SCORE;
-      const meetsExtraCert = npcExtraCert >= requirement.minExtraCerts;
-      const eligible = meetsBaseDiploma && meetsExtraCert;
-      const ineligibleCode = !meetsBaseDiploma ? 'MISSING_BASE_DIPLOMA' : !meetsExtraCert ? 'MISSING_EXTRA_CERT' : null;
-      const ineligibleReason =
-        ineligibleCode === 'MISSING_BASE_DIPLOMA'
-          ? 'Diploma academy belum memenuhi syarat.'
-          : ineligibleCode === 'MISSING_EXTRA_CERT'
-            ? `Sertifikasi tambahan belum cukup (${npcExtraCert}/${requirement.minExtraCerts}).`
-            : null;
-      const composite = computeCompositeScore({
-        diplomaScore: npcDiploma,
-        dailyConsistency: npcConsistency,
-        certStrength: npcCertStrength,
-        examScore: npcExamScore,
-        serviceReputation: npcService,
-        extraCertCount: npcExtraCert,
-        requiredExtraCerts: requirement.minExtraCerts
-      });
-
-      candidates.push({
-        holderType: 'NPC',
-        npcId: npc.npcId,
-        name: npc.name,
-        appliedDay: world.currentDay,
-        appliedOrder: 2 + npcIndex + (seed % 4),
-        examScore: npcExamScore,
-        compositeScore: composite,
-        fatigue: npc.fatigue,
-        extraCertCount: npcExtraCert,
-        baseDiplomaScore: npcDiploma,
-        stableId: npc.npcId,
-        eligible,
-        ineligibleCode,
-        ineligibleReason
-      });
-    }
-
-    const eligibleCandidates = candidates.filter((item) => item.eligible).sort(candidateSort);
-    const acceptedIds = new Set(eligibleCandidates.slice(0, quota.quotaRemaining).map((item) => item.stableId));
-    const acceptedCount = acceptedIds.size;
-    const playerAccepted = acceptedIds.has('PLAYER');
-    const acceptedNpcIds = eligibleCandidates
-      .slice(0, quota.quotaRemaining)
-      .filter((item) => item.holderType === 'NPC' && item.npcId)
-      .map((item) => item.npcId as string);
-
-    let playerDecision: { status: 'ACCEPTED' | 'REJECTED'; code: string; reason: string } = {
-      status: 'REJECTED',
-      code: 'COMPOSITE_SCORE_BELOW_CUTOFF',
-      reason: 'Skor kompetitif belum cukup pada gelombang ini.'
+    ) => {
+      invalidateExpansionStateCache(profileId);
+      const state = await buildExpansionState(client, profileId, nowMs, application.division);
+      const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+      const quota = input.quota ?? state.quotaBoard.find((item) => item.division === application.division) ?? null;
+      const accepted = Boolean(input.accepted);
+      return {
+        accepted,
+        division: application.division,
+        requirement,
+        examScore: application.tryoutScore,
+        compositeScore: application.finalScore,
+        acceptedSlots: accepted ? 1 : 0,
+        quota,
+        playerDecision: {
+          status: accepted ? ('ACCEPTED' as const) : ('REJECTED' as const),
+          code: input.code,
+          reason: input.reason
+        },
+        playerEntry: null,
+        raceTop10: state.recruitmentRace.top10,
+        stage: input.stage,
+        application,
+        schedule: {
+          registrationDay: application.registeredDay,
+          tryoutDay: application.registeredDay + 1,
+          selectionDay: application.registeredDay + 2,
+          announcementDay: application.registeredDay + 3,
+          totalDays: RECRUITMENT_PIPELINE_TOTAL_DAYS
+        },
+        message: input.message,
+        state,
+        snapshot: snapshot ? { ...snapshot, expansion: state } : null
+      };
     };
 
-    for (const candidate of candidates) {
-      const status: 'ACCEPTED' | 'REJECTED' = acceptedIds.has(candidate.stableId) ? 'ACCEPTED' : 'REJECTED';
-      const decisionCode =
-        status === 'ACCEPTED'
-          ? 'ACCEPTED'
-          : candidate.ineligibleCode ?? 'COMPOSITE_SCORE_BELOW_CUTOFF';
-      const reason =
-        status === 'ACCEPTED'
-          ? 'Lolos seleksi kuota divisi.'
-          : candidate.ineligibleReason ?? 'Skor kompetitif belum cukup pada gelombang ini.';
-
-      if (candidate.stableId === 'PLAYER') {
-        playerDecision = { status, code: decisionCode, reason };
-      }
-
-      await insertRecruitmentApplicationV51(client, {
+    if (!activeApplication) {
+      const titleCatalog = await listEducationTitles(client);
+      const displayName = decorateNameWithEducationTitles(world.playerName, playerCerts, titleCatalog);
+      const application = await upsertRecruitmentPipelineApplication(client, {
         profileId,
-        division,
-        holderType: candidate.holderType,
-        npcId: candidate.npcId,
-        holderName: candidate.name,
-        appliedDay: candidate.appliedDay,
-        baseDiplomaScore: candidate.baseDiplomaScore,
-        extraCertCount: candidate.extraCertCount,
-        examScore: candidate.examScore,
-        compositeScore: candidate.compositeScore,
-        fatigue: candidate.fatigue,
-        status,
-        reason
-      });
-    }
-
-    let updatedQuota: DivisionQuotaState = quota;
-    if (acceptedCount > 0) {
-      const nextUsed = clamp(quota.quotaUsed + acceptedCount, 0, quota.quotaTotal);
-      const quotaClosed = nextUsed >= quota.quotaTotal;
-      updatedQuota = {
-        ...quota,
-        quotaUsed: nextUsed,
-        quotaRemaining: Math.max(0, quota.quotaTotal - nextUsed),
-        status: quotaClosed ? 'COOLDOWN' : 'OPEN',
-        cooldownUntilDay: quotaClosed ? world.currentDay + quota.cooldownDays : null,
-        decisionNote: quotaClosed
-          ? `${quota.headName ?? 'System'} menutup kuota karena slot penuh pada gelombang ini.`
-          : quota.decisionNote,
-        updatedDay: world.currentDay
-      };
-
-      await upsertDivisionQuotaState(client, {
-        profileId,
-        division: updatedQuota.division,
-        headNpcId: updatedQuota.headNpcId,
-        quotaTotal: updatedQuota.quotaTotal,
-        quotaUsed: updatedQuota.quotaUsed,
-        status: updatedQuota.status,
-        cooldownUntilDay: updatedQuota.cooldownUntilDay,
-        cooldownDays: updatedQuota.cooldownDays,
-        decisionNote: updatedQuota.decisionNote,
-        updatedDay: updatedQuota.updatedDay
-      });
-    }
-
-    if (acceptedNpcIds.length > 0) {
-      await client.query(
-        `
-          UPDATE npc_entities
-          SET division = $3, unit = $4, position = $5, updated_at = now()
-          WHERE profile_id = $1
-            AND npc_id = ANY($2::text[])
-            AND is_current = TRUE
-        `,
-        [profileId, acceptedNpcIds, division, `${division} Intake Unit`, 'Probationary Officer']
-      );
-    }
-
-    if (playerAccepted) {
-      const [oldDivisionRaw, oldPositionRaw] = world.assignment.split('-').map((item) => item.trim());
-      const oldDivision = oldDivisionRaw && oldDivisionRaw.length > 0 ? oldDivisionRaw : 'Nondivisi';
-      const oldPosition = oldPositionRaw && oldPositionRaw.length > 0 ? oldPositionRaw : world.assignment;
-      const newPosition = 'Probationary Officer';
-      await updateWorldCore(client, {
-        profileId,
-        stateVersion: world.stateVersion + 1,
-        lastTickMs: nowMs,
-        currentDay: world.currentDay,
-        moneyCents: world.moneyCents,
-        morale: clamp(world.morale + 2, 0, 100),
-        health: world.health,
-        rankIndex: world.rankIndex,
-        assignment: `${division} - ${newPosition}`,
-        commandAuthority: clamp(world.commandAuthority + 2, 0, 100)
-      });
-
-      await client.query(
-        `
-          UPDATE game_states
-          SET player_division = $2, player_position = $3, updated_at = now()
-          WHERE profile_id = $1
-        `,
-        [profileId, division, newPosition]
-      );
-
-      await insertAssignmentHistory(client, {
-        profileId,
-        actorType: 'PLAYER',
+        applicationId: `rap-${profileId.slice(0, 8)}-${world.currentDay}-${randomUUID().slice(0, 8)}`,
+        holderType: 'PLAYER',
         npcId: null,
-        oldDivision,
-        newDivision: division,
-        oldPosition,
-        newPosition,
-        reason: 'RECRUITMENT_ACCEPTED',
-        changedDay: world.currentDay
+        holderName: displayName,
+        division,
+        status: 'REGISTRATION',
+        registeredDay: world.currentDay,
+        tryoutDay: null,
+        selectionDay: null,
+        announcementDay: null,
+        tryoutScore: 0,
+        finalScore: 0,
+        note: 'LEGACY_WRAPPER_REGISTRATION'
       });
 
       await pushMailboxAndTimeline(client, {
         profileId,
         worldDay: world.currentDay,
-        category: 'MUTATION',
-        subject: `Mutasi Awal: ${division}`,
-        body: `Anda diterima pada gelombang rekrutmen dan ditugaskan sebagai ${newPosition} di ${division}.`,
-        relatedRef: `legacy-recruitment-${world.currentDay}`,
-        timelineEventType: 'RECRUITMENT_ANNOUNCEMENT',
-        timelineTitle: 'Rekrutmen Diterima',
-        timelineDetail: `Penempatan awal ke ${division} sebagai ${newPosition}.`
+        category: 'GENERAL',
+        subject: `Registrasi Rekrutmen Divisi: ${division}`,
+        body: 'Aplikasi legacy diterjemahkan ke pipeline Day 1/4. Lanjutkan saat day gate terbuka.',
+        relatedRef: application.applicationId,
+        timelineEventType: 'RECRUITMENT_REGISTRATION',
+        timelineTitle: 'Registrasi Divisi (Wrapper)',
+        timelineDetail: `Wrapper legacy mengunci tahap REGISTRATION untuk ${division}.`
       });
+
+      return {
+        payload: await payloadFor(application, {
+          stage: 'REGISTRATION',
+          message: 'Registrasi berhasil. Tryout tersedia pada hari ke-2 pipeline.',
+          code: 'REGISTERED',
+          reason: 'Menunggu tryout (day-2).'
+        })
+      };
     }
 
-    invalidateExpansionStateCache(profileId);
-    const entries = await listRecruitmentCompetitionEntries(client, profileId, division, 20);
-    const playerEntry = entries.find((item) => item.holderType === 'PLAYER') ?? null;
-    const stateAfter = await buildExpansionState(client, profileId, nowMs, division);
-    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
+    if (activeApplication.status === 'REGISTRATION') {
+      if (world.currentDay < activeApplication.registeredDay + 1) {
+        return {
+          payload: await payloadFor(activeApplication, {
+            stage: 'REGISTRATION',
+            message: 'Tryout belum tersedia. Tunggu day gate hari ke-2.',
+            code: 'WAIT_TRYOUT_DAY',
+            reason: `Tryout tersedia pada day ${activeApplication.registeredDay + 1}.`
+          })
+        };
+      }
 
+      const tryoutScore = scoreRecruitmentExam(activeApplication.division, payload.answers);
+      const updated = await upsertRecruitmentPipelineApplication(client, {
+        profileId,
+        ...activeApplication,
+        status: 'TRYOUT',
+        tryoutDay: world.currentDay,
+        tryoutScore,
+        note: 'LEGACY_WRAPPER_TRYOUT_COMPLETED'
+      });
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: 'GENERAL',
+        subject: `Hasil Tryout ${activeApplication.division}`,
+        body: `Tryout wrapper selesai dengan skor ${tryoutScore}. Selection tersedia pada Day 3 pipeline.`,
+        relatedRef: activeApplication.applicationId,
+        timelineEventType: 'RECRUITMENT_TRYOUT',
+        timelineTitle: 'Tryout Selesai (Wrapper)',
+        timelineDetail: `Skor tryout ${activeApplication.division}: ${tryoutScore}.`
+      });
+
+      return {
+        payload: await payloadFor(updated, {
+          stage: 'TRYOUT',
+          message: 'Tryout selesai. Selection bisa diproses pada hari ke-3 pipeline.',
+          code: 'TRYOUT_COMPLETED',
+          reason: 'Menunggu selection (day-3).'
+        })
+      };
+    }
+
+    if (activeApplication.status === 'TRYOUT') {
+      if (world.currentDay < activeApplication.registeredDay + 2) {
+        return {
+          payload: await payloadFor(activeApplication, {
+            stage: 'TRYOUT',
+            message: 'Selection belum tersedia. Tunggu day gate hari ke-3.',
+            code: 'WAIT_SELECTION_DAY',
+            reason: `Selection tersedia pada day ${activeApplication.registeredDay + 2}.`
+          })
+        };
+      }
+
+      const finalScore = buildRecruitmentPipelineFinalScore({
+        tryoutScore: activeApplication.tryoutScore,
+        commandAuthority: world.commandAuthority,
+        morale: world.morale,
+        health: world.health,
+        extraCertCount: certSummary.extraCertCount
+      });
+
+      const updated = await upsertRecruitmentPipelineApplication(client, {
+        profileId,
+        ...activeApplication,
+        status: 'SELECTION',
+        selectionDay: world.currentDay,
+        finalScore,
+        note: 'LEGACY_WRAPPER_SELECTION_SCORED'
+      });
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: 'GENERAL',
+        subject: `Tahap Selection ${activeApplication.division}`,
+        body: `Selection wrapper selesai. Final score sementara: ${finalScore}. Announcement tersedia Day 4.`,
+        relatedRef: activeApplication.applicationId,
+        timelineEventType: 'RECRUITMENT_SELECTION',
+        timelineTitle: 'Selection Selesai (Wrapper)',
+        timelineDetail: `Final score ${activeApplication.division}: ${finalScore}.`
+      });
+
+      return {
+        payload: await payloadFor(updated, {
+          stage: 'SELECTION',
+          message: 'Selection selesai. Announcement tersedia pada hari ke-4 pipeline.',
+          code: 'SELECTION_COMPLETED',
+          reason: 'Menunggu announcement (day-4).'
+        })
+      };
+    }
+
+    if (activeApplication.status === 'SELECTION') {
+      if (world.currentDay < activeApplication.registeredDay + 3) {
+        return {
+          payload: await payloadFor(activeApplication, {
+            stage: 'SELECTION',
+            message: 'Announcement belum tersedia. Tunggu day gate hari ke-4.',
+            code: 'WAIT_ANNOUNCEMENT_DAY',
+            reason: `Announcement tersedia pada day ${activeApplication.registeredDay + 3}.`
+          })
+        };
+      }
+
+      const meetsScore = activeApplication.finalScore >= 68;
+      const quotaDecision = meetsScore
+        ? await reserveDivisionQuotaSlot(client, {
+            profileId,
+            division: activeApplication.division,
+            currentDay: world.currentDay
+          })
+        : { accepted: false as const, reason: 'QUOTA_FULL' as const, quota: null as DivisionQuotaState | null };
+      const accepted = meetsScore && quotaDecision.accepted;
+
+      const announcementNote = accepted
+        ? 'LEGACY_WRAPPER_ANNOUNCEMENT_ACCEPTED'
+        : meetsScore
+          ? quotaDecision.reason === 'COOLDOWN'
+            ? 'LEGACY_WRAPPER_ANNOUNCEMENT_REJECTED_QUOTA_COOLDOWN'
+            : quotaDecision.reason === 'MISSING_QUOTA'
+              ? 'LEGACY_WRAPPER_ANNOUNCEMENT_REJECTED_QUOTA_MISSING'
+              : 'LEGACY_WRAPPER_ANNOUNCEMENT_REJECTED_QUOTA_FULL'
+          : 'LEGACY_WRAPPER_ANNOUNCEMENT_REJECTED_SCORE';
+      const announced = await upsertRecruitmentPipelineApplication(client, {
+        profileId,
+        ...activeApplication,
+        status: accepted ? 'ANNOUNCEMENT_ACCEPTED' : 'ANNOUNCEMENT_REJECTED',
+        announcementDay: world.currentDay,
+        note: announcementNote
+      });
+
+      if (accepted) {
+        const [oldDivisionRaw, oldPositionRaw] = world.assignment.split('-').map((item) => item.trim());
+        const oldDivision = oldDivisionRaw && oldDivisionRaw.length > 0 ? oldDivisionRaw : 'Nondivisi';
+        const oldPosition = oldPositionRaw && oldPositionRaw.length > 0 ? oldPositionRaw : world.assignment;
+        const newPosition = 'Probationary Officer';
+        await updateWorldCore(client, {
+          profileId,
+          stateVersion: world.stateVersion + 1,
+          lastTickMs: nowMs,
+          currentDay: world.currentDay,
+          moneyCents: world.moneyCents,
+          morale: clamp(world.morale + 2, 0, 100),
+          health: world.health,
+          rankIndex: world.rankIndex,
+          assignment: `${activeApplication.division} - ${newPosition}`,
+          commandAuthority: clamp(world.commandAuthority + 2, 0, 100)
+        });
+        await client.query(
+          `
+            UPDATE game_states
+            SET player_division = $2, player_position = $3, updated_at = now()
+            WHERE profile_id = $1
+          `,
+          [profileId, activeApplication.division, newPosition]
+        );
+        await insertAssignmentHistory(client, {
+          profileId,
+          actorType: 'PLAYER',
+          npcId: null,
+          oldDivision,
+          newDivision: activeApplication.division,
+          oldPosition,
+          newPosition,
+          reason: 'RECRUITMENT_PIPELINE_ACCEPTED_WRAPPER',
+          changedDay: world.currentDay
+        });
+      }
+
+      await pushMailboxAndTimeline(client, {
+        profileId,
+        worldDay: world.currentDay,
+        category: accepted ? 'MUTATION' : 'GENERAL',
+        subject: accepted
+          ? `Announcement: Diterima ${activeApplication.division}`
+          : `Announcement: Gagal ${activeApplication.division}`,
+        body: accepted
+          ? `Selamat, Anda diterima di ${activeApplication.division}. Penugasan awal sebagai Probationary Officer.`
+          : meetsScore
+            ? 'Skor memenuhi batas tetapi kuota tidak tersedia saat announcement.'
+            : 'Aplikasi belum lolos karena final score di bawah batas.',
+        relatedRef: activeApplication.applicationId,
+        timelineEventType: 'RECRUITMENT_ANNOUNCEMENT',
+        timelineTitle: accepted ? 'Recruitment Accepted (Wrapper)' : 'Recruitment Rejected (Wrapper)',
+        timelineDetail: accepted
+          ? `Diterima di ${activeApplication.division} pada Day 4 pipeline.`
+          : `Belum lolos di ${activeApplication.division}.`
+      });
+
+      const rejectionCode = !meetsScore
+        ? 'COMPOSITE_SCORE_BELOW_CUTOFF'
+        : quotaDecision.reason === 'COOLDOWN'
+          ? 'QUOTA_COOLDOWN'
+          : quotaDecision.reason === 'MISSING_QUOTA'
+            ? 'MISSING_QUOTA'
+            : 'QUOTA_FULL';
+      const rejectionReason = !meetsScore
+        ? 'Skor akhir di bawah ambang kelulusan.'
+        : quotaDecision.reason === 'COOLDOWN'
+          ? 'Kuota sedang cooldown.'
+          : quotaDecision.reason === 'MISSING_QUOTA'
+            ? 'Data kuota divisi belum tersedia.'
+            : 'Kuota divisi telah habis.';
+
+      return {
+        payload: await payloadFor(announced, {
+          stage: 'ANNOUNCEMENT',
+          accepted,
+          message: accepted
+            ? 'Wrapper legacy berhasil menuntaskan pipeline 4 tahap: status diterima.'
+            : 'Wrapper legacy menuntaskan pipeline 4 tahap: status belum diterima.',
+          code: accepted ? 'ACCEPTED' : rejectionCode,
+          reason: accepted ? 'Lolos seleksi kuota divisi.' : rejectionReason,
+          quota: quotaDecision.quota
+        })
+      };
+    }
+
+    const lastState = await buildExpansionState(client, profileId, nowMs, division);
+    const lastQuota = lastState.quotaBoard.find((item) => item.division === division) ?? null;
+    const accepted = activeApplication.status === 'ANNOUNCEMENT_ACCEPTED';
+    const snapshot = await buildSnapshotV5(client, profileId, nowMs);
     return {
       payload: {
-        accepted: playerAccepted,
-        division,
+        accepted,
+        division: activeApplication.division,
         requirement,
-        examScore,
-        compositeScore: playerComposite,
-        acceptedSlots: acceptedCount,
-        quota: updatedQuota,
-        playerDecision,
-        playerEntry,
-        raceTop10: entries.slice(0, 10),
-        message: playerAccepted
-          ? 'Selamat, Anda lolos seleksi rekrutmen divisi.'
-          : `${playerDecision.reason} Tingkatkan nilai sertifikasi tambahan dan exam score.`,
-        state: stateAfter,
-        snapshot: snapshot ? { ...snapshot, expansion: stateAfter } : null
+        examScore: activeApplication.tryoutScore,
+        compositeScore: activeApplication.finalScore,
+        acceptedSlots: accepted ? 1 : 0,
+        quota: lastQuota,
+        playerDecision: {
+          status: accepted ? 'ACCEPTED' : 'REJECTED',
+          code: accepted ? 'ACCEPTED' : 'ANNOUNCEMENT_REJECTED',
+          reason: accepted ? 'Lolos seleksi kuota divisi.' : 'Aplikasi sudah ditutup dengan status rejected.'
+        },
+        playerEntry: null,
+        raceTop10: lastState.recruitmentRace.top10,
+        stage: 'ANNOUNCEMENT',
+        application: activeApplication,
+        schedule: {
+          registrationDay: activeApplication.registeredDay,
+          tryoutDay: activeApplication.registeredDay + 1,
+          selectionDay: activeApplication.registeredDay + 2,
+          announcementDay: activeApplication.registeredDay + 3,
+          totalDays: RECRUITMENT_PIPELINE_TOTAL_DAYS
+        },
+        message: 'Aplikasi pipeline sudah berada pada tahap final.',
+        state: lastState,
+        snapshot: snapshot ? { ...snapshot, expansion: lastState } : null
       }
     };
   });
@@ -2609,6 +2696,29 @@ export async function registerDivisionApplicationV5(
     if (!REGISTERED_DIVISIONS.some((item) => item.name === division)) {
       return { statusCode: 404, payload: { error: 'Division tidak terdaftar.' } };
     }
+    const requirement = requirementTierForDivision(division);
+    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
+    const certSummary = summarizePlayerCertifications(playerCerts);
+    if (!certSummary.hasBaseDiploma) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: 'Sertifikasi dasar academy (Tier-1) belum terdeteksi.',
+          code: 'MISSING_BASE_DIPLOMA',
+          requirement
+        }
+      };
+    }
+    if (certSummary.extraCertCount < requirement.minExtraCerts) {
+      return {
+        statusCode: 409,
+        payload: {
+          error: `Sertifikasi tambahan belum cukup (${certSummary.extraCertCount}/${requirement.minExtraCerts}).`,
+          code: 'MISSING_EXTRA_CERT',
+          requirement
+        }
+      };
+    }
 
     const activeApplications = await listRecruitmentPipelineApplications(client, profileId, { holderType: 'PLAYER', limit: 20 });
     const openApplication = activeApplications.find(
@@ -2624,7 +2734,6 @@ export async function registerDivisionApplicationV5(
       };
     }
 
-    const playerCerts = await listCertifications(client, profileId, { holderType: 'PLAYER' });
     const titleCatalog = await listEducationTitles(client);
     const displayName = decorateNameWithEducationTitles(world.playerName, playerCerts, titleCatalog);
     const application = await upsertRecruitmentPipelineApplication(client, {
@@ -2830,18 +2939,30 @@ export async function finalizeDivisionApplicationV5(
         };
       }
 
-      const stateBefore = await buildExpansionState(client, profileId, nowMs, application.division);
-      const quota = stateBefore.quotaBoard.find((item) => item.division === application.division) ?? null;
       const meetsScore = application.finalScore >= 68;
-      const hasQuota = quota ? quota.status === 'OPEN' && quota.quotaRemaining > 0 : true;
-      const accepted = meetsScore && hasQuota;
+      const quotaDecision = meetsScore
+        ? await reserveDivisionQuotaSlot(client, {
+            profileId,
+            division: application.division,
+            currentDay: world.currentDay
+          })
+        : { accepted: false as const, reason: 'QUOTA_FULL' as const, quota: null as DivisionQuotaState | null };
+      const accepted = meetsScore && quotaDecision.accepted;
 
       const updated = await upsertRecruitmentPipelineApplication(client, {
         profileId,
         ...application,
         status: accepted ? 'ANNOUNCEMENT_ACCEPTED' : 'ANNOUNCEMENT_REJECTED',
         announcementDay: world.currentDay,
-        note: accepted ? 'ANNOUNCEMENT_ACCEPTED' : hasQuota ? 'ANNOUNCEMENT_REJECTED_SCORE' : 'ANNOUNCEMENT_REJECTED_QUOTA'
+        note: accepted
+          ? 'ANNOUNCEMENT_ACCEPTED'
+          : meetsScore
+            ? quotaDecision.reason === 'COOLDOWN'
+              ? 'ANNOUNCEMENT_REJECTED_QUOTA_COOLDOWN'
+              : quotaDecision.reason === 'MISSING_QUOTA'
+                ? 'ANNOUNCEMENT_REJECTED_QUOTA_MISSING'
+                : 'ANNOUNCEMENT_REJECTED_QUOTA'
+            : 'ANNOUNCEMENT_REJECTED_SCORE'
       });
 
       if (accepted) {
@@ -2883,23 +3004,6 @@ export async function finalizeDivisionApplicationV5(
           reason: 'RECRUITMENT_PIPELINE_ACCEPTED',
           changedDay: world.currentDay
         });
-
-        if (quota) {
-          const nextUsed = clamp(quota.quotaUsed + 1, 0, quota.quotaTotal);
-          const closed = nextUsed >= quota.quotaTotal;
-          await upsertDivisionQuotaState(client, {
-            profileId,
-            division: quota.division,
-            headNpcId: quota.headNpcId,
-            quotaTotal: quota.quotaTotal,
-            quotaUsed: nextUsed,
-            status: closed ? 'COOLDOWN' : quota.status,
-            cooldownUntilDay: closed ? world.currentDay + quota.cooldownDays : quota.cooldownUntilDay,
-            cooldownDays: quota.cooldownDays,
-            decisionNote: closed ? 'Kuota ditutup karena terpenuhi pada announcement recruitment.' : quota.decisionNote,
-            updatedDay: world.currentDay
-          });
-        }
       }
 
       await pushMailboxAndTimeline(client, {
@@ -2909,7 +3013,9 @@ export async function finalizeDivisionApplicationV5(
         subject: accepted ? `Announcement: Diterima ${application.division}` : `Announcement: Gagal ${application.division}`,
         body: accepted
           ? `Selamat, Anda diterima di ${application.division}. Penugasan awal sebagai Probationary Officer.`
-          : `Aplikasi ${application.division} dinyatakan belum lolos pada siklus ini.`,
+          : meetsScore
+            ? 'Skor memenuhi ambang, tetapi kuota divisi belum tersedia saat announcement.'
+            : `Aplikasi ${application.division} dinyatakan belum lolos pada siklus ini.`,
         relatedRef: application.applicationId,
         timelineEventType: 'RECRUITMENT_ANNOUNCEMENT',
         timelineTitle: accepted ? 'Recruitment Accepted' : 'Recruitment Rejected',
