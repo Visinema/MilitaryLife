@@ -108,6 +108,19 @@ function toJsonb(value: unknown): string {
   return JSON.stringify(value ?? {});
 }
 
+function normalizeMailboxMessageId(profileId: string, rawMessageId: string): string {
+  const profileScope = profileId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toLowerCase();
+  const compactRaw = rawMessageId.trim();
+  if (!compactRaw) {
+    throw new Error('Mailbox messageId cannot be empty');
+  }
+  if (compactRaw.startsWith(`m-${profileScope}-`)) {
+    return compactRaw;
+  }
+  return `m-${profileScope}-${compactRaw}`;
+}
+
+
 function mapNpcRow(row: Record<string, unknown>): NpcRuntimeState {
   return {
     npcId: parseString(row.npc_id),
@@ -2541,6 +2554,7 @@ export async function insertMailboxMessage(
   }
 ): Promise<MailboxMessage> {
   const createdDay = Math.max(0, input.createdDay);
+  const normalizedMessageId = normalizeMailboxMessageId(input.profileId, input.messageId);
   const inserted = await client.query(
     `
       INSERT INTO mailbox_messages (
@@ -2553,7 +2567,7 @@ export async function insertMailboxMessage(
         created_day, created_at, read_at, read_day
     `,
     [
-      input.messageId,
+      normalizedMessageId,
       input.profileId,
       input.senderType,
       input.senderNpcId,
@@ -2579,18 +2593,18 @@ export async function insertMailboxMessage(
       WHERE message_id = $1
       LIMIT 1
     `,
-    [input.messageId]
+    [normalizedMessageId]
   );
 
   const existingRow = existing.rows[0] as Record<string, unknown> | undefined;
   if (!existingRow) {
-    throw new Error(`Mailbox insert conflict without persisted row for messageId=${input.messageId}`);
+    throw new Error(`Mailbox insert conflict without persisted row for messageId=${normalizedMessageId}`);
   }
 
   const ownerProfileId = parseString(existingRow.profile_id);
   if (ownerProfileId !== input.profileId) {
     throw new Error(
-      `Mailbox messageId collision across profiles: messageId=${input.messageId}, expectedProfile=${input.profileId}, actualProfile=${ownerProfileId}`
+      `Mailbox messageId collision across profiles: messageId=${normalizedMessageId}, expectedProfile=${input.profileId}, actualProfile=${ownerProfileId}`
     );
   }
 
