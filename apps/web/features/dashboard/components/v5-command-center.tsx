@@ -10,7 +10,7 @@ import { buildWorldV5 } from '@/lib/world-v5';
 import { useGameStore } from '@/store/game-store';
 import { useDashboardUiStore } from '@/store/dashboard-ui-store';
 import { AvatarFrame } from '@/components/avatar-frame';
-import { DASHBOARD_LINKS } from '@/features/dashboard/components/action-buttons';
+import { DASHBOARD_ALL_LINKS } from '@/features/dashboard/components/action-buttons';
 import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 
 interface V5CommandCenterProps {
@@ -248,42 +248,19 @@ export function V5CommandCenter({ snapshot, expansionState }: V5CommandCenterPro
               <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2.5">
                 <p className="text-xs uppercase tracking-[0.1em] text-muted">Navigasi Cepat Dashboard</p>
                 <p className="mt-1 text-[10px] text-muted">Divisi terdaftar: {REGISTERED_DIVISIONS.map((item) => item.name).join(' · ')}</p>
-                <p className="mt-2 text-[10px] text-muted">
-                  Menu inti sudah dikonsolidasikan pada navbar utama untuk mencegah duplikasi tombol dan konflik alur.
-                </p>
-                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Lanjutan (unik)</p>
-                <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
-                  {[
-                    '/dashboard/ceremony',
-                    '/dashboard/recruitment',
-                    '/dashboard/raider-attack',
-                    '/dashboard/news',
-                    '/dashboard/medals',
-                    '/dashboard/division-ops',
-                    '/dashboard/military-court',
-                    '/dashboard/military-law'
-                  ].filter((href, idx, arr) => arr.indexOf(href) === idx && !DASHBOARD_LINKS.some((entry) => entry.href === href)).map((href) => {
-                    const labelMap: Record<string, string> = {
-                      '/dashboard/ceremony': 'Upacara Medal',
-                      '/dashboard/recruitment': 'Rekrutmen',
-                      '/dashboard/raider-attack': 'Raider Alert',
-                      '/dashboard/news': 'News',
-                      '/dashboard/medals': 'Medals',
-                      '/dashboard/division-ops': 'Division Ops',
-                      '/dashboard/military-court': 'Pending Sidang',
-                      '/dashboard/military-law': 'Military Law'
-                    };
-                    const label = labelMap[href] ?? href;
-                    const danger = href === '/dashboard/raider-attack' || href === '/dashboard/military-court';
-                    const accent = href === '/dashboard/ceremony' || href === '/dashboard/military-law';
+                <p className="mt-2 text-[10px] text-muted">Semua tombol navigasi dipusatkan di frame ini tanpa duplikasi.</p>
+                <div className="mt-2 grid grid-cols-2 gap-1.5 md:grid-cols-3">
+                  {DASHBOARD_ALL_LINKS.map((entry) => {
+                    const danger = entry.href === '/dashboard/raider-attack' || entry.href === '/dashboard/military-court';
+                    const accent = entry.href === '/dashboard/ceremony' || entry.href === '/dashboard/military-law';
                     const tone = danger
                       ? 'border-danger/60 bg-danger/10 text-danger'
                       : accent
                         ? 'border-accent bg-accent/20 text-text shadow-neon'
                         : 'border-border bg-panel text-text hover:border-accent';
                     return (
-                      <Link key={href} href={href} className={`rounded border px-2 py-1 text-center text-[11px] ${tone}`}>
-                        {label}
+                      <Link key={entry.href} href={entry.href} className={`rounded border px-2 py-1 text-center text-[11px] ${tone}`}>
+                        {entry.label}
                       </Link>
                     );
                   })}
