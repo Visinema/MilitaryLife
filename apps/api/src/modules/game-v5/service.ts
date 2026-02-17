@@ -30,7 +30,6 @@ import {
   appendQuotaDecisionLog,
   buildEmptyExpansionState,
   buildSnapshotV5,
-  clearV5World,
   completeAcademyEnrollment,
   completeCeremonyCycle,
   createAcademyBatch,
@@ -46,6 +45,7 @@ import {
   getCommandChainOrder,
   getCurrentCeremony,
   getCurrentDomOperationCycle,
+  getDatabaseNowMs,
   getLatestSocialTimelineEventByType,
   getDomOperationSession,
   getLatestAcademyBatch,
@@ -102,7 +102,8 @@ import {
   updateAcademyBatchMeta,
   updateDomOperationCycleStatus,
   V5_MAX_NPCS,
-  upsertCertification
+  upsertCertification,
+  wipeAllRuntimeDataPreserveAuth
 } from './repo.js';
 
 interface V5Context {
@@ -154,10 +155,15 @@ async function withV5Context(
           return;
         }
 
-        const nowMs = Date.now();
-        await ensureV5World(client, profile, nowMs);
+        const dbNowMs = await getDatabaseNowMs(client);
+        await ensureV5World(client, profile, dbNowMs);
         // Keep lock acquisition order aligned with legacy service transactions.
         await lockV5RuntimeRows(client, profile.profileId);
+        const world = await lockV5World(client, profile.profileId);
+        if (!world) {
+          throw new Error(`Failed to lock game world for profile ${profile.profileId}`);
+        }
+        const nowMs = Math.max(dbNowMs, world.lastTickMs);
         await setSessionActiveUntil(client, profile.profileId, nowMs, CONTEXT_SESSION_TTL_MS);
         await runWorldTick(client, profile.profileId, nowMs, { maxNpcOps: V5_MAX_NPCS });
 
@@ -181,8 +187,6 @@ async function withV5Context(
         throw error;
       }
     }
-  } catch (error) {
-    throw error;
   } finally {
     client.release();
   }
@@ -1101,13 +1105,13 @@ async function buildExpansionState(
 export async function startSessionV5(request: FastifyRequest, reply: FastifyReply, payload: { resetWorld?: boolean }): Promise<void> {
   await withV5Context(request, reply, async ({ client, profileId, userId, nowMs }) => {
     if (payload.resetWorld) {
-      await clearV5World(client, profileId);
+      await wipeAllRuntimeDataPreserveAuth(client);
       const profile = await getProfileBaseByUserId(client, userId);
       if (!profile) {
         return { statusCode: 404, payload: { error: 'Profile not found' } };
       }
       await ensureV5World(client, profile, nowMs);
-      invalidateExpansionStateCache(profileId);
+      expansionStateCache.clear();
     }
 
     await setSessionActiveUntil(client, profileId, nowMs, 30_000);
@@ -4012,4 +4016,3 @@ export function registerV5TickScheduler(app: FastifyInstance): void {
     }
   });
 }
-

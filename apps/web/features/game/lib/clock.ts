@@ -7,8 +7,9 @@ export function deriveLiveGameDay(snapshot: GameSnapshot, clockOffsetMs: number)
   }
 
   const serverNow = Date.now() + clockOffsetMs;
-  const scale = snapshot.gameTimeScale === 3 ? 3 : 1;
-  const computed = Math.floor(((serverNow - snapshot.serverReferenceTimeMs) / GAME_MS_PER_DAY) * scale);
+  const scale = Number.isFinite(snapshot.gameTimeScale) && snapshot.gameTimeScale > 0 ? snapshot.gameTimeScale : 1;
+  const elapsedMs = Math.max(0, serverNow - snapshot.serverReferenceTimeMs);
+  const computed = Math.floor((elapsedMs / GAME_MS_PER_DAY) * scale);
   return Math.max(snapshot.gameDay, computed);
 }
 

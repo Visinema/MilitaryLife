@@ -197,6 +197,45 @@ export async function lockV5RuntimeRows(client: PoolClient, profileId: string): 
   await client.query(`SELECT profile_id FROM player_runtime WHERE profile_id = $1 FOR UPDATE`, [profileId]);
 }
 
+const PRESERVED_AUTH_TABLES = new Set(['users', 'profiles', 'sessions', 'schema_migrations']);
+
+function quoteTableIdentifier(tableName: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(tableName)) {
+    throw new Error(`Unsafe table identifier detected: ${tableName}`);
+  }
+  return `"${tableName}"`;
+}
+
+export async function getDatabaseNowMs(client: PoolClient): Promise<number> {
+  const result = await client.query<{ now_ms: string | number }>(
+    `SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint AS now_ms`
+  );
+  const rawValue = result.rows[0]?.now_ms;
+  const parsed = typeof rawValue === 'number' ? rawValue : Number(rawValue ?? NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('Failed to resolve database clock in milliseconds');
+  }
+  return Math.floor(parsed);
+}
+
+export async function wipeAllRuntimeDataPreserveAuth(client: PoolClient): Promise<number> {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext('militarylife:wipe-runtime:preserve-auth:v1'))`);
+  const tablesResult = await client.query<{ tablename: string }>(
+    `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+  );
+  const runtimeTables = tablesResult.rows
+    .map((row) => row.tablename)
+    .filter((tableName) => !PRESERVED_AUTH_TABLES.has(tableName));
+
+  if (runtimeTables.length === 0) {
+    return 0;
+  }
+
+  const quotedTables = runtimeTables.map((tableName) => quoteTableIdentifier(tableName));
+  await client.query(`TRUNCATE TABLE ${quotedTables.join(', ')} RESTART IDENTITY CASCADE`);
+  return runtimeTables.length;
+}
+
 export async function clearV5World(client: PoolClient, profileId: string): Promise<void> {
   // Lock core runtime rows first so reset lock ordering matches world tick ordering.
   // This prevents deadlocks with concurrent requests that lock world/runtime then mutate academy/recruitment tables.
@@ -3461,4 +3500,3 @@ export async function listDueCommandChainOrdersForPenalty(
   );
   return result.rows.map((row) => mapCommandChainOrderRow(row as Record<string, unknown>));
 }
-
