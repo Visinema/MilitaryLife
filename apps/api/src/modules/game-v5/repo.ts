@@ -288,7 +288,7 @@ export async function ensureV5World(client: PoolClient, profile: V5ProfileBase, 
         profile.profileId,
         npcId,
         slotNo,
-        identity?.name ?? `NPC ${slotNo}`,
+        `${(identity?.name ?? `NPC ${slotNo}`).replace(/\s+/g, ' ').trim()} [S${slotNo}]`,
         'Nondivisi',
         'Academy Cadet Unit',
         'Recruit Cadet'

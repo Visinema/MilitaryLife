@@ -10,6 +10,7 @@ import { buildWorldV5 } from '@/lib/world-v5';
 import { useGameStore } from '@/store/game-store';
 import { useDashboardUiStore } from '@/store/dashboard-ui-store';
 import { AvatarFrame } from '@/components/avatar-frame';
+import { DASHBOARD_LINKS } from '@/features/dashboard/components/action-buttons';
 import { PersonalStatsPanel } from '@/components/personal-stats-panel';
 
 interface V5CommandCenterProps {
@@ -52,8 +53,10 @@ export function V5CommandCenter({ snapshot, expansionState }: V5CommandCenterPro
           }))
         );
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         setRuntimeNpcs([]);
+        const reason = error instanceof Error ? error.message : 'Gagal memuat NPC runtime.';
+        setError(reason);
       });
   }, [snapshot.gameDay]);
 
@@ -114,6 +117,7 @@ export function V5CommandCenter({ snapshot, expansionState }: V5CommandCenterPro
                 `Mission assignment: every ${world.missionBrief.mandatoryAssignmentEveryDays} days`,
                 `NPC Active/KIA: ${runtimeNpcs.length > 0 ? runtimeActiveCount : world.stats.active}/${runtimeNpcs.length > 0 ? runtimeKiaCount : world.stats.kia}`
               ]}
+              showQuickLinks={false}
             />
           </div>
 
@@ -244,25 +248,45 @@ export function V5CommandCenter({ snapshot, expansionState }: V5CommandCenterPro
               <div className="mt-2 rounded border border-accent/40 bg-accent/10 p-2.5">
                 <p className="text-xs uppercase tracking-[0.1em] text-muted">Navigasi Cepat Dashboard</p>
                 <p className="mt-1 text-[10px] text-muted">Divisi terdaftar: {REGISTERED_DIVISIONS.map((item) => item.name).join(' · ')}</p>
-                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Inti</p>
+                <p className="mt-2 text-[10px] text-muted">
+                  Menu inti sudah dikonsolidasikan pada navbar utama untuk mencegah duplikasi tombol dan konflik alur.
+                </p>
+                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Lanjutan (unik)</p>
                 <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
-                  <Link href="/dashboard/people" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] font-medium text-text shadow-neon">People</Link>
-                  <Link href="/dashboard/hierarchy" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Hierarchy</Link>
-                  <Link href="/dashboard/social-profile" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Social Profile</Link>
-                  <Link href="/dashboard/event-frame" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Event Frame</Link>
-                  <Link href="/dashboard/decision-log" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Decision Log</Link>
-                  <Link href="/dashboard/mailbox" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Mailbox</Link>
-                  <Link href="/dashboard/ceremony" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Upacara Medal</Link>
-                  <Link href="/dashboard/recruitment" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Rekrutmen</Link>
-                </div>
-                <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-muted">Operasi Lanjutan</p>
-                <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-3">
-                  <Link href="/dashboard/raider-attack" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Raider Alert</Link>
-                  <Link href="/dashboard/news" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">News</Link>
-                  <Link href="/dashboard/medals" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Medals</Link>
-                  <Link href="/dashboard/division-ops" className="rounded border border-border bg-panel px-2 py-1 text-center text-[11px] text-text hover:border-accent">Division Ops</Link>
-                  <Link href="/dashboard/military-court" className="rounded border border-danger/60 bg-danger/10 px-2 py-1 text-center text-[11px] text-danger">Pending Sidang</Link>
-                  <Link href="/dashboard/military-law" className="rounded border border-accent bg-accent/20 px-2 py-1 text-center text-[11px] text-text shadow-neon">Military Law</Link>
+                  {[
+                    '/dashboard/ceremony',
+                    '/dashboard/recruitment',
+                    '/dashboard/raider-attack',
+                    '/dashboard/news',
+                    '/dashboard/medals',
+                    '/dashboard/division-ops',
+                    '/dashboard/military-court',
+                    '/dashboard/military-law'
+                  ].filter((href, idx, arr) => arr.indexOf(href) === idx && !DASHBOARD_LINKS.some((entry) => entry.href === href)).map((href) => {
+                    const labelMap: Record<string, string> = {
+                      '/dashboard/ceremony': 'Upacara Medal',
+                      '/dashboard/recruitment': 'Rekrutmen',
+                      '/dashboard/raider-attack': 'Raider Alert',
+                      '/dashboard/news': 'News',
+                      '/dashboard/medals': 'Medals',
+                      '/dashboard/division-ops': 'Division Ops',
+                      '/dashboard/military-court': 'Pending Sidang',
+                      '/dashboard/military-law': 'Military Law'
+                    };
+                    const label = labelMap[href] ?? href;
+                    const danger = href === '/dashboard/raider-attack' || href === '/dashboard/military-court';
+                    const accent = href === '/dashboard/ceremony' || href === '/dashboard/military-law';
+                    const tone = danger
+                      ? 'border-danger/60 bg-danger/10 text-danger'
+                      : accent
+                        ? 'border-accent bg-accent/20 text-text shadow-neon'
+                        : 'border-border bg-panel text-text hover:border-accent';
+                    return (
+                      <Link key={href} href={href} className={`rounded border px-2 py-1 text-center text-[11px] ${tone}`}>
+                        {label}
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

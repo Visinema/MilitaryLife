@@ -9,6 +9,7 @@ interface AvatarFrameProps {
   medals: string[];
   shoulderRankCount?: number;
   details?: string[];
+  showQuickLinks?: boolean;
 }
 
 function ribbonBackground(ribbon: RibbonStyle): string {
@@ -31,7 +32,7 @@ function ribbonBackground(ribbon: RibbonStyle): string {
   }
 }
 
-export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shoulderRankCount = 2, details = [] }: AvatarFrameProps) {
+export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shoulderRankCount = 2, details = [], showQuickLinks = true }: AvatarFrameProps) {
   return (
     <div className="rounded-md border border-border bg-bg/60 p-2.5">
       <div className="mt-1 flex flex-wrap items-end gap-2.5">
@@ -65,11 +66,13 @@ export function AvatarFrame({ name, subtitle, uniformTone, ribbons, medals, shou
               </p>
             ))}
           </div>
-          <div className="grid grid-cols-3 gap-1 pt-0.5">
-            <Link href="/dashboard/training" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Training</Link>
-            <Link href="/dashboard/deployment" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Deploy</Link>
-            <Link href="/dashboard/career" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Career</Link>
-          </div>
+          {showQuickLinks ? (
+            <div className="grid grid-cols-3 gap-1 pt-0.5">
+              <Link href="/dashboard/training" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Training</Link>
+              <Link href="/dashboard/deployment" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Deploy</Link>
+              <Link href="/dashboard/career" className="rounded border border-border/80 bg-panel px-1.5 py-1 text-center text-[10px] text-text hover:border-accent">Career</Link>
+            </div>
+          ) : null}
         </div>
       </div>
       <p className="mt-1 text-[11px] text-text">Medals: {medals.join(' · ')}</p>

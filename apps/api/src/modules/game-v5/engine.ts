@@ -129,11 +129,67 @@ function chooseTaskByUtility(npc: NpcRuntimeState, missionPressure: number, seed
   return selected;
 }
 
+function sanitizePositionTitle(input: string): { base: string; tier: 0 | 1 | 2 } {
+  const compact = input.replace(/\s+/g, ' ').trim();
+  if (!compact) return { base: 'Operations Officer', tier: 0 };
+
+  const hasLead = /\blead\b/i.test(compact);
+  const hasSenior = /\bsenior\b/i.test(compact);
+  const base = compact
+    .replace(/\blead\b/gi, '')
+    .replace(/\bsenior\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Operations Officer';
+
+  if (hasLead) return { base, tier: 2 };
+  if (hasSenior) return { base, tier: 1 };
+  return { base, tier: 0 };
+}
+
 function bumpPosition(current: string, promotionGain: number): string {
-  if (promotionGain < 3) return current;
-  if (current.includes('Officer')) return current.replace('Officer', 'Senior Officer');
-  if (current.includes('Senior')) return current.replace('Senior', 'Lead');
-  return `Senior ${current}`;
+  const parsed = sanitizePositionTitle(current);
+  let targetTier = parsed.tier;
+
+  if (promotionGain >= 5) {
+    targetTier = parsed.tier >= 1 ? 2 : 1;
+  } else if (promotionGain >= 3) {
+    targetTier = Math.max(parsed.tier, 1);
+  }
+
+  if (targetTier === 2) return `Lead ${parsed.base}`;
+  if (targetTier === 1) return `Senior ${parsed.base}`;
+  return parsed.base;
+}
+
+function canonicalNpcName(name: string): string {
+  const compact = name.replace(/\s+/g, ' ').trim();
+  return compact.replace(/\s*\[S\d+\]$/i, '').trim();
+}
+
+function deduplicateNpcNames(npcs: NpcRuntimeState[]): Set<string> {
+  const byBase = new Map<string, NpcRuntimeState[]>();
+  for (const npc of npcs) {
+    const base = canonicalNpcName(npc.name);
+    const key = base.toLowerCase();
+    const rows = byBase.get(key) ?? [];
+    rows.push(npc);
+    byBase.set(key, rows);
+  }
+
+  const changed = new Set<string>();
+  for (const rows of byBase.values()) {
+    if (rows.length <= 1) continue;
+    for (const npc of rows) {
+      const base = canonicalNpcName(npc.name);
+      const nextName = `${base} [S${npc.slotNo}]`;
+      if (npc.name !== nextName) {
+        npc.name = nextName;
+        changed.add(npc.npcId);
+      }
+    }
+  }
+
+  return changed;
 }
 
 function missionPenaltyFactor(mission: MissionInstanceV5 | null): number {
@@ -864,11 +920,20 @@ export async function runWorldTick(
   commandAuthority = clamp(commandAuthority + (morale >= 60 ? 1 : -1) + (health >= 60 ? 1 : 0), 0, 100);
 
   const npcs = await lockCurrentNpcsForUpdate(client, profileId, Math.min(options?.maxNpcOps ?? V5_MAX_NPCS, V5_MAX_NPCS));
+  const renamedNpcIds = deduplicateNpcNames(npcs);
   const changedNpcStates: NpcRuntimeState[] = [];
   const changedNpcIds = new Set<string>();
 
   for (const npc of npcs) {
-    if (npc.status === 'KIA') continue;
+    const identityRenamed = renamedNpcIds.has(npc.npcId);
+    if (npc.status === 'KIA' && !identityRenamed) continue;
+
+    if (npc.status === 'KIA') {
+      await updateNpcRuntimeState(client, profileId, npc, currentDay);
+      changedNpcIds.add(npc.npcId);
+      changedNpcStates.push({ ...npc, updatedAtMs: nowMs });
+      continue;
+    }
 
     const seed = hashSeed(`${profileId}:${npc.npcId}:${currentDay}`);
     const noise = runtimeNoise(7);
@@ -1047,7 +1112,7 @@ export async function runWorldTick(
       const identity = identityRegistry[item.slotNo - 1];
       const npcId = `npc-${item.slotNo}-g${item.generationNext}`;
       const shortName = (identity?.name ?? `NPC ${item.slotNo}`).replace(/\s+/g, ' ').trim();
-      const replacedName = `${shortName} G${item.generationNext}`;
+      const replacedName = `${shortName} [S${item.slotNo}]`;
 
       await fulfillRecruitmentQueueItem(client, {
         profileId,
