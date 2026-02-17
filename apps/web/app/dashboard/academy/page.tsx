@@ -115,7 +115,9 @@ function AcademyPageContent() {
           ? 5_000
           : 15_000;
     const interval = window.setInterval(() => {
-      void loadCurrent().catch(() => null);
+      void loadCurrent().catch((err: unknown) => {
+        setMessage(resolveAcademyErrorMessage(err, 'Gagal sinkron academy state.'));
+      });
     }, hintedInterval);
     return () => window.clearInterval(interval);
   }, [current, loadCurrent]);

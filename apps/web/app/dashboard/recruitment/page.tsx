@@ -94,7 +94,9 @@ export default function RecruitmentPage() {
     if (!board) return;
     const intervalMs = board.quota?.status === 'COOLDOWN' ? 10_000 : 15_000;
     const timer = window.setInterval(() => {
-      void loadBoard(board.division ?? selectedDivision).catch(() => null);
+      void loadBoard(board.division ?? selectedDivision).catch((err: unknown) => {
+        setNotice(normalizeErrorNotice(err));
+      });
     }, intervalMs);
     return () => window.clearInterval(timer);
   }, [board, loadBoard, selectedDivision]);

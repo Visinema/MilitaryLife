@@ -2540,14 +2540,16 @@ export async function insertMailboxMessage(
     createdDay: number;
   }
 ): Promise<MailboxMessage> {
-  const result = await client.query(
+  const createdDay = Math.max(0, input.createdDay);
+  const inserted = await client.query(
     `
       INSERT INTO mailbox_messages (
         message_id, profile_id, sender_type, sender_npc_id, subject, body, category, related_ref, created_day
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (message_id) DO NOTHING
       RETURNING
-        message_id, sender_type, sender_npc_id, subject, body, category, related_ref,
+        message_id, profile_id, sender_type, sender_npc_id, subject, body, category, related_ref,
         created_day, created_at, read_at, read_day
     `,
     [
@@ -2559,10 +2561,40 @@ export async function insertMailboxMessage(
       input.body,
       input.category,
       input.relatedRef,
-      Math.max(0, input.createdDay)
+      createdDay
     ]
   );
-  return mapMailboxRow(result.rows[0] as Record<string, unknown>);
+
+  const insertedRow = inserted.rows[0] as Record<string, unknown> | undefined;
+  if (insertedRow) {
+    return mapMailboxRow(insertedRow);
+  }
+
+  const existing = await client.query(
+    `
+      SELECT
+        message_id, profile_id, sender_type, sender_npc_id, subject, body, category, related_ref,
+        created_day, created_at, read_at, read_day
+      FROM mailbox_messages
+      WHERE message_id = $1
+      LIMIT 1
+    `,
+    [input.messageId]
+  );
+
+  const existingRow = existing.rows[0] as Record<string, unknown> | undefined;
+  if (!existingRow) {
+    throw new Error(`Mailbox insert conflict without persisted row for messageId=${input.messageId}`);
+  }
+
+  const ownerProfileId = parseString(existingRow.profile_id);
+  if (ownerProfileId !== input.profileId) {
+    throw new Error(
+      `Mailbox messageId collision across profiles: messageId=${input.messageId}, expectedProfile=${input.profileId}, actualProfile=${ownerProfileId}`
+    );
+  }
+
+  return mapMailboxRow(existingRow);
 }
 
 export async function listMailboxMessages(
