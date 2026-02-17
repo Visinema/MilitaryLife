@@ -896,7 +896,7 @@ export async function reserveDivisionQuotaSlot(
        AND e.npc_id = q.head_npc_id
        AND e.is_current = TRUE
       WHERE q.profile_id = $1 AND q.division = $2
-      FOR UPDATE
+      FOR UPDATE OF q
     `,
     [input.profileId, input.division]
   );
