@@ -111,21 +111,38 @@ async function request<T>(path: string, method: HttpMethod, body?: unknown, opti
     return undefined as T;
   }
 
-  const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: unknown } & T;
+  const responseText = await response.text();
+  let payload: ({ error?: string; details?: unknown } & Partial<T>) | null = null;
+
+  if (responseText.trim().length > 0) {
+    try {
+      payload = JSON.parse(responseText) as ({ error?: string; details?: unknown } & Partial<T>);
+    } catch (error) {
+      const snippet = responseText.slice(0, 180);
+      throw new ApiError(
+        response.status,
+        `Invalid JSON response from ${path}.`,
+        {
+          parseError: error instanceof Error ? error.message : 'Unknown parse error',
+          responseSnippet: snippet
+        }
+      );
+    }
+  }
 
   if (!response.ok) {
-    const defaultMessage = payload.error ?? 'Request failed';
+    const defaultMessage = payload?.error ?? 'Request failed';
     if (response.status === 404 && path.startsWith('/game/v5/')) {
       throw new ApiError(
         response.status,
         `Endpoint backend belum tersedia: ${path}. Pastikan API backend versi terbaru sudah terdeploy.`,
-        payload.details ?? payload
+        payload?.details ?? payload
       );
     }
-    throw new ApiError(response.status, defaultMessage, payload.details ?? payload);
+    throw new ApiError(response.status, defaultMessage, payload?.details ?? payload);
   }
 
-  return payload as T;
+  return (payload ?? ({} as Partial<T>)) as T;
 }
 
 function splitAssignment(assignment: string): { division: string; position: string } {

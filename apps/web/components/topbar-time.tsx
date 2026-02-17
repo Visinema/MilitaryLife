@@ -32,7 +32,11 @@ export function TopbarTime({ snapshot, clockOffsetMs, onManualPause, onManualCon
         if (cancelled) return;
         if (meta.version) setAppVersion(meta.version);
       })
-      .catch(() => null);
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const reason = error instanceof Error ? error.message : 'Failed to load build metadata';
+        console.error('build-meta-load-failed', reason);
+      });
     return () => {
       cancelled = true;
     };

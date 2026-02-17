@@ -583,7 +583,10 @@ export function DashboardShell() {
       .then((response) => {
         setV5InventoryCertificates(response.items);
       })
-      .catch(() => null);
+      .catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : 'Gagal memuat sertifikasi academy.';
+        setError(reason);
+      });
   }, [inventoryOpen]);
 
   if (loading && !snapshot && !noProfile) {

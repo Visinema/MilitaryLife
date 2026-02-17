@@ -148,12 +148,12 @@ function sanitizePositionTitle(input: string): { base: string; tier: 0 | 1 | 2 }
 
 function bumpPosition(current: string, promotionGain: number): string {
   const parsed = sanitizePositionTitle(current);
-  let targetTier = parsed.tier;
+  let targetTier: 0 | 1 | 2 = parsed.tier;
 
   if (promotionGain >= 5) {
     targetTier = parsed.tier >= 1 ? 2 : 1;
   } else if (promotionGain >= 3) {
-    targetTier = Math.max(parsed.tier, 1);
+    targetTier = parsed.tier === 0 ? 1 : parsed.tier;
   }
 
   if (targetTier === 2) return `Lead ${parsed.base}`;
